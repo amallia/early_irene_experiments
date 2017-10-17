@@ -1,6 +1,8 @@
 package edu.umass.cics.ciir.sprf
 
 import org.lemurproject.galago.core.eval.QueryResults
+import org.lemurproject.galago.core.index.stats.FieldStatistics
+import org.lemurproject.galago.core.index.stats.NodeStatistics
 
 /**
  * @author jfoley
@@ -13,4 +15,6 @@ fun GExpr.push(what: GExpr): GExpr {
     return this
 }
 fun GResults.toQueryResults(): QueryResults = QueryResults(this.scoredDocuments)
+
+fun NodeStatistics.cfProbability(fieldStats: FieldStatistics): Double = this.nodeFrequency.toDouble() / fieldStats.collectionLength.toDouble()
 

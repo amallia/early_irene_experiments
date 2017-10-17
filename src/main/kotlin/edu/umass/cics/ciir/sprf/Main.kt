@@ -1,6 +1,5 @@
 package edu.umass.cics.ciir.sprf
 
-import gnu.trove.map.hash.TObjectIntHashMap
 import org.lemurproject.galago.core.parse.Document
 import org.lemurproject.galago.core.parse.TagTokenizer
 import org.lemurproject.galago.utility.Parameters
@@ -77,27 +76,59 @@ data class FirstPassDoc(val id: String, val tokenized: String, val score: Double
     }
 }
 
+class HashMapLM {
+    val terms = HashMap<String, Int>()
+    var length: Double = 0.0
+
+    fun pushDoc(x: List<String>) {
+        length += x.size
+        x.forEach { term ->
+            terms.compute(term, {_, prev -> (prev ?: 0) + 1})
+            //terms.adjustOrPutValue(term, 1, 1)
+        }
+    }
+    fun termsWithFrequency(minTF: Int): Set<String> {
+        val out = HashSet<String>(terms.size/2)
+        terms.forEach { term, count ->
+            if (count >= minTF) { out.add(term) }
+        }
+        return out
+    }
+    fun probability(term: String): Double = (terms.get(term) ?: 0).toDouble() / length
+}
+
+
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val depth = argp.get("depth", 20)
     val minTermFreq = argp.get("minTermFreq", 3)
+    val uniWindowFreq = argp.get("uniWindow", 12)
+    val biWindowFreq = argp.get("biWindow", 15)
 
-    FirstPassDoc.load().forEach { q ->
-        val allTerms = TObjectIntHashMap<String>()
-        q.docs.take(depth).forEach { doc ->
-            doc.terms.forEach { term ->
-                allTerms.adjustOrPutValue(term, 1, 1)
+    DataPaths.getRobustIndex().use { retr ->
+        val bodyStats = retr.getCollectionStatistics(GExpr("lengths"))
+
+        FirstPassDoc.load().forEach { q ->
+            val fDocs = HashMapLM()
+            q.docs.take(depth).forEach { doc ->
+                fDocs.pushDoc(doc.terms)
+            }
+            val candidateTerms = fDocs.termsWithFrequency(minTermFreq)
+
+            // Print candidate terms:
+            println("${q.qid}: ${candidateTerms.size}")
+
+            candidateTerms.forEach { term ->
+                val f1 = Math.log(fDocs.probability(term))
+                val stats = retr.getNodeStatistics(GExpr("counts", term))
+                val f2 = Math.log(stats.cfProbability(bodyStats))
+
+                // f3 is co-occurrence with single-query-term
+                // f4
+                println("#uw:12(q, $term)")
+
             }
         }
-
-        val candidateTerms = HashSet<String>(allTerms.size())
-        allTerms.forEachEntry { term, count ->
-            if (count >= minTermFreq) { candidateTerms.add(term) }
-            true
-        }
-
-        // Print candidate terms:
-        println("${q.qid}: ${candidateTerms.size}")
     }
 
 
