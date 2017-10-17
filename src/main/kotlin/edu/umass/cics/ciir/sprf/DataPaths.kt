@@ -12,7 +12,7 @@ import java.net.InetAddress
 object DataPaths {
     val host: String = InetAddress.getLocalHost().hostName
     fun notImpl(): Nothing = throw RuntimeException("notImpl")
-    fun getRobustIndex(): LocalRetrieval = getRobustIndex(Parameters.create())
+    fun getRobustIndex(): LocalRetrieval = getRobustIndex(extraOpIndexParams.clone())
     fun getRobustIndex(p: Parameters): LocalRetrieval = LocalRetrieval(when(host) {
         "gob" -> "/media/jfoley/flash/robust04.galago"
         "oakey" -> "/mnt/scratch/jfoley/robust04.galago/"

@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.sprf
 
+import gnu.trove.list.array.TDoubleArrayList
 import org.lemurproject.galago.core.parse.Document
 import org.lemurproject.galago.core.parse.TagTokenizer
 import org.lemurproject.galago.utility.Parameters
@@ -102,8 +103,9 @@ fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val depth = argp.get("depth", 20)
     val minTermFreq = argp.get("minTermFreq", 3)
-    val uniWindowFreq = argp.get("uniWindow", 12)
-    val biWindowFreq = argp.get("biWindow", 15)
+    val uniWindowSize = argp.get("uniWindow", 12)
+    val biWindowSize = argp.get("biWindow", 15)
+    val missingProb = argp.get("missing", -20.0)
 
     DataPaths.getRobustIndex().use { retr ->
         val bodyStats = retr.getCollectionStatistics(GExpr("lengths"))
@@ -113,6 +115,7 @@ fun main(args: Array<String>) {
             q.docs.take(depth).forEach { doc ->
                 fDocs.pushDoc(doc.terms)
             }
+            val whitelist = q.docs.take(depth).map { it.id }
             val candidateTerms = fDocs.termsWithFrequency(minTermFreq)
 
             // Print candidate terms:
@@ -125,7 +128,87 @@ fun main(args: Array<String>) {
 
                 // f3 is co-occurrence with single-query-term
                 // f4
-                println("#uw:12(q, $term)")
+                val f3ts = HashSet<List<String>>()
+                q.qterms.forEach { q ->
+                    val terms = mutableListOf<String>(q, term)
+                    terms.sort()
+                    f3ts.add(terms)
+                }
+                val f5ts = HashSet<List<String>>()
+                q.qterms.forEachIndexed { i, qi ->
+                    q.qterms.indices.forEach { j ->
+                        if (i != j) {
+                            val terms = mutableListOf<String>(qi, q.qterms[j], term)
+                            terms.sort()
+                            f5ts.add(terms)
+                        }
+                    }
+                }
+
+                val f3qs = f3ts.map { tokens ->
+                    GExpr("uw").apply {
+                        setf("default", uniWindowSize)
+                        tokens.forEach { addChild(GExpr.Text(it)) }
+                    }
+                }
+                val f5qs = f5ts.map { tokens ->
+                    GExpr("uw").apply {
+                        setf("default", biWindowSize)
+                        tokens.forEach { addChild(GExpr.Text(it)) }
+                    }
+                }
+
+                val f3ss = TDoubleArrayList()
+                val f4ss = TDoubleArrayList()
+                f3qs.forEach {
+                    val bg = retr.getNodeStatistics(retr.transformQuery(it.clone(), Parameters.create()))
+                    val workingP = Parameters.create().apply {
+                        set("working", whitelist)
+                        set("requested", whitelist.size)
+                    }
+                    val fg = retr.transformAndExecuteQuery(GExpr("count-to-score").push(GExpr("count-sum").push(it.clone())), workingP)!!
+                    //val bgProb = bg.cfProbability(bodyStats)
+                    val fgCount = fg.scoredDocuments.map { it.score }.sum()
+                    if (fgCount > 0) {
+                        val fgProb = fgCount / fDocs.length
+                        // given term, how often does it occur with bg?
+                        if (bg.nodeDocumentCount > 0) {
+                            val bgProb = bg.nodeDocumentCount.toDouble() / stats.nodeDocumentCount.toDouble()
+                            f3ss.add(fgProb)
+                            f4ss.add(bgProb)
+                        }
+                        //println("$it $fgProb $bgProb")
+                    }
+                }
+
+                val f5ss = TDoubleArrayList()
+                val f6ss = TDoubleArrayList()
+                f5qs.forEach {
+                    val bg = retr.getNodeStatistics(retr.transformQuery(it.clone(), Parameters.create()))
+                    val workingP = Parameters.create().apply {
+                        set("working", whitelist)
+                        set("requested", whitelist.size)
+                    }
+                    val fg = retr.transformAndExecuteQuery(GExpr("count-to-score").push(GExpr("count-sum").push(it.clone())), workingP)!!
+                    //val bgProb = bg.cfProbability(bodyStats)
+                    val fgCount = fg.scoredDocuments.map { it.score }.sum()
+                    if (fgCount > 0) {
+                        val fgProb = fgCount / fDocs.length
+                        // given term, how often does it occur with bg?
+                        if (bg.nodeDocumentCount > 0) {
+                            val bgProb = bg.nodeDocumentCount.toDouble() / stats.nodeDocumentCount.toDouble()
+                            f5ss.add(fgProb)
+                            f6ss.add(bgProb)
+                        }
+                        //println("$it $fgProb $bgProb")
+                    }
+                }
+
+                val f3 = f3ss.logProb(missingProb)
+                val f4 = f4ss.logProb(missingProb)
+                val f5 = f5ss.logProb(missingProb)
+                val f6 = f6ss.logProb(missingProb)
+                println("1:$f1 2:$f2 3:$f3 4:$f4 5:$f5 6:$f6")
 
             }
         }
@@ -133,3 +216,9 @@ fun main(args: Array<String>) {
 
 
 }
+
+fun TDoubleArrayList.logProb(orElse: Double): Double {
+    if (this.size() == 0) return orElse;
+    return Math.log(this.sum() / this.size().toDouble())
+}
+
