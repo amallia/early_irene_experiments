@@ -4,16 +4,18 @@ import gnu.trove.list.array.TDoubleArrayList
 import gnu.trove.map.hash.TIntDoubleHashMap
 import org.lemurproject.galago.core.parse.Document
 import org.lemurproject.galago.core.parse.TagTokenizer
+import org.lemurproject.galago.core.util.WordLists
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.*
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.streams.toList
 
 fun OutputStream.writer(): PrintWriter = PrintWriter(OutputStreamWriter(this, Charsets.UTF_8))
 fun InputStream.reader(): BufferedReader = BufferedReader(InputStreamReader(this, Charsets.UTF_8))
 
 object BuildFirstRoundRetrieval {
-    fun main(args: Array<String>) {
+    @JvmStatic fun main(args: Array<String>) {
         val qrels = DataPaths.getQueryJudgments()
         val evals = getEvaluators(listOf("ap", "ndcg"))
         val ms = NamedMeasures()
@@ -107,7 +109,11 @@ data class ETermFeatures(val term: String, val map: TIntDoubleHashMap) {
             val max = fmaxs[fid]!!
             val orig = map[fid]
             val normed = (orig - min) / (max - min)
-            map.put(fid, normed)
+            if (java.lang.Double.isNaN(normed)) {
+                map.put(fid, 0.5)
+            } else {
+                map.put(fid, normed)
+            }
         }
     }
 }
@@ -125,13 +131,12 @@ object GenerateTruthAssociations {
 
         DataPaths.getRobustIndex().use { retr ->
             val dmeasures = FirstPassDoc.load().associate { q ->
-                println("${q.qid}")
+                println(q.qid)
                 val qj = qrels[q.qid]
                 val fDocs = HashMapLM()
                 q.docs.take(depth).forEach { doc ->
                     fDocs.pushDoc(doc.terms)
                 }
-                val whitelist = q.docs.take(depth).map { it.id }
                 val candidateTerms = fDocs.termsWithFrequency(minTermFreq)
                 val origQ = GExpr("combine")
                 origQ.addTerms(q.qterms)
@@ -169,6 +174,8 @@ object GenerateTruthAssociations {
 
 }
 
+val inqueryStop: Set<String> = WordLists.getWordListOrDie("inquery")
+
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val depth = argp.get("depth", 20)
@@ -177,135 +184,149 @@ fun main(args: Array<String>) {
     val biWindowSize = argp.get("biWindow", 15)
     val missingProb = argp.get("missing", -20.0)
 
-    DataPaths.getRobustIndex().use { retr ->
-        val bodyStats = retr.getCollectionStatistics(GExpr("lengths"))
+    StreamCreator.openOutputStream("features.txt.gz").writer().use { output ->
+        DataPaths.getRobustIndex().use { retr ->
+            val bodyStats = retr.getCollectionStatistics(GExpr("lengths"))
 
-        FirstPassDoc.load().forEach { q ->
-            val fDocs = HashMapLM()
-            q.docs.take(depth).forEach { doc ->
-                fDocs.pushDoc(doc.terms)
-            }
-            val whitelist = q.docs.take(depth).map { it.id }
-            val candidateTerms = fDocs.termsWithFrequency(minTermFreq)
-
-            // Print candidate terms:
-            println("${q.qid}: ${candidateTerms.size}")
-
-            val ctfs = candidateTerms.map { term ->
-                val fmap = TIntDoubleHashMap()
-                fmap.put(1,Math.log(fDocs.probability(term)))
-                val stats = retr.getNodeStatistics(GExpr("counts", term))
-                fmap.put(2, Math.log(stats.cfProbability(bodyStats)))
-
-                // f3 is co-occurrence with single-query-term
-                // f4
-                val f3ts = HashSet<List<String>>()
-                q.qterms.forEach { q ->
-                    val terms = mutableListOf<String>(q, term)
-                    terms.sort()
-                    f3ts.add(terms)
+            FirstPassDoc.load().forEach { q ->
+                val fDocs = HashMapLM()
+                q.docs.take(depth).forEach { doc ->
+                    fDocs.pushDoc(doc.terms)
                 }
-                val f5ts = HashSet<List<String>>()
-                q.qterms.forEachIndexed { i, qi ->
-                    q.qterms.indices.forEach { j ->
-                        if (i != j) {
-                            val terms = mutableListOf<String>(qi, q.qterms[j], term)
-                            terms.sort()
-                            f5ts.add(terms)
+                val whitelist = q.docs.take(depth).map { it.id }
+                val candidateTerms = fDocs.termsWithFrequency(minTermFreq)
+
+                // Print candidate terms:
+                println("${q.qid}: ${candidateTerms.size}")
+
+                val ctfs: List<ETermFeatures> = candidateTerms.parallelStream().map { term ->
+                    val fmap = TIntDoubleHashMap()
+                    fmap.put(1,Math.log(fDocs.probability(term)))
+                    val stats = retr.getNodeStatistics(GExpr("counts", term))
+                    fmap.put(2, Math.log(stats.cfProbability(bodyStats)))
+
+                    // f3 is co-occurrence with single-query-term
+                    // f4
+                    val f3ts = HashSet<List<String>>()
+                    q.qterms.forEach { q ->
+                        val terms = mutableListOf<String>(q, term)
+                        terms.sort()
+                        f3ts.add(terms)
+                    }
+                    val f5ts = HashSet<List<String>>()
+                    q.qterms.forEachIndexed { i, qi ->
+                        q.qterms.indices.forEach { j ->
+                            if (i != j) {
+                                val terms = mutableListOf<String>(qi, q.qterms[j], term)
+                                terms.sort()
+                                f5ts.add(terms)
+                            }
                         }
                     }
-                }
 
-                val f3qs = f3ts.map { tokens ->
-                    GExpr("uw").apply {
-                        setf("default", uniWindowSize)
-                        tokens.forEach { addChild(GExpr.Text(it)) }
-                    }
-                }
-                val f5qs = f5ts.map { tokens ->
-                    GExpr("uw").apply {
-                        setf("default", biWindowSize)
-                        tokens.forEach { addChild(GExpr.Text(it)) }
-                    }
-                }
-
-                val workingP = Parameters.create().apply {
-                    set("working", whitelist)
-                    set("requested", whitelist.size)
-                }
-                val f3ss = TDoubleArrayList()
-                val f4ss = TDoubleArrayList()
-                f3qs.forEach {
-                    val bg = retr.getNodeStatistics(retr.transformQuery(it.clone(), Parameters.create()))
-                    val fg = retr.transformAndExecuteQuery(GExpr("count-to-score").push(GExpr("count-sum").push(it.clone())), workingP)!!
-                    //val bgProb = bg.cfProbability(bodyStats)
-                    val fgCount = fg.scoredDocuments.map { it.score }.sum()
-                    if (fgCount > 0) {
-                        val fgProb = fgCount / fDocs.length
-                        // given term, how often does it occur with bg?
-                        if (bg.nodeDocumentCount > 0) {
-                            val bgProb = bg.nodeDocumentCount.toDouble() / stats.nodeDocumentCount.toDouble()
-                            f3ss.add(fgProb)
-                            f4ss.add(bgProb)
+                    val f3qs = f3ts.map { tokens ->
+                        GExpr("uw").apply {
+                            setf("default", uniWindowSize)
+                            tokens.forEach { addChild(GExpr.Text(it)) }
                         }
-                        //println("$it $fgProb $bgProb")
                     }
-                }
-
-                val f5ss = TDoubleArrayList()
-                val f6ss = TDoubleArrayList()
-                f5qs.forEach {
-                    val bg = retr.getNodeStatistics(retr.transformQuery(it.clone(), Parameters.create()))
-                    val fg = retr.transformAndExecuteQuery(GExpr("count-to-score").push(GExpr("count-sum").push(it.clone())), workingP.clone())!!
-                    //val bgProb = bg.cfProbability(bodyStats)
-                    val fgCount = fg.scoredDocuments.map { it.score }.sum()
-                    if (fgCount > 0) {
-                        val fgProb = fgCount / fDocs.length
-                        // given term, how often does it occur with bg?
-                        if (bg.nodeDocumentCount > 0) {
-                            val bgProb = bg.nodeDocumentCount.toDouble() / stats.nodeDocumentCount.toDouble()
-                            f5ss.add(fgProb)
-                            f6ss.add(bgProb)
+                    val f5qs = f5ts.map { tokens ->
+                        GExpr("uw").apply {
+                            setf("default", biWindowSize)
+                            tokens.forEach { addChild(GExpr.Text(it)) }
                         }
-                        //println("$it $fgProb $bgProb")
+                    }
+
+                    val workingP = Parameters.create().apply {
+                        set("working", whitelist)
+                        set("requested", whitelist.size)
+                    }
+                    val f3ss = TDoubleArrayList()
+                    val f4ss = TDoubleArrayList()
+                    f3qs.forEach {
+                        val bg = retr.getNodeStatistics(retr.transformQuery(it.clone(), Parameters.create()))
+                        val fg = retr.transformAndExecuteQuery(GExpr("count-to-score").push(GExpr("count-sum").push(it.clone())), workingP)!!
+                        //val bgProb = bg.cfProbability(bodyStats)
+                        val fgCount = fg.scoredDocuments.map { it.score }.sum()
+                        if (fgCount > 0) {
+                            val fgProb = fgCount / fDocs.length
+                            // given term, how often does it occur with bg?
+                            if (bg.nodeDocumentCount > 0) {
+                                val bgProb = bg.nodeDocumentCount.toDouble() / stats.nodeDocumentCount.toDouble()
+                                f3ss.add(fgProb)
+                                f4ss.add(bgProb)
+                            }
+                            //println("$it $fgProb $bgProb")
+                        }
+                    }
+
+                    val f5ss = TDoubleArrayList()
+                    val f6ss = TDoubleArrayList()
+                    f5qs.forEach {
+                        val bg = retr.getNodeStatistics(retr.transformQuery(it.clone(), Parameters.create()))
+                        val fg = retr.transformAndExecuteQuery(GExpr("count-to-score").push(GExpr("count-sum").push(it.clone())), workingP.clone())!!
+                        //val bgProb = bg.cfProbability(bodyStats)
+                        val fgCount = fg.scoredDocuments.map { it.score }.sum()
+                        if (fgCount > 0) {
+                            val fgProb = fgCount / fDocs.length
+                            // given term, how often does it occur with bg?
+                            if (bg.nodeDocumentCount > 0) {
+                                val bgProb = bg.nodeDocumentCount.toDouble() / stats.nodeDocumentCount.toDouble()
+                                f5ss.add(fgProb)
+                                f6ss.add(bgProb)
+                            }
+                            //println("$it $fgProb $bgProb")
+                        }
+                    }
+
+                    // f9
+                    val andQ = GExpr("band")
+                    q.qterms.forEach { andQ.addChild(GExpr.Text(it)) }
+                    andQ.addChild(GExpr.Text(term))
+
+                    val hits = retr.transformAndExecuteQuery(GExpr("bool").push(andQ), workingP.clone()).scoredDocuments.filter { it.score > 0 }.size
+
+                    //println("$term $hits ${q.qterms}")
+                    fmap.put(9, Math.log(hits+0.5))
+
+                    fmap.put(3, f3ss.logProb(missingProb))
+                    fmap.put(4, f4ss.logProb(missingProb))
+                    fmap.put(5, f5ss.logProb(missingProb))
+                    fmap.put(6, f6ss.logProb(missingProb))
+
+                    // skip the minimum term distance for now... it's not easy in Galago.
+                    ETermFeatures(term, fmap)
+                }.toList()
+
+                // Now max/min normalize the features per query:
+                val fstats = HashMap<Int, TDoubleArrayList>()
+                ctfs.forEach {
+                    it.map.forEachEntry {fid,fval ->
+                        fstats.computeIfAbsent(fid, {TDoubleArrayList()}).add(fval)
+                        true
                     }
                 }
 
-                // f9
-                val andQ = GExpr("band")
-                q.qterms.forEach { andQ.addChild(GExpr.Text(it)) }
-                andQ.addChild(GExpr.Text(term))
+                val fmins = fstats.mapValues { (_,arr) -> arr.min() }
+                val fmaxs = fstats.mapValues { (_,arr) -> arr.max() }
 
-                val hits = retr.transformAndExecuteQuery(GExpr("bool").push(andQ), workingP.clone()).scoredDocuments.size
+                ctfs.forEach { etf ->
+                    etf.norm(fmins, fmaxs)
 
-                fmap.put(9, Math.log(hits+0.5))
+                    // boolean features after normalization.
+                    etf.map.put(10, if (inqueryStop.contains(etf.term)) 1.0 else 0.0)
 
-                fmap.put(3, f3ss.logProb(missingProb))
-                fmap.put(4, f4ss.logProb(missingProb))
-                fmap.put(5, f5ss.logProb(missingProb))
-                fmap.put(6, f6ss.logProb(missingProb))
+                    val columns = ArrayList<String>()
+                    columns.add(q.qid)
+                    columns.add(etf.term)
+                    etf.map.forEachEntry { fid, score ->
+                        columns.add(fid.toString())
+                        columns.add(score.toString())
+                    }
 
-
-                // skip the minimum term distance for now... it's not easy in Galago.
-                ETermFeatures(term, fmap)
-            }
-
-            // Now max/min normalize the features per query:
-            val fstats = HashMap<Int, TDoubleArrayList>()
-            ctfs.forEach {
-                it.map.forEachEntry {fid,fval ->
-                    fstats.computeIfAbsent(fid, {TDoubleArrayList()}).add(fval)
-                    true
+                    output.println(columns.joinToString("\t"))
                 }
             }
-
-            val fmins = fstats.mapValues { (_,arr) -> arr.min() }
-            val fmaxs = fstats.mapValues { (_,arr) -> arr.max() }
-
-            ctfs.forEach { it.norm(fmins, fmaxs) }
-
-            println("NORMED: ${ctfs.size}")
-
         }
     }
 
