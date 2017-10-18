@@ -7,6 +7,7 @@ import org.lemurproject.galago.core.parse.TagTokenizer
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.*
+import java.util.concurrent.ConcurrentHashMap
 
 fun OutputStream.writer(): PrintWriter = PrintWriter(OutputStreamWriter(this, Charsets.UTF_8))
 fun InputStream.reader(): BufferedReader = BufferedReader(InputStreamReader(this, Charsets.UTF_8))
@@ -111,6 +112,62 @@ data class ETermFeatures(val term: String, val map: TIntDoubleHashMap) {
     }
 }
 
+object GenerateTruthAssociations {
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val depth = argp.get("depth", 20)
+        val minTermFreq = argp.get("minTermFreq", 3)
+        val testTermWeight = argp.get("testTermWeight", 0.01)
+
+        val evals = getEvaluators(listOf("ap", "ndcg"))
+        val qrels = DataPaths.getQueryJudgments()
+
+
+        DataPaths.getRobustIndex().use { retr ->
+            val dmeasures = FirstPassDoc.load().associate { q ->
+                println("${q.qid}")
+                val qj = qrels[q.qid]
+                val fDocs = HashMapLM()
+                q.docs.take(depth).forEach { doc ->
+                    fDocs.pushDoc(doc.terms)
+                }
+                val whitelist = q.docs.take(depth).map { it.id }
+                val candidateTerms = fDocs.termsWithFrequency(minTermFreq)
+                val origQ = GExpr("combine")
+                origQ.addTerms(q.qterms)
+                val origR = retr.transformAndExecuteQuery(origQ).toQueryResults()
+                val baseline = evals.mapValues { (_, fn) -> fn.evaluate(origR, qj) }
+
+                val truths = ConcurrentHashMap<String, Parameters>()
+                candidateTerms.toList().sorted().parallelStream().forEach { term ->
+                    if (term !in q.qterms) {
+                        println("$term ${q.qid}")
+                        val posQ = GExpr("combine")
+                        posQ.add(GExpr.Text(term))
+                        posQ.addTerms(q.qterms)
+                        posQ.setf("0", testTermWeight)
+
+                        val posR = retr.transformAndExecuteQuery(posQ).toQueryResults()
+
+                        val deltaMeasures = evals.mapValues { (measure, fn) ->
+                            val posScore = fn.evaluate(posR, qj)
+                            val delta = posScore - baseline[measure]!!
+                            //println("$term $measure ${delta}")
+                            delta
+                        }
+                        truths.put(term, Parameters.wrap(deltaMeasures))
+                    }
+                }
+                Pair(q.qid, Parameters.wrap(truths))
+            }
+
+            StreamCreator.openOutputStream("truths.json.gz").writer().use { out ->
+                out.println(Parameters.wrap(dmeasures).toPrettyString())
+            }
+        }
+    }
+
+}
 
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
