@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.sprf
 
 import gnu.trove.list.array.TDoubleArrayList
+import gnu.trove.map.hash.TIntDoubleHashMap
 import org.lemurproject.galago.core.parse.Document
 import org.lemurproject.galago.core.parse.TagTokenizer
 import org.lemurproject.galago.utility.Parameters
@@ -98,6 +99,18 @@ class HashMapLM {
     fun probability(term: String): Double = (terms.get(term) ?: 0).toDouble() / length
 }
 
+data class ETermFeatures(val term: String, val map: TIntDoubleHashMap) {
+    fun norm(fmins: Map<Int, Double>, fmaxs: Map<Int, Double>) {
+        map.keys().forEach { fid ->
+            val min = fmins[fid]!!
+            val max = fmaxs[fid]!!
+            val orig = map[fid]
+            val normed = (orig - min) / (max - min)
+            map.put(fid, normed)
+        }
+    }
+}
+
 
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
@@ -121,10 +134,11 @@ fun main(args: Array<String>) {
             // Print candidate terms:
             println("${q.qid}: ${candidateTerms.size}")
 
-            candidateTerms.forEach { term ->
-                val f1 = Math.log(fDocs.probability(term))
+            val ctfs = candidateTerms.map { term ->
+                val fmap = TIntDoubleHashMap()
+                fmap.put(1,Math.log(fDocs.probability(term)))
                 val stats = retr.getNodeStatistics(GExpr("counts", term))
-                val f2 = Math.log(stats.cfProbability(bodyStats))
+                fmap.put(2, Math.log(stats.cfProbability(bodyStats)))
 
                 // f3 is co-occurrence with single-query-term
                 // f4
@@ -158,14 +172,14 @@ fun main(args: Array<String>) {
                     }
                 }
 
+                val workingP = Parameters.create().apply {
+                    set("working", whitelist)
+                    set("requested", whitelist.size)
+                }
                 val f3ss = TDoubleArrayList()
                 val f4ss = TDoubleArrayList()
                 f3qs.forEach {
                     val bg = retr.getNodeStatistics(retr.transformQuery(it.clone(), Parameters.create()))
-                    val workingP = Parameters.create().apply {
-                        set("working", whitelist)
-                        set("requested", whitelist.size)
-                    }
                     val fg = retr.transformAndExecuteQuery(GExpr("count-to-score").push(GExpr("count-sum").push(it.clone())), workingP)!!
                     //val bgProb = bg.cfProbability(bodyStats)
                     val fgCount = fg.scoredDocuments.map { it.score }.sum()
@@ -185,11 +199,7 @@ fun main(args: Array<String>) {
                 val f6ss = TDoubleArrayList()
                 f5qs.forEach {
                     val bg = retr.getNodeStatistics(retr.transformQuery(it.clone(), Parameters.create()))
-                    val workingP = Parameters.create().apply {
-                        set("working", whitelist)
-                        set("requested", whitelist.size)
-                    }
-                    val fg = retr.transformAndExecuteQuery(GExpr("count-to-score").push(GExpr("count-sum").push(it.clone())), workingP)!!
+                    val fg = retr.transformAndExecuteQuery(GExpr("count-to-score").push(GExpr("count-sum").push(it.clone())), workingP.clone())!!
                     //val bgProb = bg.cfProbability(bodyStats)
                     val fgCount = fg.scoredDocuments.map { it.score }.sum()
                     if (fgCount > 0) {
@@ -204,13 +214,41 @@ fun main(args: Array<String>) {
                     }
                 }
 
-                val f3 = f3ss.logProb(missingProb)
-                val f4 = f4ss.logProb(missingProb)
-                val f5 = f5ss.logProb(missingProb)
-                val f6 = f6ss.logProb(missingProb)
-                println("1:$f1 2:$f2 3:$f3 4:$f4 5:$f5 6:$f6")
+                // f9
+                val andQ = GExpr("band")
+                q.qterms.forEach { andQ.addChild(GExpr.Text(it)) }
+                andQ.addChild(GExpr.Text(term))
 
+                val hits = retr.transformAndExecuteQuery(GExpr("bool").push(andQ), workingP.clone()).scoredDocuments.size
+
+                fmap.put(9, Math.log(hits+0.5))
+
+                fmap.put(3, f3ss.logProb(missingProb))
+                fmap.put(4, f4ss.logProb(missingProb))
+                fmap.put(5, f5ss.logProb(missingProb))
+                fmap.put(6, f6ss.logProb(missingProb))
+
+
+                // skip the minimum term distance for now... it's not easy in Galago.
+                ETermFeatures(term, fmap)
             }
+
+            // Now max/min normalize the features per query:
+            val fstats = HashMap<Int, TDoubleArrayList>()
+            ctfs.forEach {
+                it.map.forEachEntry {fid,fval ->
+                    fstats.computeIfAbsent(fid, {TDoubleArrayList()}).add(fval)
+                    true
+                }
+            }
+
+            val fmins = fstats.mapValues { (_,arr) -> arr.min() }
+            val fmaxs = fstats.mapValues { (_,arr) -> arr.max() }
+
+            ctfs.forEach { it.norm(fmins, fmaxs) }
+
+            println("NORMED: ${ctfs.size}")
+
         }
     }
 
