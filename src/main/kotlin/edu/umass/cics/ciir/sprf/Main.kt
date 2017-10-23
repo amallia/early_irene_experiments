@@ -397,7 +397,55 @@ fun main(args: Array<String>) {
             }
         }
     }
+}
 
+object UsePredictions {
+    @JvmStatic fun main(args: Array<String>) {
+        val qrels = DataPaths.getQueryJudgments()
+        val evals = getEvaluators(listOf("ap", "ndcg"))
+        val ms = NamedMeasures()
 
+        val predictions = Parameters.parseFile("predictions.json").getMap("train")
+        val testSet = predictions.keys.toCollection(java.util.TreeSet<String>())
+
+        val tok = TagTokenizer()
+        DataPaths.getRobustIndex().use { retrieval ->
+            DataPaths.getTitleQueries()
+                    .filterKeys { testSet.contains(it) }
+                    .forEach { qid, qtext ->
+                        val queryJudgments = qrels[qid]
+                        val qterms = tok.tokenize(qtext).terms
+                        val lmBaseline = GExpr("combine").apply { addTerms(qterms) }
+                        println("$qid $lmBaseline")
+
+                        val expTerms = predictions.getList(qid, String::class.java)!!.toList()
+
+                        val expRun = GExpr("combine").apply {
+                            addChild(lmBaseline.clone())
+                            setf("0", 0.8)
+                            addChild(GExpr("combine").apply {
+                                addTerms(expTerms)
+                            })
+                            setf("1", 0.2)
+                        }
+
+                        val gres = retrieval.transformAndExecuteQuery(lmBaseline)
+                        val eres = retrieval.transformAndExecuteQuery(expRun)
+                        val workingP = Parameters.create().apply {
+                            val ids = gres.scoredDocuments.map { it.name }
+                            set("working", ids)
+                            set("requested", ids.size.toLong())
+                        }
+                        val weres = retrieval.transformAndExecuteQuery(expRun, workingP)
+
+                        evals.forEach { measure, evalfn ->
+                            ms.push("LM $measure", evalfn.evaluate(gres.toQueryResults(), queryJudgments))
+                            ms.push("SPRF.flat $measure", evalfn.evaluate(eres.toQueryResults(), queryJudgments))
+                            ms.push("rSPRF.flat $measure", evalfn.evaluate(weres.toQueryResults(), queryJudgments))
+                        }
+                    }
+        }
+        println(Parameters.wrap(ms.means()));
+    }
 }
 
