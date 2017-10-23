@@ -13,7 +13,7 @@ class NamedMeasures {
     fun push(what: String, x: Double) {
         measures.computeIfAbsent(what, { TDoubleArrayList() }).add(x)
     }
-    fun means(): TreeMap<String, Double> = measures.mapValuesTo(TreeMap()) { (_,arr) -> arr.sum() / arr.size() }
+    fun means(): TreeMap<String, Double> = measures.mapValuesTo(TreeMap()) { (_,arr) -> arr.mean() }
 }
 
 fun getEvaluators(metricNames: List<String>) = metricNames.associate { Pair(it, QueryEvaluatorFactory.create(it, Parameters.create())) }

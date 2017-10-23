@@ -102,17 +102,21 @@ class HashMapLM {
     fun probability(term: String): Double = (terms.get(term) ?: 0).toDouble() / length
 }
 
+val FeatureNormBlacklist = setOf<Int>(11,12,13, 16, 17, 18, 19, 23)
+
 data class ETermFeatures(val term: String, val map: TIntDoubleHashMap) {
     fun norm(fmins: Map<Int, Double>, fmaxs: Map<Int, Double>) {
         map.keys().forEach { fid ->
-            val min = fmins[fid]!!
-            val max = fmaxs[fid]!!
-            val orig = map[fid]
-            val normed = (orig - min) / (max - min)
-            if (java.lang.Double.isNaN(normed)) {
-                map.put(fid, 0.5)
-            } else {
-                map.put(fid, normed)
+            if (!FeatureNormBlacklist.contains(fid)) {
+                val min = fmins[fid]!!
+                val max = fmaxs[fid]!!
+                val orig = map[fid]
+                val normed = (orig - min) / (max - min)
+                if (java.lang.Double.isNaN(normed)) {
+                    map.put(fid, 0.5)
+                } else {
+                    map.put(fid, normed)
+                }
             }
         }
     }
@@ -187,6 +191,7 @@ fun main(args: Array<String>) {
     StreamCreator.openOutputStream("features.txt.gz").writer().use { output ->
         DataPaths.getRobustIndex().use { retr ->
             val bodyStats = retr.getCollectionStatistics(GExpr("lengths"))
+            val N = bodyStats.documentCount.toDouble()
 
             FirstPassDoc.load().forEach { q ->
                 val fDocs = HashMapLM()
@@ -196,13 +201,19 @@ fun main(args: Array<String>) {
                 val whitelist = q.docs.take(depth).map { it.id }
                 val candidateTerms = fDocs.termsWithFrequency(minTermFreq)
 
+                val qstats = q.qterms.associate {
+                    Pair(it, retr.getNodeStatistics(GExpr("counts", it)))
+                }
+
                 // Print candidate terms:
                 println("${q.qid}: ${candidateTerms.size}")
 
                 val ctfs: List<ETermFeatures> = candidateTerms.parallelStream().map { term ->
                     val fmap = TIntDoubleHashMap()
+                    // 2%
                     fmap.put(1,Math.log(fDocs.probability(term)))
                     val stats = retr.getNodeStatistics(GExpr("counts", term))
+                    // 11%
                     fmap.put(2, Math.log(stats.cfProbability(bodyStats)))
 
                     // f3 is co-occurrence with single-query-term
@@ -287,12 +298,63 @@ fun main(args: Array<String>) {
                     val hits = retr.transformAndExecuteQuery(GExpr("bool").push(andQ), workingP.clone()).scoredDocuments.filter { it.score > 0 }.size
 
                     //println("$term $hits ${q.qterms}")
+                    // 6%
                     fmap.put(9, Math.log(hits+0.5))
 
+                    // 7%
                     fmap.put(3, f3ss.logProb(missingProb))
+                    // 6%
                     fmap.put(4, f4ss.logProb(missingProb))
+                    // 24.6%
                     fmap.put(5, f5ss.logProb(missingProb))
+                    // 31.1%
                     fmap.put(6, f6ss.logProb(missingProb))
+
+
+                    // Diaz, 2016.
+                    val idfNum = log2(N+0.5)
+                    val idfDenom = log2(N+1.0)
+                    val idfs = TDoubleArrayList()
+                    val dfs = TDoubleArrayList()
+                    // rank equivalent to SCS given P_ml is a constant.
+                    val SCS = TDoubleArrayList()
+                    qstats.values.forEach {
+                        val Nt = it.nodeDocumentCount.toDouble();
+                        dfs.add(Nt / N)
+
+                        // INQUERY IDF: He & Ounis
+                        val idf = (idfNum / Nt) / idfDenom
+                        idfs.add(idf)
+
+                        SCS.add(-log2(it.cfProbability(bodyStats)))
+                    }
+                    val Nt = stats.nodeDocumentCount.toDouble()
+                    dfs.add(Nt / N)
+                    val idf = (idfNum / Nt) / idfDenom
+                    idfs.add(idf)
+                    SCS.add(-log2(stats.cfProbability(bodyStats)))
+
+                    val anyTerm = GExpr("count-sum").apply {
+                        addTerms(q.qterms)
+                        add(GExpr.Text(term))
+                    }
+                    val anyTermStats = retr.getNodeStatistics(retr.transformQuery(anyTerm, Parameters.create()))
+
+                    fmap.put(11, dfs.max())
+                    fmap.put(12, dfs.min())
+                    fmap.put(13, dfs.mean())
+
+                    fmap.put(16, idfs.max())
+                    fmap.put(17, idfs.min())
+                    fmap.put(18, idfs.mean())
+                    fmap.put(19, idfs.max() / idfs.min()) // gamma2, He & Ounis
+
+                    fmap.put(20, SCS.sum())
+                    fmap.put(21, SCS.mean())
+
+                    // Query Scope, He & Ounis
+                    fmap.put(22, -Math.log(anyTermStats.nodeDocumentCount.toDouble() / N))
+                    fmap.put(23, anyTermStats.nodeDocumentCount.toDouble() / N)
 
                     // skip the minimum term distance for now... it's not easy in Galago.
                     ETermFeatures(term, fmap)
@@ -314,7 +376,13 @@ fun main(args: Array<String>) {
                     etf.norm(fmins, fmaxs)
 
                     // boolean features after normalization.
+                    // 10.9%
                     etf.map.put(10, if (inqueryStop.contains(etf.term)) 1.0 else 0.0)
+
+                    // is in the original query?
+                    etf.map.put(14, if (q.qterms.contains(etf.term)) 1.0 else 0.0)
+                    // Original Query Length, so normalizations can be learned.
+                    etf.map.put(15, q.qterms.size.toDouble())
 
                     val columns = ArrayList<String>()
                     columns.add(q.qid)
@@ -331,6 +399,14 @@ fun main(args: Array<String>) {
     }
 
 
+}
+
+val LN2 = Math.log(2.0)
+fun log2(x: Double): Double = Math.log(x) / LN2
+
+fun TDoubleArrayList.mean(): Double {
+    if (this.size() == 0) return 0.0;
+    return this.sum() / this.size().toDouble()
 }
 
 fun TDoubleArrayList.logProb(orElse: Double): Double {
