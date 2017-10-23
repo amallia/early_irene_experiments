@@ -18,3 +18,15 @@ class NamedMeasures {
 
 fun getEvaluators(metricNames: List<String>) = metricNames.associate { Pair(it, QueryEvaluatorFactory.create(it, Parameters.create())) }
 
+val LN2 = Math.log(2.0)
+fun log2(x: Double): Double = Math.log(x) / LN2
+
+fun TDoubleArrayList.mean(): Double {
+    if (this.size() == 0) return 0.0;
+    return this.sum() / this.size().toDouble()
+}
+
+fun TDoubleArrayList.logProb(orElse: Double): Double {
+    if (this.size() == 0) return orElse;
+    return Math.log(this.sum() / this.size().toDouble())
+}

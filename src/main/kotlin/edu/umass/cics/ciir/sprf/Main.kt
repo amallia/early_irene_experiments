@@ -354,7 +354,7 @@ fun main(args: Array<String>) {
 
                     // Query Scope, He & Ounis
                     fmap.put(22, -Math.log(anyTermStats.nodeDocumentCount.toDouble() / N))
-                    fmap.put(23, anyTermStats.nodeDocumentCount.toDouble() / N)
+                    fmap.put(23, anyTermStats.cfProbability(bodyStats))
 
                     // skip the minimum term distance for now... it's not easy in Galago.
                     ETermFeatures(term, fmap)
@@ -399,18 +399,5 @@ fun main(args: Array<String>) {
     }
 
 
-}
-
-val LN2 = Math.log(2.0)
-fun log2(x: Double): Double = Math.log(x) / LN2
-
-fun TDoubleArrayList.mean(): Double {
-    if (this.size() == 0) return 0.0;
-    return this.sum() / this.size().toDouble()
-}
-
-fun TDoubleArrayList.logProb(orElse: Double): Double {
-    if (this.size() == 0) return orElse;
-    return Math.log(this.sum() / this.size().toDouble())
 }
 
