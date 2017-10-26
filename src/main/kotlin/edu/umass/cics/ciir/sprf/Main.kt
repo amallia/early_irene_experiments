@@ -2,9 +2,12 @@ package edu.umass.cics.ciir.sprf
 
 import gnu.trove.list.array.TDoubleArrayList
 import gnu.trove.map.hash.TIntDoubleHashMap
+import gnu.trove.map.hash.TObjectDoubleHashMap
+import gnu.trove.map.hash.TObjectIntHashMap
 import org.lemurproject.galago.core.parse.Document
 import org.lemurproject.galago.core.parse.TagTokenizer
 import org.lemurproject.galago.core.util.WordLists
+import org.lemurproject.galago.utility.MathUtils
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.*
@@ -127,7 +130,7 @@ object GenerateTruthAssociations {
         val argp = Parameters.parseArgs(args)
         val depth = argp.get("depth", 20)
         val minTermFreq = argp.get("minTermFreq", 3)
-        val testTermWeight = argp.get("testTermWeight", 0.01)
+        val testTermWeight = argp.get("testTermWeight", 1)
 
         val evals = getEvaluators(listOf("ap", "ndcg"))
         val qrels = DataPaths.getQueryJudgments()
@@ -144,19 +147,25 @@ object GenerateTruthAssociations {
                 val candidateTerms = fDocs.termsWithFrequency(minTermFreq)
                 val origQ = GExpr("combine")
                 origQ.addTerms(q.qterms)
-                val origR = retr.transformAndExecuteQuery(origQ).toQueryResults()
+                val gres = retr.transformAndExecuteQuery(origQ.clone())
+                val workingP = Parameters.create().apply {
+                    val ids = gres.scoredDocuments.map { it.name }
+                    set("working", ids)
+                    set("requested", ids.size.toLong())
+                }
+                val origR = gres.toQueryResults()
                 val baseline = evals.mapValues { (_, fn) -> fn.evaluate(origR, qj) }
 
                 val truths = ConcurrentHashMap<String, Parameters>()
                 candidateTerms.toList().sorted().parallelStream().forEach { term ->
                     if (term !in q.qterms) {
-                        println("$term ${q.qid}")
+                        //println("$term ${q.qid}")
                         val posQ = GExpr("combine")
                         posQ.add(GExpr.Text(term))
                         posQ.addTerms(q.qterms)
                         posQ.setf("0", testTermWeight)
 
-                        val posR = retr.transformAndExecuteQuery(posQ).toQueryResults()
+                        val posR = retr.transformAndExecuteQuery(posQ, workingP.clone()).toQueryResults()
 
                         val deltaMeasures = evals.mapValues { (measure, fn) ->
                             val posScore = fn.evaluate(posR, qj)
@@ -405,6 +414,8 @@ object UsePredictions {
         val evals = getEvaluators(listOf("ap", "ndcg"))
         val ms = NamedMeasures()
 
+        val measure = "ndcg";
+        val truthsMap = Parameters.parseFile("truths.json.gz")
         val predictions = Parameters.parseFile("predictions.json").getMap("train")
         val testSet = predictions.keys.toCollection(java.util.TreeSet<String>())
 
@@ -417,31 +428,52 @@ object UsePredictions {
                         val qterms = tok.tokenize(qtext).terms
                         val lmBaseline = GExpr("combine").apply { addTerms(qterms) }
                         println("$qid $lmBaseline")
-
-                        val expTerms = predictions.getList(qid, String::class.java)!!.toList()
-
-                        val expRun = GExpr("combine").apply {
-                            addChild(lmBaseline.clone())
-                            setf("0", 0.8)
-                            addChild(GExpr("combine").apply {
-                                addTerms(expTerms)
-                            })
-                            setf("1", 0.2)
-                        }
-
-                        val gres = retrieval.transformAndExecuteQuery(lmBaseline)
-                        val eres = retrieval.transformAndExecuteQuery(expRun)
+                        val gres = retrieval.transformAndExecuteQuery(lmBaseline.clone())
                         val workingP = Parameters.create().apply {
                             val ids = gres.scoredDocuments.map { it.name }
                             set("working", ids)
                             set("requested", ids.size.toLong())
                         }
-                        val weres = retrieval.transformAndExecuteQuery(expRun, workingP)
+
+                        // 0.001 is the best of 0, 0.1, 0.01, 0.001, 0.005, 0.0001
+                        listOf(0.0001, 0.005, 0.001).forEach { cutoff ->
+                            val tp = truthsMap.getMap(qid)
+                            val posTerms = HashSet<String>()
+                            tp.keys.forEach { term ->
+                                val score = tp.getMap(term).getDouble(measure)
+                                if (score > cutoff) {
+                                    posTerms.add(term)
+                                }
+                            }
+                            val oracleExpansion = GExpr("combine").apply { addTerms(posTerms.toList()) }
+                            val oracleRun = GExpr("combine").apply {
+                                addChild(lmBaseline.clone())
+                                addChild(oracleExpansion)
+                            }
+                            val oracleRes = retrieval.transformAndExecuteQuery(oracleRun, workingP.clone())
+                            evals.forEach { measure, evalfn ->
+                                ms.push("Oracle t=$cutoff $measure", evalfn.evaluate(oracleRes.toQueryResults(), queryJudgments))
+                            }
+                        }
+
+                        //val expTerms = predictions.getList(qid, String::class.java)!!.toList()
+
+                        //val expRun = GExpr("combine").apply {
+                        //    addChild(lmBaseline.clone())
+                        //    setf("0", 0.8)
+                        //    addChild(GExpr("combine").apply {
+                        //        addTerms(expTerms)
+                        //    })
+                        //    setf("1", 0.2)
+                        //}
+
+                        //val eres = retrieval.transformAndExecuteQuery(expRun)
+                        //val weres = retrieval.transformAndExecuteQuery(expRun, workingP)
 
                         evals.forEach { measure, evalfn ->
                             ms.push("LM $measure", evalfn.evaluate(gres.toQueryResults(), queryJudgments))
-                            ms.push("SPRF.flat $measure", evalfn.evaluate(eres.toQueryResults(), queryJudgments))
-                            ms.push("rSPRF.flat $measure", evalfn.evaluate(weres.toQueryResults(), queryJudgments))
+                            //ms.push("SPRF.flat $measure", evalfn.evaluate(eres.toQueryResults(), queryJudgments))
+                            //ms.push("rSPRF.flat $measure", evalfn.evaluate(weres.toQueryResults(), queryJudgments))
                         }
                     }
         }
@@ -449,3 +481,39 @@ object UsePredictions {
     }
 }
 
+object BuildRelevanceModels {
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val k = argp.get("k", 10)
+        val outP = Parameters.create()
+        FirstPassDoc.load().forEach { qdocs ->
+            println("${qdocs.qid} ${qdocs.qterms}");
+            val scores = qdocs.docs.map { it.score }.toDoubleArray()
+            val logSum = MathUtils.logSumExp(scores)
+            val priors = scores.map { Math.exp(it - logSum) }
+            val relevanceModel = TObjectDoubleHashMap<String>()
+            qdocs.docs.zip(priors).take(k).forEach{(doc, prior) ->
+                val tvec = doc.terms
+                val length = tvec.size.toDouble()
+                val counts = TObjectIntHashMap<String>()
+                tvec.forEach { counts.adjustOrPutValue(it, 1, 1) }
+                counts.forEachEntry { term, count ->
+                    val prob = prior * count.toDouble() / length
+                    relevanceModel.adjustOrPutValue(term, prob, prob)
+                    true
+                }
+            }
+
+            val rmP = Parameters.create()
+            relevanceModel.forEachEntry { term, weight ->
+                rmP.set(term, weight)
+                true
+            }
+            outP.put(qdocs.qid, rmP)
+        }
+
+        StreamCreator.openOutputStream("rm.k$k.json.gz").writer().use {
+            it.println(outP.toPrettyString())
+        }
+    }
+}
