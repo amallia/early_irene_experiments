@@ -13,6 +13,7 @@
         <javaVersion>1.8</javaVersion>
         <kotlinVersion>1.1.4</kotlinVersion>
         <galagoVersion>3.13-SNAPSHOT</galagoVersion>
+        <luceneVersion>7.1.0</luceneVersion>
         <mainClass>edu.umass.cics.ciir.sprf.MainKt</mainClass>
     </properties>
 
@@ -59,10 +60,16 @@
             <artifactId>core</artifactId>
             <version>${galagoVersion}</version>
             <!--<scope>test</scope>-->
+              <exclusions>
+                  <exclusion>
+                      <groupId>edu.stanford.nlp</groupId>
+                      <artifactId>stanford-corenlp</artifactId>
+                  </exclusion>
+              </exclusions>
           </dependency>
 
 
-        </dependencies>
+    </dependencies>
 
         <build>
           <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>

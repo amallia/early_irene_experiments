@@ -19,14 +19,17 @@ fun InputStream.reader(): BufferedReader = BufferedReader(InputStreamReader(this
 
 object BuildFirstRoundRetrieval {
     @JvmStatic fun main(args: Array<String>) {
-        val qrels = DataPaths.getQueryJudgments()
+        val argp = Parameters.parseArgs(args)
+        val dataset = DataPaths.get(argp.get("dataset", "robust"))
+
+        val qrels = dataset.getQueryJudgments()
         val evals = getEvaluators(listOf("ap", "ndcg"))
         val ms = NamedMeasures()
 
         val tok = TagTokenizer()
         StreamCreator.openOutputStream("lm.jsonl.gz").writer().use { output ->
-            DataPaths.getRobustIndex().use { retrieval ->
-                DataPaths.getTitleQueries().forEach { qid, qtext ->
+            dataset.getIndex().use { retrieval ->
+                dataset.getTitleQueries().forEach { qid, qtext ->
                     val queryJudgments = qrels[qid]
                     val qterms = tok.tokenize(qtext).terms
                     val lmBaseline = GExpr("combine").apply { addTerms(qterms) }
@@ -46,6 +49,11 @@ object BuildFirstRoundRetrieval {
                             put("tokenized", doc.terms.joinToString(separator = " "))
                             put("score", it.score)
                             put("rank", it.rank)
+
+                            // fix null doc names.
+                            if (doc.name == null) {
+                                doc.name = ""
+                            }
                         }
                     })
 
@@ -132,11 +140,12 @@ object GenerateTruthAssociations {
         val minTermFreq = argp.get("minTermFreq", 3)
         val testTermWeight = argp.get("testTermWeight", 1)
 
+        val dataset = DataPaths.get(argp.get("dataset", "robust"))
         val evals = getEvaluators(listOf("ap", "ndcg"))
-        val qrels = DataPaths.getQueryJudgments()
+        val qrels = dataset.getQueryJudgments()
 
 
-        DataPaths.getRobustIndex().use { retr ->
+        dataset.getIndex().use { retr ->
             val dmeasures = FirstPassDoc.load().associate { q ->
                 println(q.qid)
                 val qj = qrels[q.qid]
@@ -197,8 +206,10 @@ fun main(args: Array<String>) {
     val biWindowSize = argp.get("biWindow", 15)
     val missingProb = argp.get("missing", -20.0)
 
+    val dataset = DataPaths.get(argp.get("dataset", "robust"))
+
     StreamCreator.openOutputStream("features.txt.gz").writer().use { output ->
-        DataPaths.getRobustIndex().use { retr ->
+        dataset.getIndex().use { retr ->
             val bodyStats = retr.getCollectionStatistics(GExpr("lengths"))
             val N = bodyStats.documentCount.toDouble()
 
@@ -410,7 +421,8 @@ fun main(args: Array<String>) {
 
 object UsePredictions {
     @JvmStatic fun main(args: Array<String>) {
-        val qrels = DataPaths.getQueryJudgments()
+        val dataset = DataPaths.Robust
+        val qrels = dataset.getQueryJudgments()
         val evals = getEvaluators(listOf("ap", "ndcg"))
         val ms = NamedMeasures()
 
@@ -420,8 +432,8 @@ object UsePredictions {
         val testSet = predictions.keys.toCollection(java.util.TreeSet<String>())
 
         val tok = TagTokenizer()
-        DataPaths.getRobustIndex().use { retrieval ->
-            DataPaths.getTitleQueries()
+        dataset.getIndex().use { retrieval ->
+            dataset.getTitleQueries()
                     .filterKeys { testSet.contains(it) }
                     .forEach { qid, qtext ->
                         val queryJudgments = qrels[qid]
