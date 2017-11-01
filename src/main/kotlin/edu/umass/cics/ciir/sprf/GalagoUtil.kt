@@ -9,6 +9,7 @@ import org.lemurproject.galago.core.retrieval.iterator.TransformIterator
 import org.lemurproject.galago.core.retrieval.processing.ScoringContext
 import org.lemurproject.galago.core.retrieval.query.AnnotatedNode
 import org.lemurproject.galago.core.retrieval.query.NodeParameters
+import org.lemurproject.galago.core.util.WordLists
 import org.lemurproject.galago.utility.Parameters
 
 /**
@@ -16,6 +17,8 @@ import org.lemurproject.galago.utility.Parameters
  */
 typealias GExpr = org.lemurproject.galago.core.retrieval.query.Node
 typealias GResults = org.lemurproject.galago.core.retrieval.Results
+
+val inqueryStop: Set<String> = WordLists.getWordListOrDie("inquery")
 
 fun GExpr.push(what: GExpr): GExpr {
     this.addChild(what)
@@ -34,6 +37,20 @@ fun GExpr.setf(key: String, v: String): GExpr {
     this.nodeParameters!!.set(key, v)
     return this
 }
+
+fun GExpr.collectTerms(): String {
+    val sb = ArrayList<String>()
+    collectTerms(this, sb)
+    return sb.joinToString(separator = " ")
+}
+fun collectTerms(q: GExpr, out: MutableList<String>) {
+    if (q.isText) {
+        out.add(q.defaultParameter)
+    } else {
+        q.childIterator.forEach { collectTerms(it, out) }
+    }
+}
+
 fun GResults.toQueryResults(): QueryResults = QueryResults(this.scoredDocuments)
 
 fun NodeStatistics.cfProbability(fieldStats: FieldStatistics): Double = this.nodeFrequency.toDouble() / fieldStats.collectionLength.toDouble()

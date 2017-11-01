@@ -196,7 +196,6 @@ object GenerateTruthAssociations {
 
 }
 
-val inqueryStop: Set<String> = WordLists.getWordListOrDie("inquery")
 
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)

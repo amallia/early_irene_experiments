@@ -54,9 +54,13 @@ fun main(args: Array<String>) {
                 }
 
                 evals.forEach { measure, evalfn ->
-                    val score = evalfn.evaluate(gres.toQueryResults(), queryJudgments)
-                    ms.push("LM $measure", score)
-                    qjson.put(measure, score)
+                    try {
+                        val score = evalfn.evaluate(gres.toQueryResults(), queryJudgments)
+                        ms.push("LM $measure", score)
+                        qjson.put(measure, score)
+                    } catch (npe: NullPointerException) {
+                        System.err.println("NULL in eval...")
+                    }
                 }
 
                 output.println(qjson);
