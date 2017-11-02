@@ -4,6 +4,7 @@ import edu.umass.cics.ciir.sprf.*
 import gnu.trove.map.hash.TObjectDoubleHashMap
 import gnu.trove.map.hash.TObjectIntHashMap
 import org.lemurproject.galago.core.eval.EvalDoc
+import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QueryResults
 import org.lemurproject.galago.core.retrieval.query.Node
 import org.lemurproject.galago.utility.Parameters
@@ -23,8 +24,7 @@ class LTRDocByFeature(val feature: String, val doc: LTRDoc, rank: Int, score: Do
 }
 
 data class LTRDoc(val name: String, val features: HashMap<String, Double>, val rank: Int, val tokenized: String) {
-    val terms: List<String>
-        get() = tokenized.split(" ")
+    val terms: List<String> = tokenized.split(" ")
     val freqs = BagOfWords(terms)
 
     constructor(p: Parameters): this(p.getString("id"),
@@ -33,6 +33,13 @@ data class LTRDoc(val name: String, val features: HashMap<String, Double>, val r
                     Pair("title-ql-prior", p.getDouble("title-ql-prior"))),
             p.getInt("rank"),
             p.getString("tokenized"))
+
+    fun toJSONFeatures(qrels: QueryJudgments, qid: String) = Parameters.create().apply {
+        set("label", qrels[name])
+        set("qid", qid)
+        set("features", Parameters.wrap(features))
+        set("name", name)
+    }
 }
 
 data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>, val docs: List<LTRDoc>) {
@@ -50,6 +57,8 @@ data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>
             set("working", whitelist)
         }
     }
+
+    fun toJSONFeatures(qrels: QueryJudgments) = docs.map { it.toJSONFeatures(qrels, qid) }
 }
 
 fun forEachQuery(dsName: String, doFn: (LTRQuery) -> Unit) {
@@ -138,67 +147,55 @@ fun main(args: Array<String>) {
     val evals = getEvaluators(listOf("ap", "ndcg"))
     val ms = NamedMeasures()
     val qrels = dataset.getQueryJudgments()
-    val k = 100
+    val fbTerms = 100
     val rmLambda = 0.2
 
-    dataset.getIndex().use { retr ->
-        val lengths = retr.getCollectionStatistics(GExpr("lengths"))
-        val env = RREnv(retr)
-        forEachQuery(dsName) { q ->
-            val queryJudgments = qrels[q.qid]
-            val rm = computeRelevanceModel(q.docs, "title-ql-prior", 10)
-            val wt = normalize(rm.toTerms(k))
-            println(wt.map { it.term })
-            println(q.qterms)
-            //println(exp.collectTerms())
-            val mu = env.mu
+    StreamCreator.openOutputStream("$dsName.features.jsonl.gz").writer().use { out ->
+        dataset.getIndex().use { retr ->
+            val env = RREnv(retr)
+            forEachQuery(dsName) { q ->
+                val queryJudgments = qrels[q.qid]
+                println(q.qterms)
 
-            val oq_exprs = q.qterms.map { env.term(it) }
-            val rme_exprs = wt.map { env.term(it.term).weighted(it.score) }
+                val feature_exprs = hashMapOf<String, RRExpr>(
+                        Pair("bm25", env.bm25(q.qterms)),
+                        Pair("ql", env.ql(q.qterms)),
+                        Pair("avgwl", RRAvgWordLength(env)),
+                        Pair("docl", RRDocLength(env)),
+                        Pair("meantp", env.mean(q.qterms.map { RRTermPosition(env, it) })),
+                        Pair("jaccard-stop", RRJaccardSimilarity(env, inqueryStop)),
+                        Pair("length", RRDocLength(env))
+                )
 
-            val rm3_expr = env.sum(
-                    env.feature("title-ql").weighted(rmLambda),
-                    env.sum(rme_exprs).weighted(1.0 - rmLambda).checkNaNs())
-
-            val terms = wt.map { it.term }.toHashSet()
-            terms.addAll(q.qterms)
-            val qstats = terms
-                    .associate { Pair(it, retr.getNodeStatistics(GExpr("counts", it))) }
-
-            val bgs = qstats.mapValues { (_,nstats) -> nstats.cfProbability(lengths) }
-
-            q.docs.forEachIndexed { i, doc ->
-                val freqs = doc.freqs
-
-                val length = doc.freqs.length + mu;
-                val rmScores = wt.map { (weight, term) ->
-                    val c = freqs.count(term)
-                    weight * (Math.log((c + mu * bgs[term]!!) / length))
-                }.toDoubleArray()
-
-                val rmScore = rmScores.sum()
-
-                doc.features.put("rm-k$k", rmScore)
-                val origQ = doc.features["title-ql"]!! * (rmLambda)
-                val rmQ = ((1.0 - rmLambda) * rmScore) + origQ
-                doc.features.put("rm-k$k", rmQ);
-
-                doc.features.put("rm3-k$k", rm3_expr.eval(doc))
-            }
-
-            arrayListOf<String>("rm-k$k", "rm3-k$k", "title-ql").forEach { method ->
-                evals.forEach { measure, evalfn ->
-                    val score = try {
-                        evalfn.evaluate(q.toQResults(method), queryJudgments)
-                    } catch (npe: NullPointerException) {
-                        System.err.println("NULL in eval...")
-                        -Double.MAX_VALUE
-                    }
-                    ms.push("$measure.$method", score)
+                arrayListOf<Int>(5, 10, 25).forEach { fbDocs ->
+                    val rm = computeRelevanceModel(q.docs, "title-ql-prior", fbDocs)
+                    val wt = normalize(rm.toTerms(fbTerms))
+                    val rme_exprs = wt.map { env.term(it.term).weighted(it.score) }
+                    feature_exprs.put("rm3-k$fbDocs", env.feature("title-ql").mixed(rmLambda, env.sum(rme_exprs)))
+                    feature_exprs.put("jaccard-rm3-k$fbDocs", RRJaccardSimilarity(env, wt.map { it.term }.toSet()))
                 }
-            }
 
-            println(ms.means())
+                q.docs.forEachIndexed { i, doc ->
+                    feature_exprs.forEach { fname, fexpr ->
+                        doc.features.put(fname, fexpr.eval(doc))
+                    }
+                }
+
+                arrayListOf<String>("rm3-k5", "rm3-k10", "rm3-k25", "bm25", "title-ql").forEach { method ->
+                    evals.forEach { measure, evalfn ->
+                        val score = try {
+                            evalfn.evaluate(q.toQResults(method), queryJudgments)
+                        } catch (npe: NullPointerException) {
+                            System.err.println("NULL in eval...")
+                            -Double.MAX_VALUE
+                        }
+                        ms.push("$measure.$method", score)
+                    }
+                }
+
+                q.toJSONFeatures(queryJudgments).forEach { out.println(it) }
+                println(ms.means())
+            }
         }
     }
     println(ms.means())
