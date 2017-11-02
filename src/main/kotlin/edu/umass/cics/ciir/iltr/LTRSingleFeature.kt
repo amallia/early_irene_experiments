@@ -42,6 +42,14 @@ data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>
         Ranked.setRanksByScore(ranked)
         return QueryResults(ranked)
     }
+
+    fun whitelistParameters(): Parameters {
+        val whitelist = docs.map { it.name }.toList()
+        return Parameters.create().apply {
+            set("requested", whitelist.size)
+            set("working", whitelist)
+        }
+    }
 }
 
 fun forEachQuery(dsName: String, doFn: (LTRQuery) -> Unit) {
@@ -135,6 +143,7 @@ fun main(args: Array<String>) {
 
     dataset.getIndex().use { retr ->
         val lengths = retr.getCollectionStatistics(GExpr("lengths"))
+        val env = RREnv(retr)
         forEachQuery(dsName) { q ->
             val queryJudgments = qrels[q.qid]
             val rm = computeRelevanceModel(q.docs, "title-ql-prior", 10)
@@ -142,31 +151,15 @@ fun main(args: Array<String>) {
             println(wt.map { it.term })
             println(q.qterms)
             //println(exp.collectTerms())
+            val mu = env.mu
 
-            val whitelist = q.docs.map { it.name }.toList()
-            val rm2 = GExpr("combine").apply {
-                setf("norm", false)
-                wt.forEachIndexed { i, wti ->
-                    setf("$i", wti.score)
-                    addChild(GExpr.Text(wti.term))
-                }
-            }
-            val rm3 = GExpr("combine").apply {
-                addChild(GExpr("combine").apply {
-                    addTerms(q.qterms)
-                })
-                addChild(rm2)
-                setf("0", 1.0 - rmLambda)
-                setf("1", rmLambda)
-            }
-            val rm3gres = retr.transformAndExecuteQuery(rm3, Parameters.create().apply {
-                set("requested", whitelist.size)
-                set("working", whitelist)
-            })
+            val oq_exprs = q.qterms.map { env.term(it) }
+            val rme_exprs = wt.map { env.term(it.term).weighted(it.score) }
 
-            val oracle = rm3gres.asDocumentFeatures()
+            val rm3_expr = env.sum(
+                    env.feature("title-ql").weighted(rmLambda),
+                    env.sum(rme_exprs).weighted(1.0 - rmLambda).checkNaNs())
 
-            val mu = 1500.0
             val terms = wt.map { it.term }.toHashSet()
             terms.addAll(q.qterms)
             val qstats = terms
@@ -177,39 +170,23 @@ fun main(args: Array<String>) {
             q.docs.forEachIndexed { i, doc ->
                 val freqs = doc.freqs
 
-                val expected = oracle[doc.name]!!
-
                 val length = doc.freqs.length + mu;
                 val rmScores = wt.map { (weight, term) ->
                     val c = freqs.count(term)
-                    weight * (Math.log((c + mu * bgs[term]!!)) - Math.log(length))
+                    weight * (Math.log((c + mu * bgs[term]!!) / length))
                 }.toDoubleArray()
 
                 val rmScore = rmScores.sum()
 
-
                 doc.features.put("rm-k$k", rmScore)
-                val origQ = doc.features["title-ql"]!! * (1.0 - rmLambda)
-                val rmQ = (rmLambda * rmScore) + origQ
-
-                if (i < 5 && Math.abs(rmQ - expected) > 1e-6) {
-                    println("$expected . $rmQ . $doc")
-                }
+                val origQ = doc.features["title-ql"]!! * (rmLambda)
+                val rmQ = ((1.0 - rmLambda) * rmScore) + origQ
                 doc.features.put("rm-k$k", rmQ);
+
+                doc.features.put("rm3-k$k", rm3_expr.eval(doc))
             }
 
-
-            evals.forEach { measure, evalfn ->
-                val score = try {
-                    evalfn.evaluate(rm3gres.toQueryResults(), queryJudgments)
-                } catch (npe: NullPointerException) {
-                    System.err.println("NULL in eval...")
-                    -Double.MAX_VALUE
-                }
-                ms.push("$measure.GRM3", score)
-            }
-
-            arrayListOf<String>("rm-k$k", "title-ql").forEach { method ->
+            arrayListOf<String>("rm-k$k", "rm3-k$k", "title-ql").forEach { method ->
                 evals.forEach { measure, evalfn ->
                     val score = try {
                         evalfn.evaluate(q.toQResults(method), queryJudgments)
