@@ -116,7 +116,7 @@ fun computeRelevanceModel(docs: List<LTRDoc>, feature: String, depth: Int, flat:
 
         val prior = if (flat) 1.0 else doc.features[feature]!!
         local.forEachEntry {term, count ->
-            if (inqueryStop.contains(term)) return@forEachEntry true
+            if (stopwords.contains(term)) return@forEachEntry true
             val prob = prior * count.toDouble() / length
             rmModel.adjustOrPutValue(term, prob, prob)
             true

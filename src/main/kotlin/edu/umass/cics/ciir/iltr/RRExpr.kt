@@ -24,7 +24,8 @@ sealed class RRExpr(val env: RREnv) {
     fun weighted(weight: Double) = RRWeighted(env, weight, this)
     fun checkNaNs() = RRNaNCheck(env, this)
 }
-class RRNaNCheck(env: RREnv, val inner: RRExpr): RRExpr(env) {
+sealed class RRSingleChildExpr(env: RREnv, val inner: RRExpr): RRExpr(env)
+class RRNaNCheck(env: RREnv, inner: RRExpr): RRSingleChildExpr(env, inner) {
     override fun eval(doc: LTRDoc): Double {
         val score = inner.eval(doc)
         if (java.lang.Double.isNaN(score)) {
@@ -36,23 +37,35 @@ class RRNaNCheck(env: RREnv, val inner: RRExpr): RRExpr(env) {
         return score;
     }
 }
-class RRSum(env: RREnv, val exprs: List<RRExpr>): RRExpr(env) {
+class RRWeighted(env: RREnv, val weight: Double, inner: RRExpr): RRSingleChildExpr(env, inner) {
     override fun eval(doc: LTRDoc): Double {
-        return exprs.map { it.eval(doc) }.sum()
+        return weight * inner.eval(doc)
     }
 }
-class RRMean(env: RREnv, val exprs: List<RRExpr>): RRExpr(env) {
+
+sealed class RRCCExpr(env: RREnv, val exprs: List<RRExpr>): RRExpr(env)
+class RRSum(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
+    override fun eval(doc: LTRDoc): Double {
+        var sum = 0.0;
+        exprs.forEach {
+            sum += it.eval(doc)
+        }
+        return sum
+    }
+}
+class RRMean(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
     val N = exprs.size.toDouble()
     override fun eval(doc: LTRDoc): Double {
-        return exprs.map { it.eval(doc) }.sum() / N
+        var sum = 0.0;
+        exprs.forEach {
+            sum += it.eval(doc)
+        }
+        return sum / N
     }
 }
-class RRWeighted(env: RREnv, val weight: Double, val e: RRExpr): RRExpr(env) {
-    override fun eval(doc: LTRDoc): Double {
-        return weight * e.eval(doc)
-    }
-}
-class RRDirichletTerm(env: RREnv, val term: String, val mu: Double = env.mu) : RRExpr(env) {
+
+sealed class RRLeafExpr(env: RREnv) : RRExpr(env)
+class RRDirichletTerm(env: RREnv, val term: String, val mu: Double = env.mu) : RRLeafExpr(env) {
     val tStats = env.retr.getNodeStatistics(GExpr("counts", term))
     val bgStats = env.lengths
     val bg = mu * tStats.cfProbability(bgStats)
@@ -63,7 +76,7 @@ class RRDirichletTerm(env: RREnv, val term: String, val mu: Double = env.mu) : R
         return Math.log((count + bg) / length)
     }
 }
-class RRFeature(env: RREnv, val name: String): RRExpr(env) {
+class RRFeature(env: RREnv, val name: String): RRLeafExpr(env) {
     override fun eval(doc: LTRDoc): Double {
         return doc.features[name]!!
     }
