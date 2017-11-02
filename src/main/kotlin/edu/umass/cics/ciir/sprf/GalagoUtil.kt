@@ -29,6 +29,10 @@ fun GExpr.setf(key: String, v: Long): GExpr {
     this.nodeParameters!!.set(key, v)
     return this
 }
+fun GExpr.setf(key: String, v: Boolean): GExpr {
+    this.nodeParameters!!.set(key, v)
+    return this
+}
 fun GExpr.setf(key: String, v: Double): GExpr {
     this.nodeParameters!!.set(key, v)
     return this

@@ -1,19 +1,28 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.sprf.GExpr
-import edu.umass.cics.ciir.sprf.inqueryStop
-import edu.umass.cics.ciir.sprf.setf
+import edu.umass.cics.ciir.sprf.*
 import gnu.trove.map.hash.TObjectDoubleHashMap
 import gnu.trove.map.hash.TObjectIntHashMap
+import org.lemurproject.galago.core.eval.EvalDoc
+import org.lemurproject.galago.core.eval.QueryResults
 import org.lemurproject.galago.core.retrieval.query.Node
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
+import org.lemurproject.galago.utility.lists.Ranked
 
 /**
  * @author jfoley
  */
 
-data class LTRDoc(val name: String, val features: Map<String, Double>, val rank: Int, val tokenized: String) {
+class LTRDocByFeature(val feature: String, val doc: LTRDoc, rank: Int, score: Double) : EvalDoc, Ranked(rank, score) {
+    override fun getRank(): Int = rank
+    override fun getScore(): Double = score
+    override fun getName(): String = doc.name
+    override fun clone(score: Double): LTRDocByFeature = LTRDocByFeature(feature, doc, rank, score)
+    constructor(feature: String, doc: LTRDoc) : this(feature, doc, -1, doc.features[feature]!!)
+}
+
+data class LTRDoc(val name: String, val features: HashMap<String, Double>, val rank: Int, val tokenized: String) {
     val terms: List<String>
         get() = tokenized.split(" ")
     val freqs = BagOfWords(terms)
@@ -26,7 +35,14 @@ data class LTRDoc(val name: String, val features: Map<String, Double>, val rank:
             p.getString("tokenized"))
 }
 
-data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>, val docs: List<LTRDoc>)
+data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>, val docs: List<LTRDoc>) {
+    fun ranked(ftr: String): ArrayList<LTRDocByFeature> = docs.mapTo(ArrayList<LTRDocByFeature>(docs.size)) { LTRDocByFeature(ftr, it) }
+    fun toQResults(ftr: String): QueryResults {
+        val ranked = ranked(ftr)
+        Ranked.setRanksByScore(ranked)
+        return QueryResults(ranked)
+    }
+}
 
 fun forEachQuery(dsName: String, doFn: (LTRQuery) -> Unit) {
     StreamCreator.openInputStream("$dsName.qlpool.jsonl.gz").reader().useLines { lines ->
@@ -76,6 +92,10 @@ class BagOfWords(terms: List<String>) {
         terms.forEach { counts.adjustOrPutValue(it, 1, 1) }
     }
     fun prob(term: String): Double = counts.get(term) / length
+    fun count(term: String): Int {
+        if (!counts.containsKey(term)) return 0
+        return counts[term]
+    }
 }
 
 fun computeRelevanceModel(docs: List<LTRDoc>, feature: String, depth: Int, flat: Boolean = false, stopwords: Set<String> = inqueryStop): RelevanceModel {
@@ -98,22 +118,111 @@ fun computeRelevanceModel(docs: List<LTRDoc>, feature: String, depth: Int, flat:
     return RelevanceModel(rmModel)
 }
 
+fun normalize(wt: List<WeightedTerm>): List<WeightedTerm> {
+    val norm = wt.map { it.score }.sum()
+    return wt.map { WeightedTerm(it.score / norm, it.term) }
+}
+
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val dsName = argp.get("dataset", "robust")
-    //val dataset = DataPaths.get(dsName)
-    forEachQuery(dsName) {
-        val rm = computeRelevanceModel(it.docs, "title-ql-prior", 10)
-        val wt = rm.toTerms(100)
-        //println(it.qterms)
-        //println(exp.collectTerms())
+    val dataset = DataPaths.get(dsName)
+    val evals = getEvaluators(listOf("ap", "ndcg"))
+    val ms = NamedMeasures()
+    val qrels = dataset.getQueryJudgments()
+    val k = 100
+    val rmLambda = 0.2
 
-        it.docs.forEach { doc ->
-            val local = TObjectIntHashMap<String>()
-            val terms = doc.terms
-            val length = terms.size.toDouble()
-            terms.forEach { local.adjustOrPutValue(it, 1, 1) }
+    dataset.getIndex().use { retr ->
+        val lengths = retr.getCollectionStatistics(GExpr("lengths"))
+        forEachQuery(dsName) { q ->
+            val queryJudgments = qrels[q.qid]
+            val rm = computeRelevanceModel(q.docs, "title-ql-prior", 10)
+            val wt = normalize(rm.toTerms(k))
+            println(wt.map { it.term })
+            println(q.qterms)
+            //println(exp.collectTerms())
 
+            val whitelist = q.docs.map { it.name }.toList()
+            val rm2 = GExpr("combine").apply {
+                setf("norm", false)
+                wt.forEachIndexed { i, wti ->
+                    setf("$i", wti.score)
+                    addChild(GExpr.Text(wti.term))
+                }
+            }
+            val rm3 = GExpr("combine").apply {
+                addChild(GExpr("combine").apply {
+                    addTerms(q.qterms)
+                })
+                addChild(rm2)
+                setf("0", 1.0 - rmLambda)
+                setf("1", rmLambda)
+            }
+            val rm3gres = retr.transformAndExecuteQuery(rm3, Parameters.create().apply {
+                set("requested", whitelist.size)
+                set("working", whitelist)
+            })
+
+            val oracle = rm3gres.asDocumentFeatures()
+
+            val mu = 1500.0
+            val terms = wt.map { it.term }.toHashSet()
+            terms.addAll(q.qterms)
+            val qstats = terms
+                    .associate { Pair(it, retr.getNodeStatistics(GExpr("counts", it))) }
+
+            val bgs = qstats.mapValues { (_,nstats) -> nstats.cfProbability(lengths) }
+
+            q.docs.forEachIndexed { i, doc ->
+                val freqs = doc.freqs
+
+                val expected = oracle[doc.name]!!
+
+                val length = doc.freqs.length + mu;
+                val rmScores = wt.map { (weight, term) ->
+                    val c = freqs.count(term)
+                    weight * (Math.log((c + mu * bgs[term]!!)) - Math.log(length))
+                }.toDoubleArray()
+
+                val rmScore = rmScores.sum()
+
+
+                doc.features.put("rm-k$k", rmScore)
+                val origQ = doc.features["title-ql"]!! * (1.0 - rmLambda)
+                val rmQ = (rmLambda * rmScore) + origQ
+
+                if (i < 5 && Math.abs(rmQ - expected) > 1e-6) {
+                    println("$expected . $rmQ . $doc")
+                }
+                doc.features.put("rm-k$k", rmQ);
+            }
+
+
+            evals.forEach { measure, evalfn ->
+                val score = try {
+                    evalfn.evaluate(rm3gres.toQueryResults(), queryJudgments)
+                } catch (npe: NullPointerException) {
+                    System.err.println("NULL in eval...")
+                    -Double.MAX_VALUE
+                }
+                ms.push("$measure.GRM3", score)
+            }
+
+            arrayListOf<String>("rm-k$k", "title-ql").forEach { method ->
+                evals.forEach { measure, evalfn ->
+                    val score = try {
+                        evalfn.evaluate(q.toQResults(method), queryJudgments)
+                    } catch (npe: NullPointerException) {
+                        System.err.println("NULL in eval...")
+                        -Double.MAX_VALUE
+                    }
+                    ms.push("$measure.$method", score)
+                }
+            }
+
+            println(ms.means())
         }
     }
+    println(ms.means())
 }

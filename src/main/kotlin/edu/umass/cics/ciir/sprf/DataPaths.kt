@@ -82,6 +82,7 @@ object DataPaths {
     val Gov2 = Gov2()
 
     fun get(name: String): IRDataset = when(name) {
+        "robust" -> Robust
         "robust04" -> Robust
         "gov2" -> Gov2
         else -> notImpl(name)
