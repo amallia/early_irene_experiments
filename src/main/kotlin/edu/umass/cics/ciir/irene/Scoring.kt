@@ -42,6 +42,7 @@ class IQModelWeight(val q: QExpr, val iqm: IreneQueryModel, val searcher: IndexS
     }
 
     override fun scorer(context: LeafReaderContext?): Scorer {
+        val ctx = IQContext(searcher, context!!)
         return IreneQueryScorer(exprToEval(q, ctx))
     }
 }
