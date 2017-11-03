@@ -16,7 +16,7 @@ class NamedMeasures {
     fun means(): TreeMap<String, Double> = measures.mapValuesTo(TreeMap()) { (_,arr) -> arr.mean() }
 }
 
-fun getEvaluators(metricNames: List<String>) = metricNames.associate { Pair(it, QueryEvaluatorFactory.create(it, Parameters.create())) }
+fun getEvaluators(metricNames: List<String>) = metricNames.associate { Pair(it, QueryEvaluatorFactory.create(it, Parameters.create())!!) }
 
 val LN2 = Math.log(2.0)
 fun log2(x: Double): Double = Math.log(x) / LN2
