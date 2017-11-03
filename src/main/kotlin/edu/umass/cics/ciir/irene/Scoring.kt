@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.irene
 
+import edu.umass.cics.ciir.sprf.DataPaths
 import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.index.NumericDocValues
 import org.apache.lucene.index.Term
@@ -32,7 +33,7 @@ data class IQContext(val searcher: IndexSearcher, val context: LeafReaderContext
     }
 }
 
-class IQModelWeight(val q: QExpr, val iqm: IreneQueryModel, val searcher: IndexSearcher) : Weight(iqm) {
+class IQModelWeight(val q: QExpr, iqm: IreneQueryModel, val searcher: IndexSearcher) : Weight(iqm) {
     override fun extractTerms(terms: MutableSet<Term>?) {
         TODO("not implemented")
     }
@@ -199,9 +200,23 @@ class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) 
 }
 
 fun main(args: Array<String>) {
+    val dataset = DataPaths.Robust
+    val qrels = dataset.getQueryJudgments()
+    val queries = dataset.getTitleQueries()
+
     IreneIndex(IndexParams().apply {
         withPath(File("robust.irene2"))
     }).use { index ->
         println(index.getStats(Term("body", "president")))
+
+        val q = SumExpr(index.analyzer.tokenize("body", "international organized crime").map { DirQLExpr(TextExpr(it)) })
+
+        val qmodel = IreneQueryModel(index, index.language, q)
+        val top30 = index.searcher.search(qmodel, 30)
+        top30.scoreDocs.forEach { sdoc ->
+            val title = index.getField(sdoc.doc, "body")?.stringValue() ?: "MISSING-BODY"
+            println("\t${title.substring(0, 60)} ${sdoc.score}")
+        }
+
     }
 }
