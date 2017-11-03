@@ -179,7 +179,7 @@ class SumEval(children: List<QueryEvalNode>) : OrEval(children) {
     override fun estimateDF(): Long = numHits
 }
 
-abstract class SingleChildEval<T : QueryEvalNode> : QueryEvalNode() {
+abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode() {
     abstract val child: T
     override fun docID(): Int = child.docID()
     override fun advance(target: Int): Int = child.advance(target)
@@ -200,7 +200,7 @@ class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) 
 
 fun main(args: Array<String>) {
     IreneIndex(IndexParams().apply {
-        withPath(File("/media/jfoley/flash/robust.irene"))
+        withPath(File("robust.irene2"))
     }).use { index ->
         println(index.getStats(Term("body", "president")))
     }

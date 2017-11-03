@@ -8,12 +8,20 @@ import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper
 import org.apache.lucene.analysis.standard.StandardFilter
 import org.apache.lucene.analysis.standard.StandardTokenizer
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute
+import org.apache.lucene.benchmark.byTask.feeds.DocData
+import org.apache.lucene.benchmark.byTask.feeds.NoMoreDataException
+import org.apache.lucene.benchmark.byTask.feeds.TrecContentSource
+import org.apache.lucene.benchmark.byTask.utils.Config
+import org.apache.lucene.document.Field
+import org.apache.lucene.document.StringField
+import org.apache.lucene.document.TextField
 import org.apache.lucene.index.*
 import org.apache.lucene.search.*
 import org.apache.lucene.search.similarities.Similarity
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
+import java.util.*
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.atomic.AtomicLong
 
@@ -195,3 +203,44 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
         return CountStats(termStats.docFreq(), termStats.totalTermFreq(), cstats.sumTotalTermFreq(), cstats.docCount())
     }
 }
+
+fun main(args: Array<String>) {
+    val tcs = TrecContentSource()
+    tcs.config = Config(Properties().apply {
+        setProperty("tests.verbose", "false")
+        setProperty("content.source.excludeIteration", "true")
+        setProperty("content.source.forever", "false")
+        setProperty("docs.dir", "/media/jfoley/flash/raw/robust04/data/")
+    })
+
+    IreneIndexer.build {
+        withPath(File("robust.irene2"))
+        create()
+    }.use { writer ->
+        while(true) {
+            var doc = DocData()
+            try {
+                doc = tcs.getNextDocData(doc)
+            } catch (e : NoMoreDataException) {
+                break
+            } catch (e : Throwable) {
+                e.printStackTrace(System.err)
+            }
+
+            val fields = arrayListOf<IndexableField>()
+            fields.add(StringField("id", doc.name, Field.Store.YES))
+            if (doc.title != null) {
+                fields.add(TextField("title", doc.title, Field.Store.YES))
+            }
+            fields.add(TextField("body", doc.body, Field.Store.YES))
+            if (doc.date != null) {
+                fields.add(StringField("date", doc.date, Field.Store.YES))
+            }
+            if(doc.props.size > 0) {
+                println(doc.props)
+            }
+            writer.push(fields)
+        }
+    }
+}
+
