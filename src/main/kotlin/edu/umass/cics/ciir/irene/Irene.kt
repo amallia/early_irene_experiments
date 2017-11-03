@@ -156,6 +156,7 @@ inline fun <T> lucene_try(action: ()->T): T? {
 }
 
 class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
+    constructor(params: IndexParams) : this(params.directory!!, params)
     val idFieldName = params.idFieldName
     val reader = DirectoryReader.open(io.open().use())
     val searcher = IndexSearcher(reader, ForkJoinPool.commonPool())

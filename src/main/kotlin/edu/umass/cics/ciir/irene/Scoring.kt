@@ -5,6 +5,7 @@ import org.apache.lucene.index.NumericDocValues
 import org.apache.lucene.index.Term
 import org.apache.lucene.index.TermContext
 import org.apache.lucene.search.*
+import java.io.File
 
 /**
  *
@@ -195,4 +196,12 @@ class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) 
     }
     override fun count(doc: Int): Int = TODO("not yet")
     override fun explain(doc: Int): Explanation = TODO("not yet")
+}
+
+fun main(args: Array<String>) {
+    IreneIndex(IndexParams().apply {
+        withPath(File("/media/jfoley/flash/robust.irene"))
+    }).use { index ->
+        println(index.getStats(Term("body", "president")))
+    }
 }
