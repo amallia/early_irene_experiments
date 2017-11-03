@@ -1,11 +1,15 @@
 package edu.umass.cics.ciir.irene
 
 import edu.umass.cics.ciir.sprf.DataPaths
+import edu.umass.cics.ciir.sprf.NamedMeasures
+import edu.umass.cics.ciir.sprf.getEvaluators
 import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.index.NumericDocValues
 import org.apache.lucene.index.Term
 import org.apache.lucene.index.TermContext
 import org.apache.lucene.search.*
+import org.lemurproject.galago.core.eval.QueryResults
+import org.lemurproject.galago.core.eval.SimpleEvalDoc
 import java.io.File
 
 /**
@@ -203,20 +207,37 @@ fun main(args: Array<String>) {
     val dataset = DataPaths.Robust
     val qrels = dataset.getQueryJudgments()
     val queries = dataset.getTitleQueries()
+    val evals = getEvaluators(listOf("ap", "ndcg"))
+    val ms = NamedMeasures()
 
     IreneIndex(IndexParams().apply {
         withPath(File("robust.irene2"))
     }).use { index ->
         println(index.getStats(Term("body", "president")))
 
-        val q = SumExpr(index.analyzer.tokenize("body", "international organized crime").map { DirQLExpr(TextExpr(it)) })
+        queries.forEach { qid, qtext ->
+            val q = SumExpr(index.analyzer.tokenize("body", qtext).map { DirQLExpr(TextExpr(it)) })
 
-        val qmodel = IreneQueryModel(index, index.language, q)
-        val top30 = index.searcher.search(qmodel, 30)
-        top30.scoreDocs.forEach { sdoc ->
-            val title = index.getField(sdoc.doc, "body")?.stringValue() ?: "MISSING-BODY"
-            println("\t${title.substring(0, 60)} ${sdoc.score}")
+            val qmodel = IreneQueryModel(index, index.language, q)
+            val topK = index.searcher.search(qmodel, 1000)
+            val results = QueryResults(topK.scoreDocs.mapIndexed { i, sdoc ->
+                val name = index.getField(sdoc.doc, "id")?.stringValue() ?: "null"
+                SimpleEvalDoc(name, i+1, sdoc.score.toDouble())
+            })
+
+            val queryJudgments = qrels[qid]
+            evals.forEach { measure, evalfn ->
+                val score = try {
+                    evalfn.evaluate(results, queryJudgments)
+                } catch (npe: NullPointerException) {
+                    System.err.println("NULL in eval...")
+                    -Double.MAX_VALUE
+                }
+                ms.push("$measure.irene2", score)
+            }
+
+            println(ms.means())
         }
-
     }
+    println(ms.means())
 }
