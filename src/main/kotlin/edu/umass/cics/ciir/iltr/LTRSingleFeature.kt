@@ -34,7 +34,7 @@ data class LTRDoc(val name: String, val features: HashMap<String, Double>, val r
             p.getInt("rank"),
             p.getString("tokenized"))
 
-    fun toJSONFeatures(qrels: QueryJudgments, qid: String) = Parameters.create().apply {
+    fun toJSONFeatures(qrels: QueryJudgments, qid: String) = pmake {
         set("label", qrels[name])
         set("qid", qid)
         set("features", Parameters.wrap(features))
@@ -52,7 +52,7 @@ data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>
 
     fun whitelistParameters(): Parameters {
         val whitelist = docs.map { it.name }.toList()
-        return Parameters.create().apply {
+        return pmake {
             set("requested", whitelist.size)
             set("working", whitelist)
         }

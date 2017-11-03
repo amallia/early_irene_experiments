@@ -28,7 +28,7 @@ fun main(args: Array<String>) {
                 val lmBaseline = GExpr("combine").apply { addTerms(qterms) }
                 println("$qid $lmBaseline")
 
-                val gres = retrieval.transformAndExecuteQuery(lmBaseline, Parameters.create().apply { set("requested", depth) })
+                val gres = retrieval.transformAndExecuteQuery(lmBaseline, pmake { set("requested", depth) })
                 val rawDocs = retrieval.getDocuments(gres.resultSet().toList(), Document.DocumentComponents.All)
 
                 val scores = gres.scoredDocuments.map { it.score }.toDoubleArray()
@@ -37,7 +37,7 @@ fun main(args: Array<String>) {
                 val docPs = gres.scoredDocuments.map {sdoc ->
                     val doc = rawDocs[sdoc.name]!!
 
-                    Parameters.create().apply {
+                    pmake {
                         set("id", sdoc.name)
                         set("title-ql", sdoc.score)
                         set("title-ql-prior", Math.exp(sdoc.score - logSumExp))
@@ -46,7 +46,7 @@ fun main(args: Array<String>) {
                     }
                 }
 
-                val qjson = Parameters.create().apply {
+                val qjson = pmake {
                     set("qid", qid)
                     set("docs", docPs)
                     set("qtext", qtext)

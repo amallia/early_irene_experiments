@@ -43,7 +43,7 @@ object BuildFirstRoundRetrieval {
                     val first50 = gres.scoredDocuments.take(50)
                     qjson.put("docs", first50.map {
                         val doc = retrieval.getDocument(it.documentName, Document.DocumentComponents.JustTerms)
-                        Parameters.create().apply {
+                        pmake {
                             put("id", doc.name)
                             put("tokenized", doc.terms.joinToString(separator = " "))
                             put("score", it.score)
@@ -156,7 +156,7 @@ object GenerateTruthAssociations {
                 val origQ = GExpr("combine")
                 origQ.addTerms(q.qterms)
                 val gres = retr.transformAndExecuteQuery(origQ.clone())
-                val workingP = Parameters.create().apply {
+                val workingP = pmake {
                     val ids = gres.scoredDocuments.map { it.name }
                     set("working", ids)
                     set("requested", ids.size.toLong())
@@ -266,7 +266,7 @@ fun main(args: Array<String>) {
                         }
                     }
 
-                    val workingP = Parameters.create().apply {
+                    val workingP = pmake {
                         set("working", whitelist)
                         set("requested", whitelist.size)
                     }
@@ -439,7 +439,7 @@ object UsePredictions {
                         val lmBaseline = GExpr("combine").apply { addTerms(qterms) }
                         println("$qid $lmBaseline")
                         val gres = retrieval.transformAndExecuteQuery(lmBaseline.clone())
-                        val workingP = Parameters.create().apply {
+                        val workingP = pmake {
                             val ids = gres.scoredDocuments.map { it.name }
                             set("working", ids)
                             set("requested", ids.size.toLong())

@@ -84,3 +84,6 @@ val extraOpIndexParams = Parameters.create().apply {
         set("count-to-score", CountToScoreIter::class.java.canonicalName)
     })
 }
+
+fun pmake(block: Parameters.() -> Unit): Parameters = Parameters.create().apply(block)
+
