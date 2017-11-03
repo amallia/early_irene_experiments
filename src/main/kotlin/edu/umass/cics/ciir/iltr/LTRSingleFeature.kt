@@ -150,7 +150,7 @@ fun main(args: Array<String>) {
     val fbTerms = 100
     val rmLambda = 0.2
 
-    StreamCreator.openOutputStream("$dsName.features.jsonl.gz").writer().use { out ->
+    StreamCreator.openOutputStream("$dsName.features.jsonl.gz").printer().use { out ->
         dataset.getIndex().use { retr ->
             val env = RREnv(retr)
             forEachQuery(dsName) { q ->

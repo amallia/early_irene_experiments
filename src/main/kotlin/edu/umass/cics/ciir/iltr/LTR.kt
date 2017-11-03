@@ -20,7 +20,7 @@ fun main(args: Array<String>) {
     val depth = 200
 
     val tok = TagTokenizer()
-    StreamCreator.openOutputStream("$dsName.qlpool.jsonl.gz").writer().use { output ->
+    StreamCreator.openOutputStream("$dsName.qlpool.jsonl.gz").printer().use { output ->
         dataset.getIndex().use { retrieval ->
             dataset.getTitleQueries().forEach { qid, qtext ->
                 val queryJudgments = qrels[qid]

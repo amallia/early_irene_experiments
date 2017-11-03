@@ -6,7 +6,6 @@ import gnu.trove.map.hash.TObjectDoubleHashMap
 import gnu.trove.map.hash.TObjectIntHashMap
 import org.lemurproject.galago.core.parse.Document
 import org.lemurproject.galago.core.parse.TagTokenizer
-import org.lemurproject.galago.core.util.WordLists
 import org.lemurproject.galago.utility.MathUtils
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
@@ -14,7 +13,7 @@ import java.io.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.streams.toList
 
-fun OutputStream.writer(): PrintWriter = PrintWriter(OutputStreamWriter(this, Charsets.UTF_8))
+fun OutputStream.printer(): PrintWriter = PrintWriter(OutputStreamWriter(this, Charsets.UTF_8))
 fun InputStream.reader(): BufferedReader = BufferedReader(InputStreamReader(this, Charsets.UTF_8))
 
 object BuildFirstRoundRetrieval {
@@ -27,7 +26,7 @@ object BuildFirstRoundRetrieval {
         val ms = NamedMeasures()
 
         val tok = TagTokenizer()
-        StreamCreator.openOutputStream("lm.jsonl.gz").writer().use { output ->
+        StreamCreator.openOutputStream("lm.jsonl.gz").printer().use { output ->
             dataset.getIndex().use { retrieval ->
                 dataset.getTitleQueries().forEach { qid, qtext ->
                     val queryJudgments = qrels[qid]
@@ -188,7 +187,7 @@ object GenerateTruthAssociations {
                 Pair(q.qid, Parameters.wrap(truths))
             }
 
-            StreamCreator.openOutputStream("truths.json.gz").writer().use { out ->
+            StreamCreator.openOutputStream("truths.json.gz").printer().use { out ->
                 out.println(Parameters.wrap(dmeasures).toPrettyString())
             }
         }
@@ -207,7 +206,7 @@ fun main(args: Array<String>) {
 
     val dataset = DataPaths.get(argp.get("dataset", "robust"))
 
-    StreamCreator.openOutputStream("features.txt.gz").writer().use { output ->
+    StreamCreator.openOutputStream("features.txt.gz").printer().use { output ->
         dataset.getIndex().use { retr ->
             val bodyStats = retr.getCollectionStatistics(GExpr("lengths"))
             val N = bodyStats.documentCount.toDouble()
@@ -523,7 +522,7 @@ object BuildRelevanceModels {
             outP.put(qdocs.qid, rmP)
         }
 
-        StreamCreator.openOutputStream("rm.k$k.json.gz").writer().use {
+        StreamCreator.openOutputStream("rm.k$k.json.gz").printer().use {
             it.println(outP.toPrettyString())
         }
     }

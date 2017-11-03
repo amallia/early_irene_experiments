@@ -7,3 +7,5 @@
 target
 *-pom.xml
 *.ipynb
+*.json
+*.ranklib
