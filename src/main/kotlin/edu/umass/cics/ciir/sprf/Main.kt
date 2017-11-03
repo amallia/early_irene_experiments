@@ -71,13 +71,13 @@ object BuildFirstRoundRetrieval {
 }
 
 data class FirstPassQuery(val qid: String, val qterms: List<String>, val docs: List<FirstPassDoc>) {
-    constructor(p: Parameters) : this(p.getString("qid"), p.getList("qterms", String::class.java), p.getList("docs", Parameters::class.java).map {FirstPassDoc(it)})
+    constructor(p: Parameters) : this(p.getStr("qid"), p.getList("qterms", String::class.java), p.getList("docs", Parameters::class.java).map {FirstPassDoc(it)})
 }
 data class FirstPassDoc(val id: String, val tokenized: String, val score: Double, val rank: Int) {
     val terms: List<String>
         get() = tokenized.split(" ")
 
-    constructor(p: Parameters) : this(p.getString("id"), p.getString("tokenized"), p.getDouble("score"), p.getInt("rank"))
+    constructor(p: Parameters) : this(p.getStr("id"), p.getStr("tokenized"), p.getDouble("score"), p.getInt("rank"))
 
     companion object {
         fun load(path: String="lm.jsonl.gz"): List<FirstPassQuery> {

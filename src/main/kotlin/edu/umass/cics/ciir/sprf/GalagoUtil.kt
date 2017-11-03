@@ -87,3 +87,5 @@ val extraOpIndexParams = Parameters.create().apply {
 
 fun pmake(block: Parameters.() -> Unit): Parameters = Parameters.create().apply(block)
 
+fun Parameters.getStr(key: String): String = this.getString(key)!!
+

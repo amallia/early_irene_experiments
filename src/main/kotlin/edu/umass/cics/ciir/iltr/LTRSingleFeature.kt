@@ -27,12 +27,12 @@ data class LTRDoc(val name: String, val features: HashMap<String, Double>, val r
     val terms: List<String> = tokenized.split(" ")
     val freqs = BagOfWords(terms)
 
-    constructor(p: Parameters): this(p.getString("id"),
+    constructor(p: Parameters): this(p.getStr("id"),
             hashMapOf(
                     Pair("title-ql", p.getDouble("title-ql")),
                     Pair("title-ql-prior", p.getDouble("title-ql-prior"))),
             p.getInt("rank"),
-            p.getString("tokenized"))
+            p.getStr("tokenized"))
 
     fun toJSONFeatures(qrels: QueryJudgments, qid: String) = pmake {
         set("label", qrels[name])
@@ -64,8 +64,8 @@ data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>
 fun forEachQuery(dsName: String, doFn: (LTRQuery) -> Unit) {
     StreamCreator.openInputStream("$dsName.qlpool.jsonl.gz").reader().useLines { lines ->
         lines.map { Parameters.parseStringOrDie(it) }.forEach { qjson ->
-            val qid = qjson.getString("qid")
-            val qtext = qjson.getString("qtext")
+            val qid = qjson.getStr("qid")
+            val qtext = qjson.getStr("qtext")
             val qterms = qjson.getAsList("qterms", String::class.java)
 
             val docs = qjson.getAsList("docs", Parameters::class.java).map { LTRDoc(it) }

@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.iltr
 
+import edu.umass.cics.ciir.sprf.getStr
 import edu.umass.cics.ciir.sprf.printer
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
@@ -37,7 +38,7 @@ fun main(args: Array<String>) {
     StreamCreator.openInputStream(input).reader().useLines { lines ->
         lines.forEach { line ->
             val instance = Parameters.parseStringOrDie(line)
-            val qid = instance.getString("qid")
+            val qid = instance.getStr("qid")
             val features = instance.getMap("features")
             features.keys.forEach { fname ->
                 fstats

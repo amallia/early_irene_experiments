@@ -1,4 +1,4 @@
-package edu.umass.cics.ciir
+package edu.umass.cics.ciir.irene
 
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.LowerCaseFilter
@@ -144,8 +144,6 @@ class IreneIndexer(val params: IndexParams) : Closeable {
     }
     fun open() = IreneIndex(dest, params)
 }
-
-class IreneQueryLanguage { }
 
 inline fun <T> lucene_try(action: ()->T): T? {
     try {
