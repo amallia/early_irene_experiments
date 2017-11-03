@@ -186,4 +186,11 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
         if (text == null) return emptyList()
         return analyzer.tokenize(field, text)
     }
+
+    fun getStats(term: Term): CountStats? {
+        val cstats = searcher.collectionStatistics(term.field())
+        val ctx = TermContext.build(searcher.topReaderContext, term) ?: return null
+        val termStats = searcher.termStatistics(term, ctx) ?: return null
+        return CountStats(termStats.docFreq(), termStats.totalTermFreq(), cstats.sumTotalTermFreq(), cstats.docCount())
+    }
 }

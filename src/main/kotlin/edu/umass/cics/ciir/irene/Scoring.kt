@@ -1,11 +1,54 @@
 package edu.umass.cics.ciir.irene
 
 import org.apache.lucene.search.Explanation
+import org.apache.lucene.search.IndexSearcher
+import org.apache.lucene.search.Weight
 
 /**
  *
  * @author jfoley.
  */
+
+class IreneQueryModel(val index: IreneIndex, val env: IreneQueryLanguage, val q: QExpr) : LuceneQuery() {
+    val exec = env.prepare(index, q)
+
+    override fun createWeight(searcher: IndexSearcher?, needsScores: Boolean, boost: Float): Weight {
+        return super.createWeight(searcher, needsScores, boost)
+    }
+
+    override fun hashCode(): Int {
+        return q.hashCode() + env.hashCode();
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (other is IreneQueryModel) {
+            return q.equals(other.q) && env.equals(other.env)
+        }
+        return false
+    }
+    override fun toString(field: String?): String {
+        return q.toString()
+    }
+}
+
+fun exprToEval(q: QExpr): QueryEvalNode = when(q) {
+    is TextExpr -> TODO()
+    is LuceneExpr -> TODO()
+    is SynonymExpr -> TODO()
+    is AndExpr -> TODO()
+    is OrExpr -> TODO()
+    is SumExpr -> TODO()
+    is MeanExpr -> TODO()
+    is MultExpr -> TODO()
+    is MaxExpr -> TODO()
+    is WeightExpr -> TODO()
+    is DirQLExpr -> TODO()
+    is BM25Expr -> TODO()
+    is CountToScoreExpr -> TODO()
+    is BoolToScoreExpr -> TODO()
+    is CountToBoolExpr -> TODO()
+    is RequireExpr -> TODO()
+}
 
 data class CountStats(val cf: Long, val df: Long, val cl: Long, val dc: Long) {
     fun avgDL() = cl.toDouble() / dc.toDouble();
@@ -24,6 +67,10 @@ interface CountEvalNode : QueryEvalNode {
     fun getCountStats(): CountStats
     fun length(doc: Int): Int
 }
+interface LeafEvalNode : CountEvalNode {
+
+}
+
 abstract class RecursiveEval(val children: List<QueryEvalNode>) : QueryEvalNode {
     val className = this.javaClass.simpleName
     val N = children.size

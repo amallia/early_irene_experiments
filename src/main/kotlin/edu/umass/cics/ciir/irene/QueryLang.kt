@@ -20,48 +20,115 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
     var defaultDirichletMu: Double = 1500.0
     var defaultBM25b: Double = 0.75
     var defaultBM25k: Double = 1.2
+    fun prepare(index: IreneIndex, q: QExpr): QExpr {
+        val pq = q.copy()
+        applyEnvironment(this, pq)
+        applyIndex(index, pq)
+        return pq
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as IreneQueryLanguage
+
+        if (defaultField != other.defaultField) return false
+        if (defaultScorer != other.defaultScorer) return false
+        if (defaultDirichletMu != other.defaultDirichletMu) return false
+        if (defaultBM25b != other.defaultBM25b) return false
+        if (defaultBM25k != other.defaultBM25k) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = defaultField.hashCode()
+        result = 31 * result + defaultScorer.hashCode()
+        result = 31 * result + defaultDirichletMu.hashCode()
+        result = 31 * result + defaultBM25b.hashCode()
+        result = 31 * result + defaultBM25k.hashCode()
+        return result
+    }
+
 }
 
-sealed class QExpr() {
+sealed class QExpr {
     abstract val children: List<QExpr>
-}
-sealed class LeafExpr() : QExpr() {
-    override val children: List<QExpr> get() = emptyList()
-}
-sealed class OpExpr(override val children: List<QExpr>) : QExpr()
-sealed class SingleChildExpr(val child: QExpr) : QExpr() {
-    override val children: List<QExpr> get() = listOf(child)
-}
-class RequireExpr(var cond: QExpr, var value: QExpr): QExpr() {
-    override val children: List<QExpr> get() = arrayListOf(cond, value)
-}
-class TextExpr(var text: String, var field: String? = null) : LeafExpr() {
-    constructor(term: Term) : this(term.text(), term.field())
-}
-class SynonymExpr(children: List<QExpr>): OpExpr(children)
-class LuceneExpr(val rawQuery: String) : LeafExpr() {
-    var query: LuceneQuery? = null
-    fun parse(env: IreneQueryLanguage) {
-        query = lucene_try {
-            env.luceneQueryParser.parse(rawQuery)
-        } ?: error("Could not parse lucene expression: ``${rawQuery}''")
+    abstract fun copy(): QExpr
+    fun copyChildren() = children.map { it.copy() }
+
+    fun visit(pre: (QExpr)->Unit, post: (QExpr)->Unit = {}) {
+        pre(this)
+        children.forEach { it.visit(pre) }
+        post(this)
     }
 }
+sealed class LeafExpr : QExpr() {
+    override val children: List<QExpr> get() = emptyList()
+}
+sealed class OpExpr : QExpr() {
+}
+sealed class SingleChildExpr : QExpr() {
+    abstract val child: QExpr
+    override val children: List<QExpr> get() = listOf(child)
+}
+data class RequireExpr(var cond: QExpr, var value: QExpr): QExpr() {
+    override fun copy()  = RequireExpr(cond.copy(), value.copy())
+    override val children: List<QExpr> get() = arrayListOf(cond, value)
+}
+data class TextExpr(var text: String, var field: String? = null, var stats: CountStats? = null) : LeafExpr() {
+    override fun copy() = TextExpr(text, field, stats)
+    constructor(term: Term) : this(term.text(), term.field())
+}
+data class SynonymExpr(override val children: List<QExpr>): OpExpr() {
+    override fun copy() = SynonymExpr(copyChildren())
+}
+data class LuceneExpr(val rawQuery: String, var query: LuceneQuery? = null ) : LeafExpr() {
+    fun parse(env: IreneQueryLanguage) = LuceneExpr(rawQuery,
+        lucene_try {
+            env.luceneQueryParser.parse(rawQuery)
+        } ?: error("Could not parse lucene expression: ``${rawQuery}''"))
+    override fun copy() = LuceneExpr(rawQuery, query)
+}
 
-class AndExpr(children: List<QExpr>) : OpExpr(children)
-class OrExpr(children: List<QExpr>) : OpExpr(children)
+data class AndExpr(override val children: List<QExpr>) : OpExpr() {
+    override fun copy() = AndExpr(copyChildren())
+}
+data class OrExpr(override val children: List<QExpr>) : OpExpr() {
+    override fun copy() = OrExpr(copyChildren())
+}
+data class SumExpr(override val children: List<QExpr>) : OpExpr() {
+    override fun copy() = SumExpr(copyChildren())
+}
+data class MeanExpr(override val children: List<QExpr>) : OpExpr() {
+    override fun copy() = MeanExpr(copyChildren())
+}
+data class MultExpr(override val children: List<QExpr>) : OpExpr() {
+    override fun copy() = MultExpr(copyChildren())
+}
+data class MaxExpr(override val children: List<QExpr>) : OpExpr() {
+    override fun copy() = MaxExpr(copyChildren())
+}
+data class WeightExpr(override val child: QExpr, var weight: Double = 1.0) : SingleChildExpr() {
+    override fun copy() = WeightExpr(child.copy(), weight)
+}
 
-class SumExpr(children: List<QExpr>) : OpExpr(children)
-class MeanExpr(children: List<QExpr>) : OpExpr(children)
-class MultExpr(children: List<QExpr>) : OpExpr(children)
-class MaxExpr(children: List<QExpr>) : OpExpr(children)
-class WeightExpr(child: QExpr, val weight: Double = 1.0) : SingleChildExpr(child)
-
-class DirQLExpr(child: QExpr, var mu: Double? = null): SingleChildExpr(child)
-class BM25Expr(child: QExpr, var b: Double? = null, var k: Double? = null): SingleChildExpr(child)
-class CountToScoreExpr(child: QExpr): SingleChildExpr(child)
-class BoolToScoreExpr(child: QExpr, var trueScore: Double=1.0, var falseScore: Double=0.0): SingleChildExpr(child)
-class CountToBoolExpr(child: QExpr, var gt: Int = 0): SingleChildExpr(child)
+data class DirQLExpr(override val child: QExpr, var mu: Double? = null): SingleChildExpr() {
+    override fun copy() = DirQLExpr(child.copy(), mu)
+}
+data class BM25Expr(override val child: QExpr, var b: Double? = null, var k: Double? = null): SingleChildExpr() {
+    override fun copy() = BM25Expr(child.copy(), b, k)
+}
+data class CountToScoreExpr(override val child: QExpr): SingleChildExpr() {
+    override fun copy() = CountToScoreExpr(child.copy())
+}
+data class BoolToScoreExpr(override val child: QExpr, var trueScore: Double=1.0, var falseScore: Double=0.0): SingleChildExpr() {
+    override fun copy() = BoolToScoreExpr(child.copy(), trueScore, falseScore)
+}
+data class CountToBoolExpr(override val child: QExpr, var gt: Int = 0): SingleChildExpr() {
+    override fun copy() = CountToBoolExpr(child.copy(), gt)
+}
 
 fun toJSON(q: QExpr): Parameters = when(q) {
     is TextExpr -> pmake {
@@ -106,15 +173,20 @@ fun toJSON(q: QExpr): Parameters = when(q) {
         putIfNotNull("k", q.k)
         set("child", toJSON(q.child))
     }
-    is SingleChildExpr -> pmake {
-        set("op", "cast")
-        set("kind", when(q) {
-            is CountToScoreExpr -> "count->score"
-            is BoolToScoreExpr -> "bool->score"
-            is CountToBoolExpr -> "count->bool"
-            else -> TODO(q.javaClass.canonicalName)
-        })
+    is CountToScoreExpr -> pmake {
+        set("op", "count->score")
         set("child", toJSON(q.child))
+    }
+    is BoolToScoreExpr -> pmake {
+        set("op", "bool->score")
+        set("child", toJSON(q.child))
+        set("true", q.trueScore)
+        set("false", q.falseScore)
+    }
+    is CountToBoolExpr -> pmake {
+        set("op", "count->bool")
+        set("child", toJSON(q.child))
+        set("gt", q.gt)
     }
 }
 
@@ -135,6 +207,15 @@ fun applyEnvironment(env: IreneQueryLanguage, q: QExpr) {
     q.children.forEach { applyEnvironment(env, it) }
 }
 
+fun applyIndex(index: IreneIndex, root: QExpr) {
+    root.visit({ q ->
+        when(q) {
+            is TextExpr -> q.stats = index.getStats(Term(q.field, q.text))
+            //is LuceneExpr -> TODO()
+        }
+    })
+}
+
 fun main(args: Array<String>) {
     val complicated = RequireExpr(
             CountToBoolExpr(TextExpr("funds")),
@@ -142,8 +223,10 @@ fun main(args: Array<String>) {
                     DirQLExpr(TextExpr("president")),
                     DirQLExpr(TextExpr("query"))
             )))
+    println(complicated)
     println(toJSON(complicated).toPrettyString())
     applyEnvironment(IreneQueryLanguage(), complicated)
     println(toJSON(complicated).toPrettyString())
+    println(complicated)
 }
 
