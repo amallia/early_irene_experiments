@@ -1,6 +1,8 @@
 package edu.umass.cics.ciir.irene
 
-import org.apache.lucene.index.*
+import org.apache.lucene.index.NumericDocValues
+import org.apache.lucene.index.PostingsEnum
+import org.apache.lucene.index.Term
 import org.apache.lucene.search.Explanation
 
 /**
@@ -27,22 +29,9 @@ enum class DataNeeded(val level: Int) {
     }
 }
 
-data class TermRequest(val term: Term, val termContext: TermContext, val stats: CountStats, val needed: DataNeeded) {
-    val lengths = HashMap<String, NumericDocValues>()
-    fun create(ctx: LeafReaderContext): LeafEvalNode {
-        return create(ctx, lengths.computeIfAbsent(term.field(), { field ->
-            lucene_try { ctx.reader().getNormValues(field) } ?: error("Couldn't find norms for ``$field''.")
-        }))
-    }
-    fun create(ctx: LeafReaderContext, lengths: NumericDocValues): LeafEvalNode {
-        val state = termContext[ctx.ord] ?: return LuceneMissingTerm(term, stats, lengths)
-        val termIter = ctx.reader().terms(term.field()).iterator()
-        termIter.seekExact(term.bytes(), state)
-        return LuceneTermPostings(stats, termIter.postings(null, needed.flags()), lengths)
-    }
-}
-
-data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths: NumericDocValues) : LeafEvalNode {
+data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths: NumericDocValues) : LeafEvalNode() {
+    override fun docID(): Int = NO_MORE_DOCS
+    override fun advance(target: Int): Int = NO_MORE_DOCS
     override fun score(doc: Int) = 0f
     override fun count(doc: Int) = 0
     override fun matches(doc: Int) = false
@@ -57,11 +46,10 @@ data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths:
     }
 }
 
-class LuceneTermPostings(val stats: CountStats, val postings: PostingsEnum, val lengths: NumericDocValues) : LeafEvalNode {
-    override fun score(doc: Int): Float {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
-
+class LuceneTermPostings(val stats: CountStats, val postings: PostingsEnum, val lengths: NumericDocValues) : LeafEvalNode() {
+    override fun docID(): Int = postings.docID()
+    override fun advance(target: Int): Int = postings.advance(target)
+    override fun score(doc: Int): Float = count(doc).toFloat()
     override fun count(doc: Int): Int {
         if(matches(doc)) {
             return postings.freq()
