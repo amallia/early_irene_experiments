@@ -7,7 +7,8 @@ import org.apache.lucene.index.Term
 import org.apache.lucene.queryparser.classic.QueryParser
 import org.lemurproject.galago.utility.Parameters
 
-const val DEFAULT_KEY: String = "default";
+typealias LuceneQuery = org.apache.lucene.search.Query
+
 /**
  *
  * @author jfoley.
@@ -16,6 +17,9 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
     var defaultField = "body"
     var defaultScorer = "dirichlet"
     var luceneQueryParser = QueryParser(defaultField, analyzer)
+    var defaultDirichletMu: Double = 1500.0
+    var defaultBM25b: Double = 0.75
+    var defaultBM25k: Double = 1.2
 }
 
 sealed class QExpr() {
@@ -35,7 +39,14 @@ class TextExpr(var text: String, var field: String? = null) : LeafExpr() {
     constructor(term: Term) : this(term.text(), term.field())
 }
 class SynonymExpr(children: List<QExpr>): OpExpr(children)
-class LuceneExpr(val rawQuery: String) : LeafExpr()
+class LuceneExpr(val rawQuery: String) : LeafExpr() {
+    var query: LuceneQuery? = null
+    fun parse(env: IreneQueryLanguage) {
+        query = lucene_try {
+            env.luceneQueryParser.parse(rawQuery)
+        } ?: error("Could not parse lucene expression: ``${rawQuery}''")
+    }
+}
 
 class AndExpr(children: List<QExpr>) : OpExpr(children)
 class OrExpr(children: List<QExpr>) : OpExpr(children)
@@ -107,6 +118,23 @@ fun toJSON(q: QExpr): Parameters = when(q) {
     }
 }
 
+fun applyEnvironment(env: IreneQueryLanguage, q: QExpr) {
+    when(q) {
+        is TextExpr -> if(q.field == null) {
+            q.field = env.defaultField
+        } else {}
+        is LuceneExpr -> q.parse(env)
+        is DirQLExpr -> if (q.mu == null) {
+            q.mu = env.defaultDirichletMu
+        }
+        is BM25Expr -> {
+            if (q.b == null) q.b = env.defaultBM25b
+            if (q.k == null) q.k = env.defaultBM25k
+        }
+    }
+    q.children.forEach { applyEnvironment(env, it) }
+}
+
 fun main(args: Array<String>) {
     val complicated = RequireExpr(
             CountToBoolExpr(TextExpr("funds")),
@@ -115,78 +143,7 @@ fun main(args: Array<String>) {
                     DirQLExpr(TextExpr("query"))
             )))
     println(toJSON(complicated).toPrettyString())
+    applyEnvironment(IreneQueryLanguage(), complicated)
+    println(toJSON(complicated).toPrettyString())
 }
 
-
-/*
-class QExpr(val operator: String) {
-    companion object {
-        fun make(operator: String, setup: QExpr.() -> Unit): QExpr {
-            return QExpr(operator).apply(setup)
-        }
-        fun term(t: Term) = make("text") {
-            default = t.text()
-            config.set("field", t.field())
-        }
-    }
-    val isLeaf: Boolean
-        get() = children.size == 0
-    val config = Parameters.create()
-    val children = ArrayList<QExpr>()
-
-    // Common but optional query parameters.
-    var default: String?
-        get() = config.get(DEFAULT_KEY, null as String?)
-        set(value) = config.set(DEFAULT_KEY, value)
-    var field: String?
-        get() = config.get("field", null as String?)
-        set(value) = config.set("field", value)
-    var weight: Double
-        get() = config.get("weight", 1.0)
-        set(value) = config.set("weight", value)
-
-    override fun equals(other: Any?): Boolean {
-        if (other is QExpr) {
-            if (other.children.size != children.size) return false
-            if (other.operator != operator) return false
-            if (other.config != config) return false
-            if (other.children != children) return false
-            return true
-        }
-        return false
-    }
-
-    override fun hashCode(): Int {
-        return operator.hashCode() xor children.hashCode()
-    }
-
-    fun copy(): QExpr {
-        return copy(children.map { it.copy() })
-    }
-    fun copy(newChildren: List<QExpr>): QExpr {
-        val clone = QExpr(operator)
-        clone.config.copyFrom(config)
-        clone.children.addAll(newChildren)
-        return clone
-    }
-
-    fun hasDefault() = config.containsKey(DEFAULT_KEY)
-
-    fun addChild(c: QExpr) { children.add(c) }
-    fun toJSON(): Parameters = pmake {
-        set("operator", operator)
-        set("config", config)
-        set("children", children.map { it.toJSON() })
-    }
-
-}
-
-interface Macro {
-    fun transform(input: QExpr): QExpr?
-    fun transform(input: List<QExpr>) = input.map { transform(it) }.filterNotNull()
-}
-class InsertScorersMacro(val ql: IreneQueryLanguage) : Macro {
-    override fun transform(input: QExpr): QExpr? {
-    }
-}
-*/
