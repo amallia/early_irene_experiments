@@ -84,7 +84,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is TextExpr -> ctx.create(Term(q.field, q.text), DataNeeded.COUNTS)
     is LuceneExpr -> TODO()
     is SynonymExpr -> TODO()
-    is AndExpr -> TODO()
+    is AndExpr -> BooleanAndEval(q.children.map { exprToEval(it, ctx) })
     is OrExpr -> BooleanOrEval(q.children.map { exprToEval(it, ctx) })
     is SumExpr -> SumEval(q.children.map { exprToEval(it, ctx) })
     is CombineExpr -> WeightedSumEval(
@@ -154,17 +154,15 @@ private abstract class RecursiveEval(val children: List<QueryEvalNode>) : QueryE
 private abstract class OrEval(children: List<QueryEvalNode>) : RecursiveEval(children) {
     private var current: Int = 0
     val cost = children.map { it.estimateDF() }.max() ?: 0L
+    val moveChildren = children.sortedByDescending { it.estimateDF() }
     override fun docID(): Int = current
     override fun advance(target: Int): Int {
-        if (children.any { it.done }) return NO_MORE_DOCS
-
         var nextMin = NO_MORE_DOCS
-        children.forEach { child ->
+        moveChildren.forEach { child ->
             var where = child.docID()
             while (where < target) {
                 where = child.advance(target)
                 // be aggressive; "hit" may exist where match fails.
-                if (where == NO_MORE_DOCS) return@forEach
                 if (child.matches(where)) break
             }
             nextMin = minOf(nextMin, where)
@@ -182,7 +180,50 @@ private abstract class OrEval(children: List<QueryEvalNode>) : RecursiveEval(chi
     }
 }
 
+private abstract class AndEval(children: List<QueryEvalNode>) : RecursiveEval(children) {
+    private var current: Int = 0
+    val cost = children.map { it.estimateDF() }.min() ?: 0L
+    val moveChildren = children.sortedBy { it.estimateDF() }
+    override fun docID(): Int = current
+
+    fun advanceToMatch(): Int {
+        while(true) {
+            var match = true
+            moveChildren.forEach { child ->
+                var pos = child.docID()
+                if (pos < current) {
+                    pos = child.advance(current)
+                    if (pos == NO_MORE_DOCS) return NO_MORE_DOCS
+                }
+                if (pos > current) {
+                    current = pos
+                    match = false
+                    return@forEach
+                }
+            }
+
+            if (match) return current
+        }
+    }
+
+    override fun advance(target: Int): Int {
+        current = maxOf(current, target)
+        return advanceToMatch()
+    }
+    override fun estimateDF(): Long = cost
+
+    override fun matches(doc: Int): Boolean {
+        if (current > doc) return false
+        else if (current < doc) return advance(doc) == doc
+        return current == doc
+    }
+}
+
 private class BooleanOrEval(children: List<QueryEvalNode>): OrEval(children) {
+    override fun score(doc: Int): Float = if (matches(doc)) { 1f } else { 0f }
+    override fun count(doc: Int): Int = if (matches(doc)) { 1 } else { 0 }
+}
+private class BooleanAndEval(children: List<QueryEvalNode>): AndEval(children) {
     override fun score(doc: Int): Float = if (matches(doc)) { 1f } else { 0f }
     override fun count(doc: Int): Int = if (matches(doc)) { 1 } else { 0 }
 }
