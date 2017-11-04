@@ -85,18 +85,23 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is LuceneExpr -> TODO()
     is SynonymExpr -> TODO()
     is AndExpr -> TODO()
-    is OrExpr -> TODO()
+    is OrExpr -> BooleanOrEval(q.children.map { exprToEval(it, ctx) })
     is SumExpr -> SumEval(q.children.map { exprToEval(it, ctx) })
-    is MeanExpr -> TODO()
+    is CombineExpr -> WeightedSumEval(
+            q.children.map { exprToEval(it, ctx) },
+            q.weights.map{ it.toFloat() }.toFloatArray())
+    is MeanExpr -> WeightedSumEval(
+            q.children.map { exprToEval(it, ctx) },
+            q.children.map { 1f / q.children.size.toFloat() }.toFloatArray())
     is MultExpr -> TODO()
-    is MaxExpr -> TODO()
-    is WeightExpr -> TODO()
+    is MaxExpr -> MaxEval(q.children.map { exprToEval(it, ctx) })
+    is WeightExpr -> WeightedEval(exprToEval(q.child, ctx), q.weight.toFloat())
     is DirQLExpr -> DirichletSmoothingEval(exprToEval(q.child, ctx) as CountEvalNode, q.mu!!)
     is BM25Expr -> TODO()
     is CountToScoreExpr -> TODO()
     is BoolToScoreExpr -> TODO()
     is CountToBoolExpr -> TODO()
-    is RequireExpr -> TODO()
+    is RequireExpr -> RequireEval(exprToEval(q.cond, ctx), exprToEval(q.value, ctx))
 }
 
 data class CountStats(val cf: Long, val df: Long, val cl: Long, val dc: Long) {
@@ -121,6 +126,18 @@ abstract class CountEvalNode : QueryEvalNode() {
 }
 abstract class LeafEvalNode : CountEvalNode() {
 
+}
+
+private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val miss: Float=-Float.MAX_VALUE): QueryEvalNode() {
+    override fun score(doc: Int): Float = if (cond.matches(doc)) { score.score(doc) } else miss
+    override fun count(doc: Int): Int = if (cond.matches(doc)) { score.count(doc) } else 0
+    override fun matches(doc: Int): Boolean = cond.matches(doc) && score.matches(doc)
+    override fun explain(doc: Int): Explanation {
+        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+    }
+    override fun estimateDF(): Long = minOf(score.estimateDF(), cond.estimateDF())
+    override fun docID(): Int = cond.docID()
+    override fun advance(target: Int): Int = cond.advance(target)
 }
 
 private abstract class RecursiveEval(val children: List<QueryEvalNode>) : QueryEvalNode() {
@@ -165,6 +182,27 @@ private abstract class OrEval(children: List<QueryEvalNode>) : RecursiveEval(chi
     }
 }
 
+private class BooleanOrEval(children: List<QueryEvalNode>): OrEval(children) {
+    override fun score(doc: Int): Float = if (matches(doc)) { 1f } else { 0f }
+    override fun count(doc: Int): Int = if (matches(doc)) { 1 } else { 0 }
+}
+
+private class MaxEval(children: List<QueryEvalNode>) : OrEval(children) {
+    override fun score(doc: Int): Float {
+        var sum = 0f
+        children.forEach {
+            sum = maxOf(sum, it.score(doc))
+        }
+        return sum
+    }
+    override fun count(doc: Int): Int {
+        var sum = 0
+        children.forEach {
+            sum = maxOf(sum, it.count(doc))
+        }
+        return sum
+    }
+}
 private class SumEval(children: List<QueryEvalNode>) : OrEval(children) {
     override fun score(doc: Int): Float {
         var sum = 0f
@@ -201,6 +239,19 @@ private abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode() 
     override fun advance(target: Int): Int = child.advance(target)
     override fun estimateDF(): Long = child.estimateDF()
     override fun matches(doc: Int): Boolean = child.matches(doc)
+}
+
+private class WeightedEval(override val child: QueryEvalNode, val weight: Float): SingleChildEval<QueryEvalNode>() {
+    override fun score(doc: Int): Float = weight * child.score(doc)
+    override fun count(doc: Int): Int = error("Weighted($weight).count()")
+    override fun explain(doc: Int): Explanation {
+        val orig = child.score(doc)
+        if (child.matches(doc)) {
+            return Explanation.match(weight*orig, "Weighted@$doc = $weight * $orig")
+        } else {
+            return Explanation.noMatch("Weighted.Miss@$doc (${weight*orig} = $weight * $orig)")
+        }
+    }
 }
 
 private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {

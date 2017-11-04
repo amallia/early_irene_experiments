@@ -22,6 +22,7 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
     var defaultBM25k: Double = 1.2
     fun prepare(index: IreneIndex, q: QExpr): QExpr {
         val pq = q.copy()
+        combineWeights(pq)
         applyEnvironment(this, pq)
         applyIndex(index, pq)
         return pq
@@ -70,7 +71,7 @@ sealed class LeafExpr : QExpr() {
 sealed class OpExpr : QExpr() {
 }
 sealed class SingleChildExpr : QExpr() {
-    abstract val child: QExpr
+    abstract var child: QExpr
     override val children: List<QExpr> get() = listOf(child)
 }
 data class RequireExpr(var cond: QExpr, var value: QExpr): QExpr() {
@@ -104,29 +105,32 @@ data class SumExpr(override val children: List<QExpr>) : OpExpr() {
 data class MeanExpr(override val children: List<QExpr>) : OpExpr() {
     override fun copy() = MeanExpr(copyChildren())
 }
+data class CombineExpr(override val children: List<QExpr>, val weights: List<Double>) : OpExpr() {
+    override fun copy() = CombineExpr(copyChildren(), weights)
+}
 data class MultExpr(override val children: List<QExpr>) : OpExpr() {
     override fun copy() = MultExpr(copyChildren())
 }
 data class MaxExpr(override val children: List<QExpr>) : OpExpr() {
     override fun copy() = MaxExpr(copyChildren())
 }
-data class WeightExpr(override val child: QExpr, var weight: Double = 1.0) : SingleChildExpr() {
+data class WeightExpr(override var child: QExpr, var weight: Double = 1.0) : SingleChildExpr() {
     override fun copy() = WeightExpr(child.copy(), weight)
 }
 
-data class DirQLExpr(override val child: QExpr, var mu: Double? = null): SingleChildExpr() {
+data class DirQLExpr(override var child: QExpr, var mu: Double? = null): SingleChildExpr() {
     override fun copy() = DirQLExpr(child.copy(), mu)
 }
-data class BM25Expr(override val child: QExpr, var b: Double? = null, var k: Double? = null): SingleChildExpr() {
+data class BM25Expr(override var child: QExpr, var b: Double? = null, var k: Double? = null): SingleChildExpr() {
     override fun copy() = BM25Expr(child.copy(), b, k)
 }
-data class CountToScoreExpr(override val child: QExpr): SingleChildExpr() {
+data class CountToScoreExpr(override var child: QExpr): SingleChildExpr() {
     override fun copy() = CountToScoreExpr(child.copy())
 }
-data class BoolToScoreExpr(override val child: QExpr, var trueScore: Double=1.0, var falseScore: Double=0.0): SingleChildExpr() {
+data class BoolToScoreExpr(override var child: QExpr, var trueScore: Double=1.0, var falseScore: Double=0.0): SingleChildExpr() {
     override fun copy() = BoolToScoreExpr(child.copy(), trueScore, falseScore)
 }
-data class CountToBoolExpr(override val child: QExpr, var gt: Int = 0): SingleChildExpr() {
+data class CountToBoolExpr(override var child: QExpr, var gt: Int = 0): SingleChildExpr() {
     override fun copy() = CountToBoolExpr(child.copy(), gt)
 }
 
@@ -145,6 +149,11 @@ fun toJSON(q: QExpr): Parameters = when(q) {
         set("cond", toJSON(q.cond))
         set("value", toJSON(q.value))
     }
+    is CombineExpr -> pmake {
+        set("op", "combine")
+        set("weights", q.weights)
+        set("children", q.children.map { toJSON(it) })
+    }
     is OpExpr -> pmake {
         set("op", when(q) {
             is SynonymExpr -> "syn"
@@ -154,6 +163,7 @@ fun toJSON(q: QExpr): Parameters = when(q) {
             is MeanExpr -> "mean"
             is MultExpr -> "wsum"
             is MaxExpr -> "max"
+            else -> error("Handle this elsewhere!")
         })
         set("children", q.children.map { toJSON(it) })
     }
@@ -188,6 +198,19 @@ fun toJSON(q: QExpr): Parameters = when(q) {
         set("child", toJSON(q.child))
         set("gt", q.gt)
     }
+}
+
+fun combineWeights(q: QExpr) {
+    when(q) {
+        is WeightExpr -> {
+            val c = q.child
+            if (c is WeightExpr) {
+                q.child = c.child
+                q.weight *= c.weight
+            }
+        }
+    }
+    q.children.forEach { combineWeights(it) }
 }
 
 fun applyEnvironment(env: IreneQueryLanguage, q: QExpr) {
@@ -228,5 +251,10 @@ fun main(args: Array<String>) {
     applyEnvironment(IreneQueryLanguage(), complicated)
     println(toJSON(complicated).toPrettyString())
     println(complicated)
+    
+
+    val weightCombine = WeightExpr(WeightExpr(TextExpr("test"), 0.5), 2.0)
+    combineWeights(weightCombine)
+    assert(weightCombine.equals(WeightExpr(TextExpr("test"), 1.0)))
 }
 
