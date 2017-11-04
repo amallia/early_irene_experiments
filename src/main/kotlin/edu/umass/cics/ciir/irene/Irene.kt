@@ -202,6 +202,10 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
         val termStats = searcher.termStatistics(term, ctx) ?: return null
         return CountStats(termStats.docFreq(), termStats.totalTermFreq(), cstats.sumTotalTermFreq(), cstats.docCount())
     }
+
+    fun search(q: QExpr, n: Int): TopDocs {
+        return searcher.search(IreneQueryModel(this, this.language, q), n)!!
+    }
 }
 
 fun main(args: Array<String>) {

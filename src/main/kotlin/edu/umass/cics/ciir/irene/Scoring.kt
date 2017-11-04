@@ -123,7 +123,7 @@ abstract class LeafEvalNode : CountEvalNode() {
 
 }
 
-abstract class RecursiveEval(val children: List<QueryEvalNode>) : QueryEvalNode() {
+private abstract class RecursiveEval(val children: List<QueryEvalNode>) : QueryEvalNode() {
     val className = this.javaClass.simpleName
     val N = children.size
     override fun explain(doc: Int): Explanation {
@@ -134,7 +134,7 @@ abstract class RecursiveEval(val children: List<QueryEvalNode>) : QueryEvalNode(
         return Explanation.noMatch("$className.Miss", expls)
     }
 }
-abstract class OrEval(children: List<QueryEvalNode>) : RecursiveEval(children) {
+private abstract class OrEval(children: List<QueryEvalNode>) : RecursiveEval(children) {
     private var current: Int = 0
     val cost = children.map { it.estimateDF() }.max() ?: 0L
     override fun docID(): Int = current
@@ -165,7 +165,7 @@ abstract class OrEval(children: List<QueryEvalNode>) : RecursiveEval(children) {
     }
 }
 
-class SumEval(children: List<QueryEvalNode>) : OrEval(children) {
+private class SumEval(children: List<QueryEvalNode>) : OrEval(children) {
     val numHits = children.map { it.estimateDF() }.max() ?: 0L
     override fun score(doc: Int): Float {
         var sum = 0f
@@ -184,7 +184,7 @@ class SumEval(children: List<QueryEvalNode>) : OrEval(children) {
     override fun estimateDF(): Long = numHits
 }
 
-abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode() {
+private abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode() {
     abstract val child: T
     override fun docID(): Int = child.docID()
     override fun advance(target: Int): Int = child.advance(target)
@@ -192,7 +192,7 @@ abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode() {
     override fun matches(doc: Int): Boolean = child.matches(doc)
 }
 
-class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
+private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
     val background = mu * child.getCountStats().countProbability()
     override fun score(doc: Int): Float {
         val c = child.count(doc).toDouble()
@@ -218,14 +218,13 @@ fun main(args: Array<String>) {
         queries.forEach { qid, qtext ->
             val q = SumExpr(index.analyzer.tokenize("body", qtext).map { DirQLExpr(TextExpr(it)) })
 
-            val qmodel = IreneQueryModel(index, index.language, q)
-            val topK = index.searcher.search(qmodel, 1000)
+            val topK = index.search(q, 1000)
             val results = QueryResults(topK.scoreDocs.mapIndexed { i, sdoc ->
                 val name = index.getField(sdoc.doc, "id")?.stringValue() ?: "null"
                 SimpleEvalDoc(name, i+1, sdoc.score.toDouble())
             })
 
-            val queryJudgments = qrels[qid]
+            val queryJudgments = qrels[qid]!!
             evals.forEach { measure, evalfn ->
                 val score = try {
                     evalfn.evaluate(results, queryJudgments)
