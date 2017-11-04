@@ -166,7 +166,6 @@ private abstract class OrEval(children: List<QueryEvalNode>) : RecursiveEval(chi
 }
 
 private class SumEval(children: List<QueryEvalNode>) : OrEval(children) {
-    val numHits = children.map { it.estimateDF() }.max() ?: 0L
     override fun score(doc: Int): Float {
         var sum = 0f
         children.forEach {
@@ -181,7 +180,19 @@ private class SumEval(children: List<QueryEvalNode>) : OrEval(children) {
         }
         return sum
     }
-    override fun estimateDF(): Long = numHits
+}
+// Also known as #combine for you galago/indri folks.
+private class WeightedSumEval(children: List<QueryEvalNode>, val weights: FloatArray) : OrEval(children) {
+    override fun score(doc: Int): Float {
+        var sum = 0f
+        children.forEachIndexed { i, child ->
+            sum += weights[i] * child.score(doc)
+        }
+        return sum
+    }
+
+    override fun count(doc: Int): Int = error("Calling counts on WeightedSumEval is nonsense.")
+    init { assert(weights.size == children.size, {"Weights provided to WeightedSumEval must exist for all children."}) }
 }
 
 private abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode() {
