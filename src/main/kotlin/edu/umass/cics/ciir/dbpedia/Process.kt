@@ -3,6 +3,8 @@ package edu.umass.cics.ciir.dbpedia
 import edu.umass.cics.ciir.Debouncer
 import edu.umass.cics.ciir.sprf.IRDataset
 import edu.umass.cics.ciir.sprf.pmake
+import edu.umass.cics.ciir.sprf.printer
+import gnu.trove.list.array.TIntArrayList
 import gnu.trove.map.hash.TIntObjectHashMap
 import gnu.trove.map.hash.TObjectIntHashMap
 import org.lemurproject.galago.utility.Parameters
@@ -380,6 +382,95 @@ object ProcessAndShardFullText {
         mapFileToShards(ArticleCategories, sample, shards, "article_categories.jsonl.gz") { record, writers -> simple(record, writers) }
 
 
+    }
+}
+
+fun <T> Parameters.setIfNotEmpty(key: String, x: Collection<T>) {
+    if (x.isNotEmpty()) {
+        this.set(key, x.toList())
+    }
+}
+
+class CategoryInfo(val id: Int, val name: String, var prefLabel: String? = null) {
+    val children = TIntArrayList()
+    val parents = TIntArrayList()
+    val related = TIntArrayList()
+    var pages = ArrayList<String>()
+    var labels = ArrayList<String>()
+
+    fun toJSON(): Parameters = pmake {
+        set("id", id)
+        set("name", name)
+        putIfNotNull("prefLabel", prefLabel)
+        setIfNotEmpty("labels", labels.toMutableSet().apply {
+            val pl = prefLabel
+            if (pl!=null) { add(pl) }
+        }.toList())
+        setIfNotEmpty("pages", pages)
+        setIfNotEmpty("related", related.toArray().toList())
+        setIfNotEmpty("parents", parents.toArray().toList())
+        setIfNotEmpty("children", children.toArray().toList())
+    }
+}
+class CategoryGraphBuilder {
+    val nodes = HashMap<String, CategoryInfo>()
+    operator fun get(id: String): CategoryInfo = nodes.computeIfAbsent(id, { CategoryInfo(nodes.size, it) })
+}
+
+object CategoryGraphAnalysis {
+    val CategoryPrefix = "http://dbpedia.org/resource/Category:"
+    fun category(x: String): String? {
+        if (x.startsWith(CategoryPrefix)) {
+            return x.substring(CategoryPrefix.length)
+        } else return null
+    }
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val sample = argp.get("sample", true)
+
+        val graph = CategoryGraphBuilder()
+        forEachTTLRecord(CategoryLabels, sample) { record ->
+            val name = category(record[0])
+            if (name != null) {
+                graph[name].labels.add(record[2])
+            }
+        }
+        forEachTTLRecord(CategoryArticles, sample) { record ->
+            if (record[1].endsWith("/terms/subject")) {
+                val name = category(record[0])
+                if (name != null) {
+                    val page = ProcessAndShardFullText.getKey(record[2])
+                    graph[name].pages.add(page)
+                }
+            }
+        }
+        forEachTTLRecord(CategoryGraph, sample) { record ->
+            val name = category(record[0])!!
+            if (record[1].endsWith("22-rdf-syntax-ns#type")) {
+                // skip the "isa Concept label"
+            } else if (record[1].endsWith("#prefLabel")) {
+                graph[name].prefLabel = record[2]
+            } else if (record[1].endsWith("/core#broader")) {
+                val name2 = category(record[2])!!
+                val parent = graph[name]
+                val child = graph[name2]
+                parent.children.add(child.id)
+                child.parents.add(parent.id)
+            } else if (record[1].endsWith("/core#related")) {
+                val name2 = category(record[2])!!
+                val lhs = graph[name]
+                val rhs = graph[name2]
+                lhs.related.add(rhs.id)
+                rhs.related.add(lhs.id)
+            } else error("Unknown relation: ${record[1]}")
+        }
+
+        println(graph.nodes.size)
+        StreamCreator.openOutputStream("cgraph.jsonl.gz").printer().use { out ->
+            graph.nodes.values.forEach { info ->
+                out.println(info.toJSON())
+            }
+        }
     }
 }
 
