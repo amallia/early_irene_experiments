@@ -54,6 +54,12 @@
             <version>3.0.0</version>
           </dependency>
 
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.15</version>
+        </dependency>
+
           <!-- for comparison to galago QL -->
           <dependency>
             <groupId>org.lemurproject.galago</groupId>
