@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.dbpedia
 
+import edu.umass.cics.ciir.Debouncer
 import edu.umass.cics.ciir.sprf.IRDataset
 import edu.umass.cics.ciir.sprf.pmake
 import gnu.trove.map.hash.TIntObjectHashMap
@@ -145,6 +146,7 @@ class PeekReader(val rdr: Reader) {
 }
 
 fun forEachTTLRecord(input: Reader, handle: (List<String>)->Unit) {
+    val msg = Debouncer(5000)
     var processed = 0
     val reader = PeekReader(input)
     val record = arrayListOf<String>()
@@ -166,6 +168,9 @@ fun forEachTTLRecord(input: Reader, handle: (List<String>)->Unit) {
             handle(record)
             record.clear()
             processed++
+            if (msg.ready()) {
+                println("Processed $processed TTL records in ${msg.spentTimePretty}.")
+            }
             reader.deleteUntil('\n')
         } else if (Character.isWhitespace(nc)) {
             reader.getc()
