@@ -18,10 +18,13 @@ fun main(args: Array<String>) {
     println("${queries.size} ${qrels.size}")
     val ms = NamedMeasures()
 
-    //val fields = arrayListOf<String>("body", "anchor_text", "short_text")
-    val fields = arrayListOf<String>("body", "anchor_text", "citation_titles", "redirects", "categories_text", "short_text")
+    val fields = arrayListOf<String>("body", "anchor_text", "short_text")
+    //val fields = arrayListOf<String>("body", "anchor_text", "citation_titles", "redirects", "categories_text", "short_text")
 
     dataset.getIreneIndex().use { index ->
+        val fieldMu = fields.associate { Pair(it, index.getAverageDL(it)*100.0) }
+        println("fieldMu = $fieldMu")
+
         queries.forEach { qid, qtext ->
             val queryJudgments = qrels[qid]!!
             val qterms = index.tokenize(qtext)
@@ -36,7 +39,7 @@ fun main(args: Array<String>) {
 
                 val norm = weights.values.sum()
                 MeanExpr(weights.map { (field, weight) ->
-                    WeightExpr(DirQLExpr(TextExpr(term, field)), weight / norm)
+                    WeightExpr(DirQLExpr(TextExpr(term, field), fieldMu[field]), weight / norm)
                 })
             })
             println(prms)

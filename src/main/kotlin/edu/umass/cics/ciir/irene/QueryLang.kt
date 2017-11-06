@@ -28,7 +28,7 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
 
         applyEnvironment(this, pq)
         applyIndex(index, pq)
-        println("\t$q\n->\t$pq")
+        //println("\t$q\n->\t$pq")
         return pq
     }
 

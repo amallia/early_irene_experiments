@@ -204,6 +204,10 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
     }
     val cache: Cache<Term, CountStats> = Caffeine.newBuilder().maximumSize(100_000).build()
 
+    fun getAverageDL(field: String): Double {
+        val fieldStats = searcher.collectionStatistics(field)
+        return fieldStats.sumTotalTermFreq().toDouble() / fieldStats.docCount().toDouble()
+    }
     fun getStats(text: String, field: String = defaultField): CountStats? = getStats(Term(field, text))
     private fun getStatsDirect(term: Term): CountStats? {
         val cstats = searcher.collectionStatistics(term.field())

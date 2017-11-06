@@ -9,6 +9,13 @@ import edu.umass.cics.ciir.sprf.getEvaluators
  * @author jfoley
  */
 
+val DBPEMeanPRMSFieldWeights = mapOf(
+        "anchor_text" to 0.03,
+        "body" to 0.21,
+        "categories_text" to 0.27,
+        "citation_titles" to 0.27,
+        "redirects" to 0.12,
+        "short_text" to 0.09)
 fun main(args: Array<String>) {
     val dataset = DataPaths.DBPE
     val qrels = dataset.qrels
@@ -18,10 +25,14 @@ fun main(args: Array<String>) {
     println("${queries.size} ${qrels.size}")
     val ms = NamedMeasures()
 
-    //val fields = arrayListOf<String>("body", "anchor_text", "citation_titles", "redirects", "categories_text", "short_text")
-    val fields = arrayListOf<String>("body", "anchor_text", "short_text")
+    val fields = arrayListOf<String>("body", "anchor_text", "citation_titles", "redirects", "categories_text", "short_text")
+    //val fields = arrayListOf<String>("body", "anchor_text", "short_text")
+    val fieldWeights = NamedMeasures()
+
 
     dataset.getIreneIndex().use { index ->
+        val fieldMu = fields.associate { Pair(it, index.getAverageDL(it)) }
+        println("fieldMu = $fieldMu")
         queries.forEach { qid, qtext ->
             println("$qid $qtext")
             val queryJudgments = qrels[qid]!!
@@ -32,15 +43,18 @@ fun main(args: Array<String>) {
                     val stats = index.getStats(term, field)
                     if (stats == null) {
                         null
-                    } else Pair(field, stats.nonzeroCountProbability())
+                    } else {
+                        Pair(field, stats.nonzeroCountProbability())
+                    }
                 }.filterNotNull().associate {it}
 
                 val norm = weights.values.sum()
                 MeanExpr(weights.map { (field, weight) ->
-                    WeightExpr(DirQLExpr(TextExpr(term, field)), weight / norm)
+                    fieldWeights.push(field, weight / norm)
+                    WeightExpr(DirQLExpr(TextExpr(term, field), mu=fieldMu[field]), weight / norm)
                 })
             })
-            println(prms)
+            //println(prms)
 
             /*
             val fieldExprs = listOf("short_text").map { field ->
@@ -63,6 +77,7 @@ fun main(args: Array<String>) {
             }
 
             println(ms.means())
+            println(fieldWeights.means())
         }
     }
 
