@@ -120,7 +120,7 @@ object MergeShardData {
             counted++
             handle(Parameters.parseStringOrDie(line))
             if (msg.ready()) {
-                println("Processed $counted from ${input.name}")
+                println("Processed $counted from ${input.name} in shard $shardNumber")
             }
         }
         println("Processed $counted from ${input.name} in shard $shardNumber")
