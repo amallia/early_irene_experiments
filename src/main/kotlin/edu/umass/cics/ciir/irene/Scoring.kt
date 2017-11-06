@@ -8,8 +8,6 @@ import org.apache.lucene.index.NumericDocValues
 import org.apache.lucene.index.Term
 import org.apache.lucene.index.TermContext
 import org.apache.lucene.search.*
-import org.lemurproject.galago.core.eval.QueryResults
-import org.lemurproject.galago.core.eval.SimpleEvalDoc
 import java.io.File
 
 /**
@@ -56,7 +54,14 @@ class IQModelWeight(val q: QExpr, iqm: IreneQueryModel, val searcher: IndexSearc
 class IreneQueryScorer(val eval: QueryEvalNode) : Scorer(null) {
     override fun docID(): Int = eval.docID()
     override fun iterator(): DocIdSetIterator = eval
-    override fun score(): Float = eval.score(eval.docID())
+    override fun score(): Float {
+        val returned = eval.score(eval.docID())
+        if (java.lang.Float.isInfinite(returned)) {
+            throw RuntimeException("Infinite response for document: ${eval.docID()} ${eval.explain(eval.docID())}")
+            return -Float.MAX_VALUE
+        }
+        return returned
+    }
     override fun freq(): Int = eval.count(eval.docID())
 }
 
@@ -107,6 +112,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
 data class CountStats(val cf: Long, val df: Long, val cl: Long, val dc: Long) {
     fun avgDL() = cl.toDouble() / dc.toDouble();
     fun countProbability() = cf.toDouble() / cl.toDouble()
+    fun nonzeroCountProbability() = Math.max(0.5,cf.toDouble()) / cl.toDouble()
     fun binaryProbability() = df.toDouble() / dc.toDouble()
 }
 
@@ -296,14 +302,22 @@ private class WeightedEval(override val child: QueryEvalNode, val weight: Float)
 }
 
 private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
-    val background = mu * child.getCountStats().countProbability()
+    val background = mu * child.getCountStats().nonzeroCountProbability()
     override fun score(doc: Int): Float {
         val c = child.count(doc).toDouble()
         val length = child.length(doc).toDouble()
         return Math.log((c+ background) / (length + mu)).toFloat()
     }
     override fun count(doc: Int): Int = TODO("not yet")
-    override fun explain(doc: Int): Explanation = TODO("not yet")
+    override fun explain(doc: Int): Explanation {
+        val c = child.count(doc)
+        val length = child.length(doc)
+        if (c > 0) {
+            return Explanation.match(score(doc), "$c/$length with mu=$mu, bg=$background dirichlet smoothing.", listOf(child.explain(doc)))
+        } else {
+            return Explanation.noMatch("score=${score(doc)} or $c/$length with mu=$mu, bg=$background dirichlet smoothing.", listOf(child.explain(doc)))
+        }
+    }
 }
 
 fun main(args: Array<String>) {
@@ -322,10 +336,7 @@ fun main(args: Array<String>) {
             val q = SumExpr(index.analyzer.tokenize("body", qtext).map { DirQLExpr(TextExpr(it)) })
 
             val topK = index.search(q, 1000)
-            val results = QueryResults(topK.scoreDocs.mapIndexed { i, sdoc ->
-                val name = index.getField(sdoc.doc, "id")?.stringValue() ?: "null"
-                SimpleEvalDoc(name, i+1, sdoc.score.toDouble())
-            })
+            val results = topK.toQueryResults(index)
 
             val queryJudgments = qrels[qid]!!
             evals.forEach { measure, evalfn ->

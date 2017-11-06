@@ -73,6 +73,7 @@ class TrueLengthNorm : Similarity() {
 }
 
 class IndexParams {
+    var defaultField = "body"
     private var defaultAnalyzer = IreneEnglishAnalyzer()
     private var perFieldAnalyzers = HashMap<String, Analyzer>()
     var directory: RefCountedIO? = null
@@ -165,6 +166,7 @@ inline fun <T> lucene_try(action: ()->T): T? {
 
 class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
     constructor(params: IndexParams) : this(params.directory!!, params)
+    val defaultField = params.defaultField
     val idFieldName = params.idFieldName
     val reader = DirectoryReader.open(io.open().use())
     val searcher = IndexSearcher(reader, ForkJoinPool.commonPool())
@@ -177,6 +179,9 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
     }
 
     fun getField(doc: Int, name: String): IndexableField? = searcher.doc(doc, setOf(name))?.getField(name)
+    fun getDocumentName(doc: Int): String? {
+        return getField(doc, idFieldName)?.stringValue()
+    }
     fun document(doc: Int): LDoc? {
         return lucene_try { searcher.doc(doc) }
     }
@@ -206,6 +211,9 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
     fun search(q: QExpr, n: Int): TopDocs {
         return searcher.search(IreneQueryModel(this, this.language, q), n)!!
     }
+
+    fun tokenize(text: String, field: String=defaultField) = this.analyzer.tokenize(field, text)
+
 }
 
 fun main(args: Array<String>) {

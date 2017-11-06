@@ -35,7 +35,7 @@ data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths:
     override fun score(doc: Int) = 0f
     override fun count(doc: Int) = 0
     override fun matches(doc: Int) = false
-    override fun explain(doc: Int) = Explanation.match(0.0f, "MissingTerm-$term")
+    override fun explain(doc: Int) = Explanation.match(0.0f, "MissingTerm-$term length=${length(doc)}")
     override fun estimateDF() = 0L
     override fun getCountStats(): CountStats = stats
     override fun length(doc: Int): Int {
