@@ -11,5 +11,5 @@ import org.lemurproject.galago.core.eval.SimpleEvalDoc
 
 fun TopDocs.toQueryResults(index: IreneIndex) = QueryResults(this.scoreDocs.mapIndexed { i, sdoc ->
     val name = index.getDocumentName(sdoc.doc) ?: "null"
-    SimpleEvalDoc("", i+1, sdoc.score.toDouble())
+    SimpleEvalDoc(name, i+1, sdoc.score.toDouble())
 })

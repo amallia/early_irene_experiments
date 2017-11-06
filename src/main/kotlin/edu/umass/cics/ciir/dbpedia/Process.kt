@@ -551,7 +551,7 @@ object MergeShardData {
         }
         println("Processed $counted from ${input.name}")
     }
-    fun wikiTitleToText(xyz: String): String = xyz.replace('_', ' ')
+    fun wikiTitleToText(xyz: String): String = getCategory(xyz).replace('_', ' ')
     @JvmStatic fun main(args: Array<String>) {
         IreneIndexer.build {
             withPath(File("dbpedia.irene2"))

@@ -4,7 +4,6 @@ import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluators
-import org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS
 
 /**
  *
@@ -29,11 +28,9 @@ fun main(args: Array<String>) {
             }
             val mixtureModel = CombineExpr(fieldExprs, listOf(0.4, 0.6))
             val results = index.search(mixtureModel, 100)
-            val errors = results.scoreDocs.filter { it.doc == NO_MORE_DOCS }
-            if (errors.size > 0) {
-                println(errors)
-            }
             val qres = results.toQueryResults(index)
+
+            println(qres.take(5).joinToString(separator="\n") { "${it.rank}\t${it.name}\t${it.score}" })
 
             evals.forEach { measure, evalfn ->
                 val score = try {
