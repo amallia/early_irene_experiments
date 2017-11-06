@@ -64,6 +64,9 @@ val FullTextNIF = "nif_context_en.ttl.bz2"
 val PageLinks = "page_links_en.ttl.bz2"
 val PersonData = "persondata_en.ttl.bz2"
 
+val StringRelations = "mappingbased_literals_en.ttl.bz2"
+val ObjectRelations = "mapping_based_objects_en.ttl.bz2"
+
 class PeekReader(val rdr: Reader) {
     var next: Int = rdr.read()
     fun eof(): Boolean = next == -1
@@ -141,8 +144,9 @@ class PeekReader(val rdr: Reader) {
         if (peek() == '@'.toInt()) {
             // consume language code:
             consume('@')
-            consume('e')
-            consume('n')
+            deleteUntil(' ')
+            //consume('e')
+            //consume('n')
         }
         val kind =
                 if (peek() == '^'.toInt()) {
@@ -397,6 +401,49 @@ object ProcessAndShardFullText {
             })
         }
 
+
+    }
+}
+
+object ProcessAndShardRelations {
+    fun tokenizeCamelCase(camels: String): List<String> {
+        val splits = camels.mapIndexed { i, ch ->
+            if (Character.isUpperCase(ch)) {
+                i
+            } else null
+        }.filterNotNull().toMutableList()
+
+        val all_splits = arrayListOf(0)
+        all_splits.addAll(splits)
+        all_splits.add(camels.length)
+
+        val tolower = camels.toLowerCase()
+        return (0 until all_splits.size-1).map { i ->
+            val left = all_splits[i]
+            val right = all_splits[i+1]
+            tolower.substring(left, right)
+        }.toList()
+    }
+    fun propToText(prop: String) = tokenizeCamelCase(prop).joinToString(separator = " ")
+    fun getProp(url: String): String = ProcessAndShardFullText.lastSlash(url)
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val shards = argp.get("shards", 20)
+        val sample = argp.get("sample", true)
+
+        mapFileToShards(StringRelations, sample, shards, "string_relations.jsonl.gz") { record, writers ->
+            val page = ProcessAndShardFullText.getKey(record[0])
+            val prop = getProp(record[1])
+            val propText = propToText(prop)
+            val text = record[2]
+            println("$prop ${propText} $text");
+
+            writers.hashed(page).println(pmake {
+                set("id", "page")
+                set("text", "${propText} text")
+            })
+
+        }
 
     }
 }
