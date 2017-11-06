@@ -65,7 +65,7 @@ val PageLinks = "page_links_en.ttl.bz2"
 val PersonData = "persondata_en.ttl.bz2"
 
 val StringRelations = "mappingbased_literals_en.ttl.bz2"
-val ObjectRelations = "mapping_based_objects_en.ttl.bz2"
+val ObjectRelations = "mappingbased_objects_en.ttl.bz2"
 
 class PeekReader(val rdr: Reader) {
     var next: Int = rdr.read()
@@ -405,7 +405,7 @@ object ProcessAndShardFullText {
     }
 }
 
-object ProcessAndShardRelations {
+object ProcessAndShardRelations  {
     fun tokenizeCamelCase(camels: String): List<String> {
         val splits = camels.mapIndexed { i, ch ->
             if (Character.isUpperCase(ch)) {
@@ -424,29 +424,104 @@ object ProcessAndShardRelations {
             tolower.substring(left, right)
         }.toList()
     }
-    fun propToText(prop: String) = tokenizeCamelCase(prop).joinToString(separator = " ")
-    fun getProp(url: String): String = ProcessAndShardFullText.lastSlash(url)
+    fun propToText(prop: String) = tokenizeCamelCase(prop).joinToString(separator = " ") { it.trim() }
+    fun getProp(url: String): String {
+        if (url.endsWith("#seeAlso")) {
+            return "see also"
+        } else {
+            return ProcessAndShardFullText.lastSlash(url)
+        }
+    }
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)
         val shards = argp.get("shards", 20)
         val sample = argp.get("sample", true)
+
+        mapFileToShards(PageLinks, sample, shards, "link_relations.jsonl.gz") { record, writers ->
+            val page1 = getKey(record[0])
+            val page2 = getKey(record[2])
+
+            writers.hashed(page1).println(pmake {
+                set("id", page1)
+                set("outlink", wikiTitleToText(page2))
+            })
+            writers.hashed(page2).println(pmake {
+                set("id", page2)
+                set("inlink", wikiTitleToText(page1))
+            })
+        }
 
         mapFileToShards(StringRelations, sample, shards, "string_relations.jsonl.gz") { record, writers ->
             val page = ProcessAndShardFullText.getKey(record[0])
             val prop = getProp(record[1])
             val propText = propToText(prop)
             val text = record[2]
-            println("$prop ${propText} $text");
 
             writers.hashed(page).println(pmake {
                 set("id", "page")
-                set("text", "${propText} text")
+                set("text", "$propText $text")
             })
 
         }
 
+        // Page-labels
+        val pageLabels = HashMap<String,String>()
+        val qPageLabels = TIntObjectHashMap<String>()
+        mapFileToShards(Labels, sample, shards, "titles.jsonl.gz") { record, writers ->
+            val page = ProcessAndShardFullText.getKey(record[0])
+            val text = record[2]
+            if (page != text) {
+                pageLabels[page] = text
+            }
+            writers.hashed(page).println(pmake {
+                set("id", page)
+                set("text", text)
+            })
+        }
+        forEachTTLRecord(QLabels, sample) { record ->
+            val page = ProcessAndShardFullText.getKey(record[0])
+            assert(page[0] == 'Q')
+            val wkd_id = page.substring(1).toInt()
+            val text = record[2]
+            if (page != text) {
+                qPageLabels.put(wkd_id, text)
+            }
+        }
+        mapFileToShards(ObjectRelations, sample, shards, "object_relations.jsonl.gz") { record, writers ->
+            val page = ProcessAndShardFullText.getKey(record[0])
+            val prop = getProp(record[1])
+            val propText = propToText(prop)
+
+            val text = if (ProcessAndShardFullText.isResource(record[2])) {
+                val key = ProcessAndShardFullText.getKey(record[2])
+                pageLabels[key] ?: key
+            } else if (ProcessAndShardFullText.isWikidata(record[2])) {
+                val key = ProcessAndShardFullText.getKey(record[2])
+                qPageLabels.get(key.substring(1).toInt()) ?: null
+            } else {
+                record[2]
+            }
+
+            writers.hashed(page).println(pmake {
+                set("id", page)
+                set("text", "$propText ${MergeShardData.wikiTitleToText(text?: "")}")
+            })
+
+        }
+    }
+    fun wikiTitleToText(x: String): String = MergeShardData.wikiTitleToText(x)
+    fun getKey(x: String) = ProcessAndShardFullText.getKey(x)
+}
+
+object ProcessLinks {
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val shards = argp.get("shards", 20)
+        val sample = argp.get("sample", true)
+
     }
 }
+
 
 fun <T> Parameters.setIfNotEmpty(key: String, x: Collection<T>) {
     if (x.isNotEmpty()) {
@@ -598,7 +673,17 @@ object MergeShardData {
         }
         println("Processed $counted from ${input.name}")
     }
-    fun wikiTitleToText(xyz: String): String = getCategory(xyz).replace('_', ' ')
+    fun wikiTitleToText(xyz: String): String {
+        val simplified = getCategory(xyz).replace('_', ' ')
+        val withoutCamels = simplified.split(" ").map { words ->
+            ProcessAndShardRelations.propToText(words.trim())
+        }.joinToString(separator = " ") { it.trim() }
+
+        if (simplified.toLowerCase() == withoutCamels) {
+            return simplified
+        }
+        return simplified+" "+withoutCamels
+    }
     @JvmStatic fun main(args: Array<String>) {
         IreneIndexer.build {
             withPath(File("dbpedia.irene2"))
