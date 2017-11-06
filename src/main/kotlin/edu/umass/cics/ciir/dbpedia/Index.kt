@@ -206,10 +206,10 @@ object MergeShardData {
             docInfo.processPage(writer, text)
         }
 
-        println("Start leftovers... ${data.data.size}")
-        data.data.values.forEach { leftover ->
-            leftover.processPage(writer, null)
-        }
+        println("Skip leftovers... ${data.data.size}")
+        //data.data.values.forEach { leftover ->
+            //leftover.processPage(writer, null)
+        //}
     }
     @JvmStatic fun main(args: Array<String>) {
         IreneIndexer.build {
