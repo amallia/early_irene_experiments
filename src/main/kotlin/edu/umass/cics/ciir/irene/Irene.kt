@@ -1,5 +1,7 @@
 package edu.umass.cics.ciir.irene
 
+import com.github.benmanes.caffeine.cache.Cache
+import com.github.benmanes.caffeine.cache.Caffeine
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.LowerCaseFilter
 import org.apache.lucene.analysis.TokenStream
@@ -200,12 +202,17 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
         if (text == null) return emptyList()
         return analyzer.tokenize(field, text)
     }
+    val cache: Cache<Term, CountStats> = Caffeine.newBuilder().maximumSize(100_000).build()
 
-    fun getStats(term: Term): CountStats? {
+    fun getStats(text: String, field: String = defaultField): CountStats? = getStats(Term(field, text))
+    private fun getStatsDirect(term: Term): CountStats? {
         val cstats = searcher.collectionStatistics(term.field())
         val ctx = TermContext.build(searcher.topReaderContext, term) ?: return null
         val termStats = searcher.termStatistics(term, ctx) ?: return null
         return CountStats(termStats.docFreq(), termStats.totalTermFreq(), cstats.sumTotalTermFreq(), cstats.docCount())
+    }
+    fun getStats(term: Term): CountStats? {
+        return cache.get(term, this::getStatsDirect)
     }
 
     fun search(q: QExpr, n: Int): TopDocs {

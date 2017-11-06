@@ -91,13 +91,9 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is SynonymExpr -> TODO()
     is AndExpr -> BooleanAndEval(q.children.map { exprToEval(it, ctx) })
     is OrExpr -> BooleanOrEval(q.children.map { exprToEval(it, ctx) })
-    is SumExpr -> SumEval(q.children.map { exprToEval(it, ctx) })
     is CombineExpr -> WeightedSumEval(
             q.children.map { exprToEval(it, ctx) },
             q.weights.map{ it.toFloat() }.toFloatArray())
-    is MeanExpr -> WeightedSumEval(
-            q.children.map { exprToEval(it, ctx) },
-            q.children.map { 1f / q.children.size.toFloat() }.toFloatArray())
     is MultExpr -> TODO()
     is MaxExpr -> MaxEval(q.children.map { exprToEval(it, ctx) })
     is WeightExpr -> WeightedEval(exprToEval(q.child, ctx), q.weight.toFloat())
@@ -246,22 +242,6 @@ private class MaxEval(children: List<QueryEvalNode>) : OrEval(children) {
         var sum = 0
         children.forEach {
             sum = maxOf(sum, it.count(doc))
-        }
-        return sum
-    }
-}
-private class SumEval(children: List<QueryEvalNode>) : OrEval(children) {
-    override fun score(doc: Int): Float {
-        var sum = 0f
-        children.forEach {
-            sum += it.score(doc)
-        }
-        return sum
-    }
-    override fun count(doc: Int): Int {
-        var sum = 0
-        children.forEach {
-            sum += it.count(doc)
         }
         return sum
     }

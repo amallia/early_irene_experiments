@@ -102,7 +102,7 @@ class Clue12Rewq : WikiSource() {
 
 private class DBPE : WikiSource() {
     override fun getQueryDir(): File = File("deps/dbpedia-entity/collection/v2/")
-    override fun getTitleQueryFile(): File = File(getQueryDir(), "queries-v2.txt")
+    override fun getTitleQueryFile(): File = File(getQueryDir(), "queries-v2_stopped.txt")
     override fun getDescQueryFile(): File = error("No description queries for this dataset.")
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "qrels-v2.txt")
 

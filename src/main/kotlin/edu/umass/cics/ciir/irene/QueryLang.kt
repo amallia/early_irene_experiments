@@ -22,9 +22,13 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
     var defaultBM25k: Double = 1.2
     fun prepare(index: IreneIndex, q: QExpr): QExpr {
         val pq = q.copy()
-        combineWeights(pq)
+
+        // combine weights until query stops changing.
+        while(combineWeights(pq)) { }
+
         applyEnvironment(this, pq)
         applyIndex(index, pq)
+        println("\t$q\n->\t$pq")
         return pq
     }
 
@@ -99,13 +103,11 @@ data class AndExpr(override val children: List<QExpr>) : OpExpr() {
 data class OrExpr(override val children: List<QExpr>) : OpExpr() {
     override fun copy() = OrExpr(copyChildren())
 }
-data class SumExpr(override val children: List<QExpr>) : OpExpr() {
-    override fun copy() = SumExpr(copyChildren())
-}
-data class MeanExpr(override val children: List<QExpr>) : OpExpr() {
-    override fun copy() = MeanExpr(copyChildren())
-}
-data class CombineExpr(override val children: List<QExpr>, val weights: List<Double>) : OpExpr() {
+fun SumExpr(vararg children: QExpr) = SumExpr(children.toList())
+fun SumExpr(children: List<QExpr>) = CombineExpr(children, children.map { 1.0 })
+fun MeanExpr(vararg children: QExpr) = MeanExpr(children.toList())
+fun MeanExpr(children: List<QExpr>) = CombineExpr(children, children.map { 1.0 / children.size.toDouble() })
+data class CombineExpr(override var children: List<QExpr>, var weights: List<Double>) : OpExpr() {
     override fun copy() = CombineExpr(copyChildren(), weights)
 }
 data class MultExpr(override val children: List<QExpr>) : OpExpr() {
@@ -159,8 +161,6 @@ fun toJSON(q: QExpr): Parameters = when(q) {
             is SynonymExpr -> "syn"
             is AndExpr -> "band"
             is OrExpr -> "bor"
-            is SumExpr -> "combine"
-            is MeanExpr -> "mean"
             is MultExpr -> "wsum"
             is MaxExpr -> "max"
             else -> error("Handle this elsewhere!")
@@ -200,17 +200,49 @@ fun toJSON(q: QExpr): Parameters = when(q) {
     }
 }
 
-fun combineWeights(q: QExpr) {
+fun combineWeights(q: QExpr): Boolean {
+    var changed = false
     when(q) {
+        // Flatten nested-weights.
         is WeightExpr -> {
             val c = q.child
             if (c is WeightExpr) {
                 q.child = c.child
                 q.weight *= c.weight
+                changed = true
+                //println("weight(weight(x)) -> weight(x)")
+            }
+        }
+        // Pull weights up into CombineExpr.
+        is CombineExpr -> {
+            val newChildren = arrayListOf<QExpr>()
+            val newWeights = arrayListOf<Double>()
+            q.children.zip(q.weights).forEach { (c, w) ->
+                if (c is CombineExpr) {
+                    // flatten combine(combine(...))
+                    c.children.zip(c.weights).forEach { (cc, cw) ->
+                        newChildren.add(cc)
+                        newWeights.add(w*cw)
+                    }
+                    changed = true
+                } else if (c is WeightExpr) {
+                    //println("combine(...weight(x)..) -> combine(...x...)")
+                    newChildren.add(c.child)
+                    newWeights.add(c.weight * w)
+                    changed = true
+                } else {
+                    newChildren.add(c)
+                    newWeights.add(w)
+                }
+                q.children = newChildren
+                q.weights = newWeights
             }
         }
     }
-    q.children.forEach { combineWeights(it) }
+    q.children.forEach {
+        changed = changed || combineWeights(it)
+    }
+    return changed
 }
 
 fun applyEnvironment(env: IreneQueryLanguage, q: QExpr) {
@@ -256,5 +288,17 @@ fun main(args: Array<String>) {
     val weightCombine = WeightExpr(WeightExpr(TextExpr("test"), 0.5), 2.0)
     combineWeights(weightCombine)
     assert(weightCombine.equals(WeightExpr(TextExpr("test"), 1.0)))
+
+    val weightCombine2 = MeanExpr(MeanExpr(WeightExpr(TextExpr("a"), 2.0), WeightExpr(TextExpr("b"), 3.0)), TextExpr("c"))
+
+    // mean(mean( 2*a, 3*b), c)
+    // 0.5 * mean(2*a, 3*b) + 0.5 * c
+    // 0.5 * 0.5 * 2.0 * a + 0.5 * 0.5 * 3 * b + 0.5 * c
+    // 0.5 * a + 0.75 * b + 0.5 * c
+    while(combineWeights(weightCombine2)) {}
+
+    println(weightCombine2)
+    assert(weightCombine2.weights.size == 3)
+    assert(weightCombine2.weights == listOf(0.5, 0.75, 0.5))
 }
 
