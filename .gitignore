@@ -9,3 +9,4 @@ target
 *.ipynb
 *.json
 *.ranklib
+*.irene2

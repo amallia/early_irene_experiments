@@ -34,7 +34,7 @@ typealias LDoc = org.apache.lucene.document.Document
  *
  * @author jfoley.
  */
-class EnglishAnalyzer : Analyzer() {
+class IreneEnglishAnalyzer : Analyzer() {
     override fun createComponents(fieldName: String?): TokenStreamComponents {
         val source = StandardTokenizer()
         var result: TokenStream = StandardFilter(source)
@@ -73,7 +73,7 @@ class TrueLengthNorm : Similarity() {
 }
 
 class IndexParams {
-    private var defaultAnalyzer = EnglishAnalyzer()
+    private var defaultAnalyzer = IreneEnglishAnalyzer()
     private var perFieldAnalyzers = HashMap<String, Analyzer>()
     var directory: RefCountedIO? = null
     var openMode: IndexWriterConfig.OpenMode? = null
