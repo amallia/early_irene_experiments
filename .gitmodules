@@ -1,3 +1,6 @@
 [submodule "deps/galago"]
 	path = deps/galago
 	url = git@github.com:jjfiv/galago-git.git
+[submodule "deps/dbpedia-entity"]
+	path = deps/dbpedia-entity
+	url = git@github.com:iai-group/DBpedia-Entity.git

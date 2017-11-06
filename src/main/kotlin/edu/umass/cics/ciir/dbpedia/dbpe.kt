@@ -6,11 +6,11 @@ import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluators
 
 /**
- *
- * @author jfoley.
+ * @author jfoley
  */
+
 fun main(args: Array<String>) {
-    val dataset = DataPaths.REWQ_Clue12
+    val dataset = DataPaths.DBPE
     val qrels = dataset.qrels
     val queries = dataset.title_qs.filterKeys { qrels.containsKey(it) }
     val evals = getEvaluators(listOf("ap", "ndcg", "p5"))
@@ -20,6 +20,7 @@ fun main(args: Array<String>) {
 
     dataset.getIreneIndex().use { index ->
         queries.forEach { qid, qtext ->
+            println("$qid $qtext")
             val queryJudgments = qrels[qid]!!
             val qterms = index.tokenize(qtext)
 

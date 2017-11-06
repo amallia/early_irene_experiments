@@ -3,6 +3,7 @@ package edu.umass.cics.ciir.sprf
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndex
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
+import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QuerySetJudgments
 import org.lemurproject.galago.core.retrieval.LocalRetrieval
 import org.lemurproject.galago.utility.Parameters
@@ -81,7 +82,7 @@ class Gov2 : IRDataset {
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "gov2/gov2.qrels")
 }
 
-class Clue12Rewq : IRDataset {
+abstract class WikiSource : IRDataset {
     override fun getIndexFile(): File = notImpl(IRDataset.host)
     fun getIreneIndex() = IreneIndex(IndexParams().apply {
         withAnalyzer("categories", WhitespaceAnalyzer())
@@ -91,10 +92,51 @@ class Clue12Rewq : IRDataset {
             else -> notImpl(IRDataset.host)
         }))
     })
+}
 
+class Clue12Rewq : WikiSource() {
     override fun getTitleQueryFile(): File = File(getQueryDir(), "clue12/web1314.queries.tsv")
     override fun getDescQueryFile(): File = File(getQueryDir(), "clue12/web1314.descs.tsv")
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "rewq/clue12.mturk.qrel")
+}
+
+private class DBPE : WikiSource() {
+    override fun getQueryDir(): File = File("deps/dbpedia-entity/collection/v2/")
+    override fun getTitleQueryFile(): File = File(getQueryDir(), "queries-v2.txt")
+    override fun getDescQueryFile(): File = error("No description queries for this dataset.")
+    override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "qrels-v2.txt")
+
+    val prefix = "<dbpedia:"
+    val suffix = ">"
+    fun extractPageId(x: String):String {
+        if (x.startsWith(prefix) && x.endsWith(suffix)) {
+            return x.substring(prefix.length, x.length - suffix.length)
+        }
+        error("Not well formatted!")
+    }
+
+    override fun getQueryJudgments(): QuerySetJudgments {
+        val judgments = HashMap<String, HashMap<String, Int>>()
+        getQueryJudgmentsFile().bufferedReader().forEachLine { line ->
+            val cols = line.split("\t")
+            if (cols.size == 4) {
+                val qid = cols[0]
+                assert(cols[1] == "Q0")
+                val page = extractPageId(cols[2])
+                val label = cols[3].toInt()
+
+                judgments
+                        .computeIfAbsent(qid, { HashMap<String, Int>() })
+                        .put(page, label)
+            } else if (cols.size == 0) {
+                // Blank line.
+            } else {
+                error("Mal-formatted line: ${cols.toList()}")
+            }
+        }
+
+        return QuerySetJudgments(judgments.mapValues { (qid, raw) ->  QueryJudgments(qid, raw) })
+    }
 }
 
 /**
@@ -104,7 +146,8 @@ object DataPaths {
     val Robust = Robust04()
     val Gov2 = Gov2()
 
-    val REWQ_Clue12 = Clue12Rewq()
+    val REWQ_Clue12: WikiSource = Clue12Rewq()
+    val DBPE: WikiSource = DBPE()
 
     fun get(name: String): IRDataset = when(name) {
         "robust" -> Robust
