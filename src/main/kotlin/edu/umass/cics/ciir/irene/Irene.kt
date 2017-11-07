@@ -3,13 +3,7 @@ package edu.umass.cics.ciir.irene
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
 import org.apache.lucene.analysis.Analyzer
-import org.apache.lucene.analysis.LowerCaseFilter
-import org.apache.lucene.analysis.TokenStream
-import org.apache.lucene.analysis.en.KStemFilter
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper
-import org.apache.lucene.analysis.standard.StandardFilter
-import org.apache.lucene.analysis.standard.StandardTokenizer
-import org.apache.lucene.analysis.tokenattributes.CharTermAttribute
 import org.apache.lucene.benchmark.byTask.feeds.DocData
 import org.apache.lucene.benchmark.byTask.feeds.NoMoreDataException
 import org.apache.lucene.benchmark.byTask.feeds.TrecContentSource
@@ -19,66 +13,29 @@ import org.apache.lucene.document.StringField
 import org.apache.lucene.document.TextField
 import org.apache.lucene.index.*
 import org.apache.lucene.search.*
-import org.apache.lucene.search.similarities.Similarity
 import java.io.Closeable
 import java.io.File
-import java.io.IOException
 import java.util.*
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.atomic.AtomicLong
-
-typealias IOSystem = org.apache.lucene.store.Directory
-typealias MemoryIO = org.apache.lucene.store.RAMDirectory
-typealias DiskIO = org.apache.lucene.store.FSDirectory
-typealias LDoc = org.apache.lucene.document.Document
 
 /**
  *
  * @author jfoley.
  */
-class IreneEnglishAnalyzer : Analyzer() {
-    override fun createComponents(fieldName: String?): TokenStreamComponents {
-        val source = StandardTokenizer()
-        var result: TokenStream = StandardFilter(source)
-        result = LowerCaseFilter(result)
-        result = KStemFilter(result)
-        return TokenStreamComponents(source, result)
-    }
-}
 
-fun Analyzer.tokenize(field: String, input: String): List<String> {
-    val tokens = arrayListOf<String>()
-    tokenStream(field, input).use { body ->
-        val charTermAttr = body.addAttribute(CharTermAttribute::class.java)
-
-        // iterate over tokenized field:
-        body.reset()
-        while(body.incrementToken()) {
-            tokens.add(charTermAttr.toString())
-        }
-    }
-    return tokens
-}
-
-class TrueLengthNorm : Similarity() {
-    override fun computeNorm(state: FieldInvertState?): Long {
-        return state!!.length.toLong()
-    }
-
-    override fun simScorer(p0: SimWeight?, p1: LeafReaderContext?): SimScorer {
-        throw UnsupportedOperationException()
-    }
-
-    override fun computeWeight(p0: Float, p1: CollectionStatistics?, vararg p2: TermStatistics?): SimWeight {
-        throw UnsupportedOperationException()
-    }
+data class CountStats(val cf: Long, val df: Long, val cl: Long, val dc: Long) {
+    fun avgDL() = cl.toDouble() / dc.toDouble();
+    fun countProbability() = cf.toDouble() / cl.toDouble()
+    fun nonzeroCountProbability() = Math.max(0.5,cf.toDouble()) / cl.toDouble()
+    fun binaryProbability() = df.toDouble() / dc.toDouble()
 }
 
 class IndexParams {
     var defaultField = "body"
     private var defaultAnalyzer = IreneEnglishAnalyzer()
     private var perFieldAnalyzers = HashMap<String, Analyzer>()
-    var directory: RefCountedIO? = null
+    var directory: edu.umass.cics.ciir.irene.RefCountedIO? = null
     var openMode: IndexWriterConfig.OpenMode? = null
     var idFieldName = "id"
 
@@ -86,11 +43,11 @@ class IndexParams {
         perFieldAnalyzers.put(field, analyzer)
     }
     fun inMemory() {
-        directory = RefCountedIO(MemoryIO())
+        directory = edu.umass.cics.ciir.irene.RefCountedIO(MemoryIO())
         create()
     }
     fun withPath(fp: File) {
-        directory = RefCountedIO(DiskIO.open(fp.toPath()))
+        directory = edu.umass.cics.ciir.irene.RefCountedIO(DiskIO.open(fp.toPath()))
     }
     fun create() {
         openMode = IndexWriterConfig.OpenMode.CREATE
@@ -104,27 +61,6 @@ class IndexParams {
             } else {
                 PerFieldAnalyzerWrapper(defaultAnalyzer, perFieldAnalyzers)
             }
-}
-
-class RefCountedIO(private val io: IOSystem) : Closeable {
-    var opened = 1
-    override fun close() {
-        synchronized(io) {
-            if (--opened == 0) {
-                io.close()
-            }
-        }
-    }
-    fun use(): IOSystem {
-        assert(opened > 0)
-        return io
-    }
-    fun open(): RefCountedIO {
-        synchronized(io) {
-            opened++
-        }
-        return this
-    }
 }
 
 class IreneIndexer(val params: IndexParams) : Closeable {
@@ -154,16 +90,6 @@ class IreneIndexer(val params: IndexParams) : Closeable {
         processed.incrementAndGet()
     }
     fun open() = IreneIndex(dest, params)
-}
-
-inline fun <T> lucene_try(action: ()->T): T? {
-    try {
-        return action()
-    } catch (missing: IllegalArgumentException) {
-        return null
-    } catch (ioe: IOException) {
-        return null
-    }
 }
 
 class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
