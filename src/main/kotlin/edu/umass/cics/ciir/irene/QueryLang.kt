@@ -20,15 +20,20 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
     var defaultDirichletMu: Double = 1500.0
     var defaultBM25b: Double = 0.75
     var defaultBM25k: Double = 1.2
-    fun prepare(index: IreneIndex, q: QExpr): QExpr {
+
+    fun simplify(q: QExpr): QExpr {
         val pq = q.copy()
 
         // combine weights until query stops changing.
         while(combineWeights(pq)) { }
 
+        return pq
+    }
+
+    fun prepare(index: IreneIndex, q: QExpr): QExpr {
+        val pq = simplify(q)
         applyEnvironment(this, pq)
         applyIndex(index, pq)
-        //println("\t$q\n->\t$pq")
         return pq
     }
 
@@ -68,6 +73,8 @@ sealed class QExpr {
         children.forEach { it.visit(pre) }
         post(this)
     }
+
+    fun weighted(x: Double) = WeightExpr(this, x)
 }
 sealed class LeafExpr : QExpr() {
     override val children: List<QExpr> get() = emptyList()
@@ -238,6 +245,7 @@ fun combineWeights(q: QExpr): Boolean {
                 q.weights = newWeights
             }
         }
+        else -> {}
     }
     q.children.forEach {
         changed = changed || combineWeights(it)
