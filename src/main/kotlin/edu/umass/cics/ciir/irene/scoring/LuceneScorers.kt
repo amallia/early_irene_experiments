@@ -1,5 +1,6 @@
-package edu.umass.cics.ciir.irene
+package edu.umass.cics.ciir.irene.scoring
 
+import edu.umass.cics.ciir.irene.*
 import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.index.NumericDocValues
 import org.apache.lucene.index.Term
@@ -31,7 +32,7 @@ data class IQContext(val searcher: IndexSearcher, val context: LeafReaderContext
     }
 }
 
-class IQModelWeight(val q: QExpr, iqm: IreneQueryModel, val searcher: IndexSearcher) : Weight(iqm) {
+private class IQModelWeight(val q: QExpr, iqm: IreneQueryModel, val searcher: IndexSearcher) : Weight(iqm) {
     override fun extractTerms(terms: MutableSet<Term>?) {
         TODO("not implemented")
     }

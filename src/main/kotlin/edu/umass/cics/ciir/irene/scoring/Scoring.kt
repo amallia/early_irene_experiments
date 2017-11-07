@@ -1,5 +1,6 @@
-package edu.umass.cics.ciir.irene
+package edu.umass.cics.ciir.irene.scoring
 
+import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluators
@@ -9,7 +10,7 @@ import org.apache.lucene.search.Explanation
 import java.io.File
 
 /**
- *
+ * This class translates the public-facing query language (QExpr and subclasses) to a set of private-facing operators (QueryEvalNode and subclasses).
  * @author jfoley.
  */
 
@@ -21,7 +22,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is OrExpr -> BooleanOrEval(q.children.map { exprToEval(it, ctx) })
     is CombineExpr -> WeightedSumEval(
             q.children.map { exprToEval(it, ctx) },
-            q.weights.map{ it.toFloat() }.toFloatArray())
+            q.weights.map { it.toFloat() }.toFloatArray())
     is MultExpr -> TODO()
     is MaxExpr -> MaxEval(q.children.map { exprToEval(it, ctx) })
     is WeightExpr -> WeightedEval(exprToEval(q.child, ctx), q.weight.toFloat())

@@ -1,5 +1,6 @@
-package edu.umass.cics.ciir.irene
+package edu.umass.cics.ciir.irene.scoring
 
+import edu.umass.cics.ciir.irene.CountStats
 import org.apache.lucene.index.NumericDocValues
 import org.apache.lucene.index.PostingsEnum
 import org.apache.lucene.index.Term

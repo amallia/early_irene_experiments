@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.irene
 
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
+import edu.umass.cics.ciir.irene.scoring.IreneQueryModel
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper
 import org.apache.lucene.benchmark.byTask.feeds.DocData
