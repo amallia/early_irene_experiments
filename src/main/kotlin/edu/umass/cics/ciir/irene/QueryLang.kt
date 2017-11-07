@@ -291,22 +291,5 @@ fun main(args: Array<String>) {
     applyEnvironment(IreneQueryLanguage(), complicated)
     println(toJSON(complicated).toPrettyString())
     println(complicated)
-    
-
-    val weightCombine = WeightExpr(WeightExpr(TextExpr("test"), 0.5), 2.0)
-    combineWeights(weightCombine)
-    assert(weightCombine.equals(WeightExpr(TextExpr("test"), 1.0)))
-
-    val weightCombine2 = MeanExpr(MeanExpr(WeightExpr(TextExpr("a"), 2.0), WeightExpr(TextExpr("b"), 3.0)), TextExpr("c"))
-
-    // mean(mean( 2*a, 3*b), c)
-    // 0.5 * mean(2*a, 3*b) + 0.5 * c
-    // 0.5 * 0.5 * 2.0 * a + 0.5 * 0.5 * 3 * b + 0.5 * c
-    // 0.5 * a + 0.75 * b + 0.5 * c
-    while(combineWeights(weightCombine2)) {}
-
-    println(weightCombine2)
-    assert(weightCombine2.weights.size == 3)
-    assert(weightCombine2.weights == listOf(0.5, 0.75, 0.5))
 }
 
