@@ -25,7 +25,7 @@ fun main(args: Array<String>) {
     println("${queries.size} ${qrels.size}")
     val ms = NamedMeasures()
 
-    val fields = arrayListOf<String>("body", "anchor_text", "citation_titles", "redirects", "categories_text", "short_text")
+    val fields = arrayListOf<String>("body", "short_text")
     //val fields = arrayListOf<String>("body", "anchor_text", "short_text")
     val fieldWeights = NamedMeasures()
 

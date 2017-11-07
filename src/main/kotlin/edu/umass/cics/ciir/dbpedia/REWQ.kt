@@ -4,13 +4,19 @@ import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluators
+import org.lemurproject.galago.utility.Parameters
 
 /**
  *
  * @author jfoley.
  */
 fun main(args: Array<String>) {
-    val dataset = DataPaths.REWQ_Clue12
+    val argp = Parameters.parseArgs(args)
+    val dataset = when(argp.get("dataset", "rewq")) {
+        "rewq" -> DataPaths.REWQ_Clue12
+        "dbpe" -> DataPaths.DBPE
+        else -> error("Unknown dataset=${argp.getString("dataset")}")
+    }
     val qrels = dataset.qrels
     val queries = dataset.title_qs.filterKeys { qrels.containsKey(it) }
     val evals = getEvaluators(listOf("ap", "ndcg", "p5"))
@@ -18,39 +24,74 @@ fun main(args: Array<String>) {
     println("${queries.size} ${qrels.size}")
     val ms = NamedMeasures()
 
-    val fields = arrayListOf<String>("body", "anchor_text", "short_text")
+    val fields = ArrayList<String>()
+    if (argp.isList("fields") || argp.isString("fields")) {
+        fields.addAll(argp.getAsList("fields", String::class.java))
+    } else {
+        fields.addAll(listOf<String>("body", "anchor_text", "short_text", "links", "props", "categories_text", "redirects", "citation_titles"))
+    }
+    val paramWeights = ArrayList<Double>()
+    if (argp.isList("weights") || argp.isDouble("weights")) {
+        val argW = argp.getAsList("weights", Any::class.java).map {
+            when (it) {
+                is Number -> it.toDouble()
+                is String -> it.toDouble()
+                else -> error("Can't make weight=$it into a double...")
+            }
+        }
+        paramWeights.addAll(argW)
+    }
+
+    val model = argp.get("model", "prms")
+    val avgDLMu = argp.get("avgDLMu", false)
+    val defaultMu = argp.get("mu", 7000.0)
+    val depth = argp.get("depth", 100)
+
     //val fields = arrayListOf<String>("body", "anchor_text", "citation_titles", "redirects", "categories_text", "short_text")
 
     dataset.getIreneIndex().use { index ->
-        val fieldMu = fields.associate { Pair(it, index.getAverageDL(it)*100.0) }
+        val fieldMu = fields.associate { Pair(it, index.getAverageDL(it)) }
         println("fieldMu = $fieldMu")
 
         queries.forEach { qid, qtext ->
             val queryJudgments = qrels[qid]!!
             val qterms = index.tokenize(qtext)
 
-            val prms = MeanExpr(qterms.map { term ->
-                val weights: Map<String, Double> = fields.map { field ->
-                    val stats = index.getStats(term, field)
-                    if (stats == null) {
-                        null
-                    } else Pair(field, stats.nonzeroCountProbability())
-                }.filterNotNull().associate {it}
+            val query = when(model) {
+                "mlm" -> CombineExpr(fields.map { field ->
+                    MeanExpr(qterms.map { term ->
+                        val mu = if (avgDLMu) fieldMu[field] else defaultMu
+                        DirQLExpr(TextExpr(term, field), mu ?: defaultMu)
+                    })
+                }, paramWeights)
+                "prms" -> MeanExpr(qterms.map { term ->
+                    val weights: Map<String, Double> = fields.map { field ->
+                        val stats = index.getStats(term, field)
+                        if (stats == null) {
+                            null
+                        } else Pair(field, stats.nonzeroCountProbability())
+                    }.filterNotNull().associate {it}
 
-                val norm = weights.values.sum()
-                MeanExpr(weights.map { (field, weight) ->
-                    WeightExpr(DirQLExpr(TextExpr(term, field), fieldMu[field]), weight / norm)
+                    val norm = weights.values.sum()
+                    MeanExpr(weights.map { (field, weight) ->
+                        val mu = if (avgDLMu) fieldMu[field] else defaultMu
+                        WeightExpr(DirQLExpr(TextExpr(term, field), mu ?: defaultMu), weight / norm)
+                    })
                 })
-            })
-            println(prms)
-            val fieldExprs = listOf("body", "short_text", "citation_titles", "anchor_text", "redirects", "categories_text").map { field ->
-                MeanExpr(qterms.map { DirQLExpr(TextExpr(it, field)) })
+                "mixture" -> {
+                    val fieldExprs = listOf("body", "short_text").map { field ->
+                        MeanExpr(qterms.map { DirQLExpr(TextExpr(it, field)) })
+                    }
+                    CombineExpr(fieldExprs, listOf(0.3, 0.5))
+                }
+                else -> error("No such model=$model")
             }
-            val mixtureModel = CombineExpr(fieldExprs, listOf(0.3, 0.5, 0.05, 0.2, 0.1, 0.05))
-            val results = index.search(prms, 100)
+            val results = index.search(query, depth)
             val qres = results.toQueryResults(index)
 
-            println(qres.take(5).joinToString(separator="\n") { "${it.rank}\t${it.name}\t${it.score}" })
+            if (argp.get("printTopK", false)) {
+                println(qres.take(5).joinToString(separator = "\n") { "${it.rank}\t${it.name}\t${it.score}" })
+            }
 
             evals.forEach { measure, evalfn ->
                 val score = try {
@@ -59,7 +100,7 @@ fun main(args: Array<String>) {
                     System.err.println("NULL in eval...")
                     -Double.MAX_VALUE
                 }
-                ms.push("$measure.irene2", score)
+                ms.push("$measure", score)
             }
 
             println(ms.means())
