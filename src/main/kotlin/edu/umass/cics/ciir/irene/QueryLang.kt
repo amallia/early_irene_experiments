@@ -326,7 +326,7 @@ fun applyIndex(index: IreneIndex, root: QExpr) {
             q.stats = index.getStats(Term(field, q.text))
             // Warning, q is missing.
             if (q.stats == null) {
-                q.stats = index.fieldStats(field) ?: error("Query uses field ``$field'' which does not exist in index.")
+                error("Query uses field ``$field'' which does not exist in index, via $q")
             }
         }
     }

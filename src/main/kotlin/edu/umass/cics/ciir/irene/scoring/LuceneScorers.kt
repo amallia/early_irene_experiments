@@ -25,7 +25,7 @@ data class IQContext(val index: IreneIndex, val context: LeafReaderContext) {
         val termContext = TermContext.build(searcher.topReaderContext, term)!!
         val cstats = searcher.collectionStatistics(term.field())!!
         val termStats = searcher.termStatistics(term, termContext)!!
-        val stats = CountStats(termStats.docFreq(), termStats.totalTermFreq(), cstats.sumTotalTermFreq(), cstats.docCount())
+        val stats = CountStats("term:$term", termStats, cstats)
         val state = termContext[context.ord] ?: return LuceneMissingTerm(term, stats, lengths)
         val termIter = context.reader().terms(term.field()).iterator()
         termIter.seekExact(term.bytes(), state)

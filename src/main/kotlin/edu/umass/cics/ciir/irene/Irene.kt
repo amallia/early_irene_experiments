@@ -28,9 +28,9 @@ import java.util.concurrent.atomic.AtomicLong
 
 class IndexParams {
     var defaultField = "body"
-    private var defaultAnalyzer = IreneEnglishAnalyzer()
+    var defaultAnalyzer: Analyzer = IreneEnglishAnalyzer()
     private var perFieldAnalyzers = HashMap<String, Analyzer>()
-    var directory: edu.umass.cics.ciir.irene.RefCountedIO? = null
+    var directory: RefCountedIO? = null
     var openMode: IndexWriterConfig.OpenMode? = null
     var idFieldName = "id"
 
@@ -38,11 +38,11 @@ class IndexParams {
         perFieldAnalyzers.put(field, analyzer)
     }
     fun inMemory() {
-        directory = edu.umass.cics.ciir.irene.RefCountedIO(MemoryIO())
+        directory = RefCountedIO(MemoryIO())
         create()
     }
     fun withPath(fp: File) {
-        directory = edu.umass.cics.ciir.irene.RefCountedIO(DiskIO.open(fp.toPath()))
+        directory = RefCountedIO(DiskIO.open(fp.toPath()))
     }
     fun create() {
         openMode = IndexWriterConfig.OpenMode.CREATE
@@ -153,6 +153,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
     }
 
     fun tokenize(text: String, field: String=defaultField) = this.analyzer.tokenize(field, text)
+    fun explain(q: QExpr, doc: Int): Explanation = searcher.explain(prepare(q), doc)
 }
 
 

@@ -17,6 +17,7 @@ import org.lemurproject.galago.utility.Parameters
  */
 typealias GExpr = org.lemurproject.galago.core.retrieval.query.Node
 typealias GResults = org.lemurproject.galago.core.retrieval.Results
+typealias GDoc = org.lemurproject.galago.core.parse.Document
 
 val inqueryStop: Set<String> = WordLists.getWordListOrDie("inquery")
 

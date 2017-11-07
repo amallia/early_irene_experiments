@@ -81,7 +81,7 @@ abstract class RecursiveEval<out T : QueryEvalNode>(val children: List<T>) : Que
     }
 }
 abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
-    private var current: Int = 0
+    private var current: Int = children.map { it.docID() }.min()!!
     val cost = children.map { it.estimateDF() }.max() ?: 0L
     val moveChildren = children.sortedByDescending { it.estimateDF() }
     override fun docID(): Int = current
@@ -183,6 +183,14 @@ private class WeightedSumEval(children: List<QueryEvalNode>, val weights: FloatA
         return sum
     }
 
+    override fun explain(doc: Int): Explanation {
+        val expls = children.map { it.explain(doc) }
+        if (matches(doc)) {
+            return Explanation.match(score(doc), "$className.Match ${weights.toList()}", expls)
+        }
+        return Explanation.noMatch("$className.Miss ${weights.toList()}", expls)
+    }
+
     override fun count(doc: Int): Int = error("Calling counts on WeightedSumEval is nonsense.")
     init { assert(weights.size == children.size, {"Weights provided to WeightedSumEval must exist for all children."}) }
 }
@@ -220,9 +228,9 @@ private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: 
         val c = child.count(doc)
         val length = child.length(doc)
         if (c > 0) {
-            return Explanation.match(score(doc), "$c/$length with mu=$mu, bg=$background dirichlet smoothing.", listOf(child.explain(doc)))
+            return Explanation.match(score(doc), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. ${child.getCountStats()}", listOf(child.explain(doc)))
         } else {
-            return Explanation.noMatch("score=${score(doc)} or $c/$length with mu=$mu, bg=$background dirichlet smoothing.", listOf(child.explain(doc)))
+            return Explanation.noMatch("score=${score(doc)} or $c/$length with mu=$mu, bg=$background dirichlet smoothing ${child.getCountStats()} ${child.getCountStats().nonzeroCountProbability()}.", listOf(child.explain(doc)))
         }
     }
 }
