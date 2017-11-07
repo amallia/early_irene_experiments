@@ -45,21 +45,11 @@ inline fun <T> lucene_try(action: ()->T): T? {
 }
 
 enum class DataNeeded(val level: Int) {
-    DOCS(0), COUNTS(1), POSITIONS(2);
-    fun flags(): Int = when(this) {
-        DataNeeded.DOCS -> PostingsEnum.NONE.toInt()
-        DataNeeded.COUNTS -> PostingsEnum.FREQS.toInt()
-        DataNeeded.POSITIONS -> PostingsEnum.ALL.toInt()
-    }
-    companion object {
-        fun max(lhs: DataNeeded?, rhs: DataNeeded?): DataNeeded {
-            val max = maxOf(lhs?.level ?: 0, rhs?.level ?: 0)
-            return when(max) {
-                0 -> DOCS
-                1 -> COUNTS
-                2 -> POSITIONS
-                else -> error("Invalid Level Needed: max($lhs,$rhs)")
-            }
-        }
+    DOCS(0), COUNTS(1), POSITIONS(2), SCORES(3);
+    fun textFlags(): Int = when(this) {
+        DOCS -> PostingsEnum.NONE.toInt()
+        COUNTS -> PostingsEnum.FREQS.toInt()
+        POSITIONS -> PostingsEnum.ALL.toInt()
+        SCORES -> error("Can't get scores from raw text.")
     }
 }

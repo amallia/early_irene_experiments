@@ -47,4 +47,58 @@ class IreneQueryLanguageTest {
         Assert.assertEquals(CombineExpr(listOf(a,b,c), listOf(0.5, 0.75, 0.5)), out)
     }
 
+    @Test
+    fun testDataNeededAnd() {
+        val a = TextExpr("a")
+        val b = TextExpr("b")
+        val c = TextExpr("c")
+
+        val expr = AndExpr(listOf(a, b, c))
+        analyzeDataNeededRecursive(expr, DataNeeded.DOCS)
+
+        Assert.assertEquals(DataNeeded.DOCS, a.needed)
+        Assert.assertEquals(DataNeeded.DOCS, b.needed)
+        Assert.assertEquals(DataNeeded.DOCS, c.needed)
+    }
+
+    @Test
+    fun testDataNeededScoreError() {
+        try {
+            analyzeDataNeededRecursive(MeanExpr(TextExpr("a"), TextExpr("b")))
+            Assert.fail("Can't take the mean of a TextExpr!")
+        } catch (e: TypeCheckError) {
+            // PASS.
+            Assert.assertNotNull(e)
+        } catch (t: Throwable) {
+            Assert.fail("Wrong kind of error thrown: $t")
+        }
+    }
+
+    @Test
+    fun testOrderedWindowNeeds() {
+        val a = TextExpr("a")
+        val b = TextExpr("b")
+        val bigram = OrderedWindowExpr(listOf(a, b))
+        analyzeDataNeededRecursive(bigram)
+        Assert.assertEquals(DataNeeded.POSITIONS, a.needed)
+        Assert.assertEquals(DataNeeded.POSITIONS, b.needed)
+
+        // Calculation should not change if used in a score.
+        val b2 = DirQLExpr(OrderedWindowExpr(listOf(a, b)))
+
+        analyzeDataNeededRecursive(b2)
+        Assert.assertEquals(DataNeeded.POSITIONS, a.needed)
+        Assert.assertEquals(DataNeeded.POSITIONS, b.needed)
+    }
+
+    @Test
+    fun testScorerNeeds() {
+        val a = TextExpr("a")
+        val b = TextExpr("b")
+        val bigram = MeanExpr(listOf(DirQLExpr(a), BM25Expr(b)))
+        analyzeDataNeededRecursive(bigram)
+        Assert.assertEquals(DataNeeded.COUNTS, a.needed)
+        Assert.assertEquals(DataNeeded.COUNTS, b.needed)
+    }
+
 }

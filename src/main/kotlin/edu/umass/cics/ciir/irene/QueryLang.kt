@@ -64,6 +64,11 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
 
 }
 
+// Easy "model"-based constructor.
+fun QueryLikelihood(terms: List<String>, field: String?=null, mu: Double?=null): QExpr {
+    return MeanExpr(terms.map { DirQLExpr(TextExpr(it, field), mu) })
+}
+
 sealed class QExpr {
     abstract val children: List<QExpr>
     abstract fun copy(): QExpr
@@ -259,20 +264,29 @@ fun combineWeights(q: QExpr): Boolean {
     return changed
 }
 
+class TypeCheckError(msg: String): Exception(msg)
+
 fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
     var childNeeds = needed
-    childNeeds = DataNeeded.max(needed, when(q) {
+    childNeeds = when(q) {
         is TextExpr -> {
+            if (childNeeds == DataNeeded.SCORES) {
+                throw TypeCheckError("Cannot convert q=$q to score. Try DirQLExpr(q) or BM25Expr(q)")
+            }
             q.needed = childNeeds
             childNeeds
         }
         is AndExpr, is OrExpr -> DataNeeded.DOCS
         is LuceneExpr, is SynonymExpr -> childNeeds
         is WeightExpr, is CombineExpr, is MultExpr, is MaxExpr -> {
-            // scores
-            childNeeds
+            DataNeeded.SCORES
         }
-        is OrderedWindowExpr -> DataNeeded.POSITIONS
+        is OrderedWindowExpr -> {
+            if (q.children.size <= 1) {
+                throw TypeCheckError("Need more than 1 child for an OrderedWindow, e.g. $q")
+            }
+            DataNeeded.POSITIONS
+        }
         is BM25Expr, is DirQLExpr ->  DataNeeded.COUNTS
         is CountToScoreExpr ->  DataNeeded.COUNTS
         is BoolToScoreExpr -> DataNeeded.DOCS
@@ -282,7 +296,7 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
             analyzeDataNeededRecursive(q.value, childNeeds)
             return
         }
-    })
+    }
     q.children.forEach { analyzeDataNeededRecursive(it, childNeeds) }
 }
 

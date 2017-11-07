@@ -29,7 +29,7 @@ data class IQContext(val index: IreneIndex, val context: LeafReaderContext) {
         val state = termContext[context.ord] ?: return LuceneMissingTerm(term, stats, lengths)
         val termIter = context.reader().terms(term.field()).iterator()
         termIter.seekExact(term.bytes(), state)
-        return LuceneTermPostings(stats, termIter.postings(null, needed.flags()), lengths)
+        return LuceneTermPostings(stats, termIter.postings(null, needed.textFlags()), lengths)
     }
 }
 
