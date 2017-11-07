@@ -68,10 +68,9 @@ sealed class QExpr {
     abstract fun copy(): QExpr
     fun copyChildren() = children.map { it.copy() }
 
-    fun visit(pre: (QExpr)->Unit, post: (QExpr)->Unit = {}) {
-        pre(this)
-        children.forEach { it.visit(pre) }
-        post(this)
+    fun visit(each: (QExpr)->Unit) {
+        each(this)
+        children.forEach { it.visit(each) }
     }
 
     fun weighted(x: Double) = WeightExpr(this, x)
@@ -122,6 +121,12 @@ data class MultExpr(override val children: List<QExpr>) : OpExpr() {
 }
 data class MaxExpr(override val children: List<QExpr>) : OpExpr() {
     override fun copy() = MaxExpr(copyChildren())
+}
+
+data class OrderedWindowExpr(override var children: List<QExpr>, var step: Int=1) : OpExpr() {
+    var computedStats: CountStats? = null
+    override fun copy() = OrderedWindowExpr(copyChildren(), step)
+
 }
 data class WeightExpr(override var child: QExpr, var weight: Double = 1.0) : SingleChildExpr() {
     override fun copy() = WeightExpr(child.copy(), weight)
@@ -254,29 +259,35 @@ fun combineWeights(q: QExpr): Boolean {
 }
 
 fun applyEnvironment(env: IreneQueryLanguage, q: QExpr) {
-    when(q) {
-        is TextExpr -> if(q.field == null) {
-            q.field = env.defaultField
-        } else {}
-        is LuceneExpr -> q.parse(env)
-        is DirQLExpr -> if (q.mu == null) {
-            q.mu = env.defaultDirichletMu
-        }
-        is BM25Expr -> {
-            if (q.b == null) q.b = env.defaultBM25b
-            if (q.k == null) q.k = env.defaultBM25k
+    q.visit {
+        when(q) {
+            is TextExpr -> if(q.field == null) {
+                q.field = env.defaultField
+            } else { }
+            is LuceneExpr -> q.parse(env)
+            is DirQLExpr -> if (q.mu == null) {
+                q.mu = env.defaultDirichletMu
+            }
+            is BM25Expr -> {
+                if (q.b == null) q.b = env.defaultBM25b
+                if (q.k == null) q.k = env.defaultBM25k
+            }
+            else -> {}
         }
     }
-    q.children.forEach { applyEnvironment(env, it) }
 }
 
 fun applyIndex(index: IreneIndex, root: QExpr) {
-    root.visit({ q ->
-        when(q) {
-            is TextExpr -> q.stats = index.getStats(Term(q.field, q.text))
-            //is LuceneExpr -> TODO()
+    root.visit { q ->
+        if (q is TextExpr) {
+            val field = q.field!!
+            q.stats = index.getStats(Term(field, q.text))
+            // Warning, q is missing.
+            if (q.stats == null) {
+                q.stats = index.fieldStats(field) ?: error("Query uses field ``$field'' which does not exist in index.")
+            }
         }
-    })
+    }
 }
 
 fun main(args: Array<String>) {

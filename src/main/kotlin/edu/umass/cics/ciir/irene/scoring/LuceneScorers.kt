@@ -12,7 +12,8 @@ import org.apache.lucene.search.*
  * @author jfoley.
  */
 
-data class IQContext(val searcher: IndexSearcher, val context: LeafReaderContext) {
+data class IQContext(val index: IreneIndex, val context: LeafReaderContext) {
+    val searcher = index.searcher
     val lengths = HashMap<String, NumericDocValues>()
 
     fun create(term: Term, needed: DataNeeded): LeafEvalNode {
@@ -32,30 +33,42 @@ data class IQContext(val searcher: IndexSearcher, val context: LeafReaderContext
     }
 }
 
-private class IQModelWeight(val q: QExpr, iqm: IreneQueryModel, val searcher: IndexSearcher) : Weight(iqm) {
+private class IQModelWeight(val q: QExpr, val iqm: IreneQueryModel) : Weight(iqm) {
     override fun extractTerms(terms: MutableSet<Term>?) {
         TODO("not implemented")
     }
 
     override fun explain(context: LeafReaderContext?, doc: Int): Explanation {
-        val ctx = IQContext(searcher, context!!)
+        val ctx = IQContext(iqm.index, context!!)
         return exprToEval(q, ctx).explain(doc)
     }
 
     override fun scorer(context: LeafReaderContext?): Scorer {
-        val ctx = IQContext(searcher, context!!)
+        val ctx = IQContext(iqm.index, context!!)
         return IreneQueryScorer(exprToEval(q, ctx))
     }
 }
 
+class QueryEvalNodeIter(val node: QueryEvalNode) : QueryEvalNode, DocIdSetIterator() {
+    override fun advance(target: Int): Int = node.advance(target)
+    override fun nextDoc(): Int = node.advance(docID() + 1)
+    override fun docID() = node.docID()
+    override fun score(doc: Int): Float = node.score(doc)
+    override fun count(doc: Int): Int = node.count(doc)
+    override fun matches(doc: Int): Boolean = node.matches(doc)
+    override fun explain(doc: Int): Explanation = node.explain(doc)
+    override fun estimateDF(): Long = node.estimateDF()
+    override fun cost(): Long = node.estimateDF()
+}
+
 class IreneQueryScorer(val eval: QueryEvalNode) : Scorer(null) {
     override fun docID(): Int = eval.docID()
-    override fun iterator(): DocIdSetIterator = eval
+    override fun iterator(): DocIdSetIterator = QueryEvalNodeIter(eval)
     override fun score(): Float {
         val returned = eval.score(eval.docID())
         if (java.lang.Float.isInfinite(returned)) {
             throw RuntimeException("Infinite response for document: ${eval.docID()} ${eval.explain(eval.docID())}")
-            return -Float.MAX_VALUE
+            //return -Float.MAX_VALUE
         }
         return returned
     }
@@ -66,7 +79,7 @@ class IreneQueryModel(val index: IreneIndex, val env: IreneQueryLanguage, val q:
     val exec = env.prepare(index, q)
 
     override fun createWeight(searcher: IndexSearcher?, needsScores: Boolean, boost: Float): Weight {
-        return IQModelWeight(exec, this, searcher!!)
+        return IQModelWeight(exec, this)
     }
     override fun hashCode(): Int {
         return q.hashCode() + env.hashCode();
@@ -80,4 +93,15 @@ class IreneQueryModel(val index: IreneIndex, val env: IreneQueryLanguage, val q:
     override fun toString(field: String?): String {
         return q.toString()
     }
+
+    fun findFieldsNeeded(): Set<String> {
+        val out = HashSet<String>()
+        exec.visit {
+            if (it is TextExpr) {
+                out.add(it.field!!)
+            }
+        }
+        return out
+    }
 }
+

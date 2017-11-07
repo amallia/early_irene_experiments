@@ -32,28 +32,32 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is BoolToScoreExpr -> TODO()
     is CountToBoolExpr -> TODO()
     is RequireExpr -> RequireEval(exprToEval(q.cond, ctx), exprToEval(q.value, ctx))
+    is OrderedWindowExpr -> OrderedWindow(LazyCountStats(q.copy(), ctx.index), q.children.map { exprToEval(it, ctx) as LeafEvalNode}, q.step)
 }
 
 
-abstract class QueryEvalNode : DocIdSetIterator() {
-    abstract fun score(doc: Int): Float
-    abstract fun count(doc: Int): Int
-    abstract fun matches(doc: Int): Boolean
-    abstract fun explain(doc: Int): Explanation
-    abstract fun estimateDF(): Long
-    override fun cost(): Long = estimateDF()
-    override fun nextDoc(): Int = advance(docID() + 1)
+const val NO_MORE_DOCS = DocIdSetIterator.NO_MORE_DOCS
+interface QueryEvalNode {
+    fun docID(): Int
+    fun score(doc: Int): Float
+    fun count(doc: Int): Int
+    fun matches(doc: Int): Boolean
+    fun explain(doc: Int): Explanation
+    fun estimateDF(): Long
+    fun cost(): Long = estimateDF()
+    fun nextDoc(): Int = advance(docID() + 1)
+    fun advance(target: Int): Int
     val done: Boolean get() = docID() == NO_MORE_DOCS
 }
-abstract class CountEvalNode : QueryEvalNode() {
-    abstract fun getCountStats(): CountStats
-    abstract fun length(doc: Int): Int
+interface CountEvalNode : QueryEvalNode {
+    fun getCountStats(): CountStats
+    fun length(doc: Int): Int
 }
-abstract class LeafEvalNode : CountEvalNode() {
-
+interface LeafEvalNode : CountEvalNode {
+    fun positions(doc: Int): PositionsIter
 }
 
-private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val miss: Float=-Float.MAX_VALUE): QueryEvalNode() {
+private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val miss: Float=-Float.MAX_VALUE): QueryEvalNode {
     override fun score(doc: Int): Float = if (cond.matches(doc)) { score.score(doc) } else miss
     override fun count(doc: Int): Int = if (cond.matches(doc)) { score.count(doc) } else 0
     override fun matches(doc: Int): Boolean = cond.matches(doc) && score.matches(doc)
@@ -65,7 +69,8 @@ private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val
     override fun advance(target: Int): Int = cond.advance(target)
 }
 
-private abstract class RecursiveEval(val children: List<QueryEvalNode>) : QueryEvalNode() {
+abstract class RecursiveEval<out T : QueryEvalNode>() : QueryEvalNode {
+    abstract val children: List<T>
     val className = this.javaClass.simpleName
     val N = children.size
     override fun explain(doc: Int): Explanation {
@@ -76,7 +81,7 @@ private abstract class RecursiveEval(val children: List<QueryEvalNode>) : QueryE
         return Explanation.noMatch("$className.Miss", expls)
     }
 }
-private abstract class OrEval(children: List<QueryEvalNode>) : RecursiveEval(children) {
+abstract class OrEval<out T : QueryEvalNode> : RecursiveEval<T>() {
     private var current: Int = 0
     val cost = children.map { it.estimateDF() }.max() ?: 0L
     val moveChildren = children.sortedByDescending { it.estimateDF() }
@@ -105,7 +110,7 @@ private abstract class OrEval(children: List<QueryEvalNode>) : RecursiveEval(chi
     }
 }
 
-private abstract class AndEval(children: List<QueryEvalNode>) : RecursiveEval(children) {
+abstract class AndEval<out T : QueryEvalNode> : RecursiveEval<T>() {
     private var current: Int = 0
     val cost = children.map { it.estimateDF() }.min() ?: 0L
     val moveChildren = children.sortedBy { it.estimateDF() }
@@ -144,16 +149,16 @@ private abstract class AndEval(children: List<QueryEvalNode>) : RecursiveEval(ch
     }
 }
 
-private class BooleanOrEval(children: List<QueryEvalNode>): OrEval(children) {
+private class BooleanOrEval(override val children: List<QueryEvalNode>): OrEval<QueryEvalNode>() {
     override fun score(doc: Int): Float = if (matches(doc)) { 1f } else { 0f }
     override fun count(doc: Int): Int = if (matches(doc)) { 1 } else { 0 }
 }
-private class BooleanAndEval(children: List<QueryEvalNode>): AndEval(children) {
+private class BooleanAndEval(override val children: List<QueryEvalNode>): AndEval<QueryEvalNode>() {
     override fun score(doc: Int): Float = if (matches(doc)) { 1f } else { 0f }
     override fun count(doc: Int): Int = if (matches(doc)) { 1 } else { 0 }
 }
 
-private class MaxEval(children: List<QueryEvalNode>) : OrEval(children) {
+private class MaxEval(override val children: List<QueryEvalNode>) : OrEval<QueryEvalNode>() {
     override fun score(doc: Int): Float {
         var sum = 0f
         children.forEach {
@@ -170,7 +175,7 @@ private class MaxEval(children: List<QueryEvalNode>) : OrEval(children) {
     }
 }
 // Also known as #combine for you galago/indri folks.
-private class WeightedSumEval(children: List<QueryEvalNode>, val weights: FloatArray) : OrEval(children) {
+private class WeightedSumEval(override val children: List<QueryEvalNode>, val weights: FloatArray) : OrEval<QueryEvalNode>() {
     override fun score(doc: Int): Float {
         var sum = 0f
         children.forEachIndexed { i, child ->
@@ -183,7 +188,7 @@ private class WeightedSumEval(children: List<QueryEvalNode>, val weights: FloatA
     init { assert(weights.size == children.size, {"Weights provided to WeightedSumEval must exist for all children."}) }
 }
 
-private abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode() {
+private abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
     abstract val child: T
     override fun docID(): Int = child.docID()
     override fun advance(target: Int): Int = child.advance(target)
