@@ -26,22 +26,6 @@ import java.util.concurrent.atomic.AtomicLong
  * @author jfoley.
  */
 
-data class CountStats(var cf: Long, var df: Long, var cl: Long, var dc: Long) {
-    constructor(): this(0,0,0,0)
-    fun avgDL() = cl.toDouble() / dc.toDouble();
-    fun countProbability() = cf.toDouble() / cl.toDouble()
-    fun nonzeroCountProbability() = Math.max(0.5,cf.toDouble()) / cl.toDouble()
-    fun binaryProbability() = df.toDouble() / dc.toDouble()
-    operator fun plusAssign(rhs: CountStats?) {
-        if (rhs != null) {
-            cl += rhs.cl
-            df += rhs.df
-            cf += rhs.cf
-            dc += rhs.dc
-        }
-    }
-}
-
 class IndexParams {
     var defaultField = "body"
     private var defaultAnalyzer = IreneEnglishAnalyzer()
@@ -148,39 +132,18 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
         return fieldStats.sumTotalTermFreq().toDouble() / fieldStats.docCount().toDouble()
     }
 
-    fun fieldStats(field: String): CountStats? {
-        val cstats = searcher.collectionStatistics(field) ?: return null
-        return CountStats(0,0,cstats.sumTotalTermFreq(), cstats.docCount())
-    }
+    fun fieldStats(field: String): CountStats? = CalculateStatistics.fieldStats(searcher, field)
 
     fun getStats(text: String, field: String = defaultField): CountStats? = getStats(Term(field, text))
-    private fun getStatsDirect(term: Term): CountStats? {
-        val cstats = searcher.collectionStatistics(term.field())
-        val ctx = TermContext.build(searcher.topReaderContext, term) ?: return null
-        val termStats = searcher.termStatistics(term, ctx) ?: return null
-        return CountStats(termStats.docFreq(), termStats.totalTermFreq(), cstats.sumTotalTermFreq(), cstats.docCount())
-    }
     fun getStats(term: Term): CountStats? {
-        return termStatsCache.get(term, this::getStatsDirect)
+        return termStatsCache.get(term, {CalculateStatistics.lookupTermStatistics(searcher, it)}) ?: CalculateStatistics.fieldStats(searcher, term.field())
     }
 
     private fun prepare(expr: QExpr): IreneQueryModel = IreneQueryModel(this, this.language, expr)
 
-    private fun computeExprStats(expr: QExpr): CountStats {
-        val query = prepare(expr)
-        val fields = query.findFieldsNeeded()
-
-        val fieldBasedStats = CountStats()
-        fields.forEach {
-            val fstats = fieldStats(it) ?: error("Field: ``$it'' does not exist in index.")
-            fieldBasedStats.dc = maxOf(fstats.dc, fieldBasedStats.dc)
-            fieldBasedStats.cl += fstats.cl
-        }
-        return searcher.search(query, CountStatsCollectorManager(fieldBasedStats))
-    }
     fun getExprStats(expr: QExpr): ForkJoinTask<CountStats>? {
         return exprStatsCache.get(expr, { missing ->
-            val func: ()->CountStats = {computeExprStats(missing)}
+            val func: ()->CountStats = {CalculateStatistics.computeQueryStats(searcher, prepare(missing))}
             jobPool.submit(func)
         })
     }
@@ -192,53 +155,6 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
     fun tokenize(text: String, field: String=defaultField) = this.analyzer.tokenize(field, text)
 }
 
-class LazyCountStats(val expr: QExpr, val index: IreneIndex) {
-    private val stats: CountStats by lazy {
-        index.getExprStats(expr)?.join()!!
-    }
-    fun get(): CountStats = stats
-}
-
-class CountStatsCollectorManager(val start: CountStats) : CollectorManager<CountStatsCollectorManager.CountStatsCollector, CountStats> {
-    override fun reduce(collectors: MutableCollection<CountStatsCollector>?): CountStats {
-        val out = start.copy()
-        collectors?.forEach {
-            out += it.stats
-        }
-        return out
-    }
-
-    override fun newCollector(): CountStatsCollector = CountStatsCollector()
-    class CountStatsLeafCollector(val accum: CountStats) : LeafCollector {
-        lateinit var scoreFn: Scorer
-        override fun setScorer(scorer: Scorer?) {
-            scoreFn = scorer!!
-        }
-
-        override fun collect(doc: Int) {
-            val score = scoreFn.score()
-            val count = score.toInt()
-            assert(score - count < 1e-10, {"Collecting count stats but got float score: $doc -> $score -> $count"})
-
-            if (count > 0) {
-                accum.cf += count
-                accum.df += 1
-            }
-        }
-
-    }
-    class CountStatsCollector : Collector {
-        val stats = CountStats()
-        override fun needsScores(): Boolean {
-            TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-        }
-
-        override fun getLeafCollector(context: LeafReaderContext?): LeafCollector {
-            return CountStatsLeafCollector(stats)
-        }
-
-    }
-}
 
 fun main(args: Array<String>) {
     val tcs = TrecContentSource()

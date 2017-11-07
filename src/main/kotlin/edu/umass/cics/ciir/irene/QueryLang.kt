@@ -33,6 +33,7 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
     fun prepare(index: IreneIndex, q: QExpr): QExpr {
         val pq = simplify(q)
         applyEnvironment(this, pq)
+        analyzeDataNeededRecursive(q)
         applyIndex(index, pq)
         return pq
     }
@@ -88,8 +89,8 @@ data class RequireExpr(var cond: QExpr, var value: QExpr): QExpr() {
     override fun copy()  = RequireExpr(cond.copy(), value.copy())
     override val children: List<QExpr> get() = arrayListOf(cond, value)
 }
-data class TextExpr(var text: String, var field: String? = null, var stats: CountStats? = null) : LeafExpr() {
-    override fun copy() = TextExpr(text, field, stats)
+data class TextExpr(var text: String, var field: String? = null, var stats: CountStats? = null, var needed: DataNeeded = DataNeeded.DOCS) : LeafExpr() {
+    override fun copy() = TextExpr(text, field, stats, needed)
     constructor(term: Term) : this(term.text(), term.field())
 }
 data class SynonymExpr(override val children: List<QExpr>): OpExpr() {
@@ -258,8 +259,35 @@ fun combineWeights(q: QExpr): Boolean {
     return changed
 }
 
-fun applyEnvironment(env: IreneQueryLanguage, q: QExpr) {
-    q.visit {
+fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
+    var childNeeds = needed
+    childNeeds = DataNeeded.max(needed, when(q) {
+        is TextExpr -> {
+            q.needed = childNeeds
+            childNeeds
+        }
+        is AndExpr, is OrExpr -> DataNeeded.DOCS
+        is LuceneExpr, is SynonymExpr -> childNeeds
+        is WeightExpr, is CombineExpr, is MultExpr, is MaxExpr -> {
+            // scores
+            childNeeds
+        }
+        is OrderedWindowExpr -> DataNeeded.POSITIONS
+        is BM25Expr, is DirQLExpr ->  DataNeeded.COUNTS
+        is CountToScoreExpr ->  DataNeeded.COUNTS
+        is BoolToScoreExpr -> DataNeeded.DOCS
+        is CountToBoolExpr -> DataNeeded.COUNTS
+        is RequireExpr -> {
+            analyzeDataNeededRecursive(q.cond, DataNeeded.DOCS)
+            analyzeDataNeededRecursive(q.value, childNeeds)
+            return
+        }
+    })
+    q.children.forEach { analyzeDataNeededRecursive(it, childNeeds) }
+}
+
+fun applyEnvironment(env: IreneQueryLanguage, root: QExpr) {
+    root.visit { q ->
         when(q) {
             is TextExpr -> if(q.field == null) {
                 q.field = env.defaultField
@@ -280,7 +308,7 @@ fun applyEnvironment(env: IreneQueryLanguage, q: QExpr) {
 fun applyIndex(index: IreneIndex, root: QExpr) {
     root.visit { q ->
         if (q is TextExpr) {
-            val field = q.field!!
+            val field = q.field ?: error("Need a field for $q")
             q.stats = index.getStats(Term(field, q.text))
             // Warning, q is missing.
             if (q.stats == null) {

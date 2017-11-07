@@ -48,7 +48,7 @@ fun countOrderedWindows(arrayIterators: List<PositionsIter>, step: Int): Int {
     return hits
 }
 
-class OrderedWindow(val stats: LazyCountStats, override val children: List<LeafEvalNode>, val step: Int) : AndEval<LeafEvalNode>(), CountEvalNode {
+class OrderedWindow(val stats: LazyCountStats, children: List<LeafEvalNode>, val step: Int) : AndEval<LeafEvalNode>(children), CountEvalNode {
     init {
         assert(children.size > 1)
         // TODO: someday error if there are different fields.

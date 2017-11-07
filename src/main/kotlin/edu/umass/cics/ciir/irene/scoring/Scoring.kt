@@ -15,7 +15,7 @@ import java.io.File
  */
 
 fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
-    is TextExpr -> ctx.create(Term(q.field, q.text), DataNeeded.COUNTS)
+    is TextExpr -> ctx.create(Term(q.field, q.text), q.needed)
     is LuceneExpr -> TODO()
     is SynonymExpr -> TODO()
     is AndExpr -> BooleanAndEval(q.children.map { exprToEval(it, ctx) })
@@ -69,8 +69,7 @@ private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val
     override fun advance(target: Int): Int = cond.advance(target)
 }
 
-abstract class RecursiveEval<out T : QueryEvalNode>() : QueryEvalNode {
-    abstract val children: List<T>
+abstract class RecursiveEval<out T : QueryEvalNode>(val children: List<T>) : QueryEvalNode {
     val className = this.javaClass.simpleName
     val N = children.size
     override fun explain(doc: Int): Explanation {
@@ -81,7 +80,7 @@ abstract class RecursiveEval<out T : QueryEvalNode>() : QueryEvalNode {
         return Explanation.noMatch("$className.Miss", expls)
     }
 }
-abstract class OrEval<out T : QueryEvalNode> : RecursiveEval<T>() {
+abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
     private var current: Int = 0
     val cost = children.map { it.estimateDF() }.max() ?: 0L
     val moveChildren = children.sortedByDescending { it.estimateDF() }
@@ -110,7 +109,7 @@ abstract class OrEval<out T : QueryEvalNode> : RecursiveEval<T>() {
     }
 }
 
-abstract class AndEval<out T : QueryEvalNode> : RecursiveEval<T>() {
+abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
     private var current: Int = 0
     val cost = children.map { it.estimateDF() }.min() ?: 0L
     val moveChildren = children.sortedBy { it.estimateDF() }
@@ -149,16 +148,16 @@ abstract class AndEval<out T : QueryEvalNode> : RecursiveEval<T>() {
     }
 }
 
-private class BooleanOrEval(override val children: List<QueryEvalNode>): OrEval<QueryEvalNode>() {
+private class BooleanOrEval(children: List<QueryEvalNode>): OrEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float = if (matches(doc)) { 1f } else { 0f }
     override fun count(doc: Int): Int = if (matches(doc)) { 1 } else { 0 }
 }
-private class BooleanAndEval(override val children: List<QueryEvalNode>): AndEval<QueryEvalNode>() {
+private class BooleanAndEval(children: List<QueryEvalNode>): AndEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float = if (matches(doc)) { 1f } else { 0f }
     override fun count(doc: Int): Int = if (matches(doc)) { 1 } else { 0 }
 }
 
-private class MaxEval(override val children: List<QueryEvalNode>) : OrEval<QueryEvalNode>() {
+private class MaxEval(children: List<QueryEvalNode>) : OrEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float {
         var sum = 0f
         children.forEach {
@@ -175,7 +174,7 @@ private class MaxEval(override val children: List<QueryEvalNode>) : OrEval<Query
     }
 }
 // Also known as #combine for you galago/indri folks.
-private class WeightedSumEval(override val children: List<QueryEvalNode>, val weights: FloatArray) : OrEval<QueryEvalNode>() {
+private class WeightedSumEval(children: List<QueryEvalNode>, val weights: FloatArray) : OrEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float {
         var sum = 0f
         children.forEachIndexed { i, child ->
