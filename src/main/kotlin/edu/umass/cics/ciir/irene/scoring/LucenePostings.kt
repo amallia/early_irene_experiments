@@ -15,7 +15,6 @@ data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths:
     override fun positions(doc: Int): PositionsIter = error("Don't ask for positions if count is zero!")
     override fun docID(): Int = NO_MORE_DOCS
     override fun advance(target: Int): Int = NO_MORE_DOCS
-    override fun score(doc: Int) = 0f
     override fun count(doc: Int) = 0
     override fun matches(doc: Int) = false
     override fun explain(doc: Int) = Explanation.match(0.0f, "MissingTerm-$term length=${length(doc)}")

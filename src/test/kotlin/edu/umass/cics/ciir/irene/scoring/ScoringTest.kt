@@ -5,6 +5,7 @@ import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.GDoc
 import edu.umass.cics.ciir.sprf.GExpr
 import edu.umass.cics.ciir.sprf.pmake
+import edu.umass.cics.ciir.sprf.setf
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
 import org.apache.lucene.document.Field
 import org.apache.lucene.document.StringField
@@ -16,6 +17,7 @@ import org.junit.rules.ExternalResource
 import org.lemurproject.galago.core.index.mem.MemoryIndex
 import org.lemurproject.galago.core.retrieval.LocalRetrieval
 import org.lemurproject.galago.core.retrieval.iterator.CountIterator
+import org.lemurproject.galago.utility.Parameters
 import java.io.Closeable
 import java.util.*
 
@@ -150,7 +152,9 @@ class ScoringTest {
         val bgStats = index.galago.getCollectionStatistics(GExpr("lengths"))
         index.forEachTermPair { t1, t2 ->
             val odi = OrderedWindowExpr(listOf(TextExpr(t1),TextExpr(t2)))
+            val odg = galagoOd1(listOf(t1, t2));
             val istats = index.irene.getStats(odi)!!
+            val gstats = index.galago.getNodeStatistics(index.galago.transformQuery(odg, Parameters.create()));
             // Galago does this wrong!
             var df = 0L
             var cf = 0L
@@ -167,28 +171,25 @@ class ScoringTest {
             val term = "od:1($t1 $t2)"
             Assert.assertEquals("cf $term", cf, istats.cf)
             Assert.assertEquals("df $term", df, istats.df)
+            Assert.assertEquals("g-cf $term", cf, gstats.nodeFrequency)
+            Assert.assertEquals("g-df $term", df, gstats.nodeDocumentCount)
             Assert.assertEquals("dc $term", bgStats.documentCount, istats.dc)
             Assert.assertEquals("cl $term", bgStats.collectionLength, istats.cl)
         }
+    }
+
+    fun galagoOd1(terms: List<String>) = GExpr("od").apply {
+        setf("default", 1)
+        terms.forEach { addChild(GExpr.Text(it)) }
     }
 
     @Test
     fun testBigramScores() {
         val index = resource.index!!
 
-        (0 until 3).forEach {
-            val odi = DirQLExpr(OrderedWindowExpr(listOf(TextExpr("over"), TextExpr("quick"))))
-            println(index.irene.explain(odi, it))
-        }
-
         index.forEachTermPair { t1, t2 ->
             val odi = DirQLExpr(OrderedWindowExpr(listOf(TextExpr(t1), TextExpr(t2))))
-            val odg = GExpr("dirichlet").apply {
-                addChild(GExpr("od").apply {
-                    addChild(GExpr.Text(t1))
-                    addChild(GExpr.Text(t2))
-                })
-            }
+            val odg = GExpr("combine").apply { addChild(galagoOd1(listOf(t1, t2))) }
             cmpResults("dirichlet.od($t1,$t2)", odg, odi, index)
         }
     }

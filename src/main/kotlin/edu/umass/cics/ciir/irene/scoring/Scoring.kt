@@ -37,36 +37,49 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
 const val NO_MORE_DOCS = DocIdSetIterator.NO_MORE_DOCS
 interface QueryEvalNode {
     fun docID(): Int
+    // Return a score for a document.
     fun score(doc: Int): Float
+    // Return an count for a document.
     fun count(doc: Int): Int
+    // Return an boolean for a document. (must be true if you want this to be ranked).
     fun matches(doc: Int): Boolean
+    // Return an explanation for a document.
     fun explain(doc: Int): Explanation
-    fun estimateDF(): Long
 
+    // Used to accelerate AND and OR matching if accurate.
+    fun estimateDF(): Long
+    // Move forward to (docID() >= target) don't bother checking for match.
+    fun advance(target: Int): Int
+
+    // The following movements should never be overridden.
+    // They may be used as convenient to express other operators, i.e. call nextMatching on your children instead of advance().
+
+    // Use advance to move forward until match.
     fun nextMatching(doc: Int): Int {
-        //println("nextMatching($doc)")
-        var id = doc
+        var id = maxOf(doc, docID());
         while(id < NO_MORE_DOCS) {
-            //println("nextMatching?($doc, $id)")
             if (matches(id)) {
+                assert(docID() == id)
                 return id
             }
             id = advance(id+1)
         }
-        return NO_MORE_DOCS
+        return id;
     }
-    fun nextDoc(): Int {
-        return nextMatching(docID()+1)
-    }
-    fun advance(target: Int): Int
+    // Step to the next matching document.
+    fun nextDoc(): Int = nextMatching(docID()+1)
+    // True if iterator is exhausted.
     val done: Boolean get() = docID() == NO_MORE_DOCS
+    // Safe interface to advance. Only moves forward if need be.
     fun syncTo(target: Int) {
         if (docID() < target) {
             advance(target)
+            assert(docID() >= target)
         }
     }
 }
 interface CountEvalNode : QueryEvalNode {
+    override fun score(doc: Int) = count(doc).toFloat()
     fun getCountStats(): CountStats
     fun length(doc: Int): Int
 }
@@ -89,9 +102,6 @@ private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val
 abstract class RecursiveEval<out T : QueryEvalNode>(val children: List<T>) : QueryEvalNode {
     val className = this.javaClass.simpleName
     val N = children.size
-    override fun syncTo(target: Int) {
-        children.forEach { it.syncTo(target) }
-    }
     override fun explain(doc: Int): Explanation {
         val expls = children.map { it.explain(doc) }
         if (matches(doc)) {
@@ -106,21 +116,23 @@ abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<
     val moveChildren = children.sortedByDescending { it.estimateDF() }
     override fun docID(): Int = current
     override fun advance(target: Int): Int {
-        var nextMin = NO_MORE_DOCS
+        var newMin = NO_MORE_DOCS
         for (child in moveChildren) {
             var where = child.docID()
             if (where < target) {
-                where = child.nextMatching(target)
+                where = child.advance(target)
             }
-            nextMin = minOf(nextMin, where)
+            assert(where >= target)
+            newMin = minOf(newMin, where)
         }
-        current = nextMin
-        return nextMin
+        current = newMin
+        return current
     }
     override fun estimateDF(): Long = cost
 
     override fun matches(doc: Int): Boolean {
         syncTo(doc)
+        assert(docID() >= doc)
         return children.any { it.matches(doc) }
     }
 }
@@ -130,10 +142,8 @@ abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval
     val cost = children.map { it.estimateDF() }.min() ?: 0L
     val moveChildren = children.sortedBy { it.estimateDF() }
     init {
-        val startAt = advanceToMatch()
-        println("AndEval.advanceToMatch.startAt=$startAt, $moveChildren")
+        advanceToMatch()
     }
-
     override fun docID(): Int = current
     fun advanceToMatch(): Int {
         while(current < NO_MORE_DOCS) {
@@ -199,7 +209,6 @@ private class MaxEval(children: List<QueryEvalNode>) : OrEval<QueryEvalNode>(chi
 // Also known as #combine for you galago/indri folks.
 private class WeightedSumEval(children: List<QueryEvalNode>, val weights: DoubleArray) : OrEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float {
-
         var sum = 0.0
         children.forEachIndexed { i, child ->
             child.syncTo(doc)
@@ -229,7 +238,6 @@ private abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
         child.syncTo(doc)
         return child.matches(doc)
     }
-    override fun syncTo(target: Int) = child.syncTo(target)
 }
 
 private class WeightedEval(override val child: QueryEvalNode, val weight: Float): SingleChildEval<QueryEvalNode>() {
@@ -248,9 +256,6 @@ private class WeightedEval(override val child: QueryEvalNode, val weight: Float)
 private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
     val background = mu * child.getCountStats().nonzeroCountProbability()
     override fun score(doc: Int): Float {
-        if (!matches(doc)) {
-            println("TRAP")
-        }
         val c = child.count(doc).toDouble()
         val length = child.length(doc).toDouble()
         return Math.log((c + background) / (length + mu)).toFloat()
