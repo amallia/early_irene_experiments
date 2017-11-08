@@ -54,21 +54,10 @@ private class IQModelWeight(val q: QExpr, val iqm: IreneQueryModel) : Weight(iqm
 
 class QueryEvalNodeIter(val node: QueryEvalNode) : DocIdSetIterator() {
     init {
-        //node.syncTo(0)
-        //nextMatching(0)
+        node.nextMatching(0)
     }
-    fun nextMatching(doc: Int): Int {
-        var id = doc
-        while(id < NO_MORE_DOCS) {
-            if (node.matches(id)) {
-                return id
-            }
-            id = node.nextDoc()
-        }
-        return NO_MORE_DOCS
-    }
-    override fun advance(target: Int): Int = nextMatching(target)
-    override fun nextDoc(): Int = node.advance(docID() + 1)
+    override fun advance(target: Int): Int = node.nextMatching(target)
+    override fun nextDoc(): Int = node.nextMatching(docID() + 1)
     override fun docID() = node.docID()
     fun score(doc: Int): Float {
         node.syncTo(doc)

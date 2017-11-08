@@ -80,6 +80,7 @@ class OrderedWindow(val stats: LazyCountStats, children: List<PositionsEvalNode>
     }
 
     override fun matches(doc: Int): Boolean {
+        //println("OrderedWindow.matches($doc) = [super=${super.matches(doc)}, me=${count(doc)}, @$lastDoc,c=$lastCount")
         // all iterators have match?
         if (super.matches(doc)) {
             return count(doc) > 0

@@ -172,6 +172,27 @@ class ScoringTest {
         }
     }
 
+    @Test
+    fun testBigramScores() {
+        val index = resource.index!!
+
+        (0 until 3).forEach {
+            val odi = DirQLExpr(OrderedWindowExpr(listOf(TextExpr("over"), TextExpr("quick"))))
+            println(index.irene.explain(odi, it))
+        }
+
+        index.forEachTermPair { t1, t2 ->
+            val odi = DirQLExpr(OrderedWindowExpr(listOf(TextExpr(t1), TextExpr(t2))))
+            val odg = GExpr("dirichlet").apply {
+                addChild(GExpr("od").apply {
+                    addChild(GExpr.Text(t1))
+                    addChild(GExpr.Text(t2))
+                })
+            }
+            cmpResults("dirichlet.od($t1,$t2)", odg, odi, index)
+        }
+    }
+
     fun cmpResults(str: String, gq: GExpr, iq: QExpr, index: CommonTestIndexes) {
         val search = index.irene.search(iq, index.ND)
         val gres = index.galago.transformAndExecuteQuery(gq, pmake {
@@ -183,6 +204,8 @@ class ScoringTest {
 
         if (search.totalHits != gTruth.size.toLong()) {
             val found = search.scoreDocs.map { it.doc }.toSet()
+            println(found)
+            println(gTruth.keys)
             gTruth.values.forEach { sdoc ->
                 val id = index.irene.documentById(sdoc.name)!!
                 if (!found.contains(id)) {
@@ -193,7 +216,7 @@ class ScoringTest {
             }
         }
 
-        Assert.assertEquals(str, search.totalHits, gTruth.size.toLong())
+        Assert.assertEquals(str, gTruth.size.toLong(), search.totalHits)
 
         search.scoreDocs.forEach { ldoc ->
             val name = index.irene.getDocumentName(ldoc.doc)!!

@@ -44,8 +44,10 @@ interface QueryEvalNode {
     fun estimateDF(): Long
 
     fun nextMatching(doc: Int): Int {
+        //println("nextMatching($doc)")
         var id = doc
         while(id < NO_MORE_DOCS) {
+            //println("nextMatching?($doc, $id)")
             if (matches(id)) {
                 return id
             }
@@ -128,39 +130,44 @@ abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval
     val cost = children.map { it.estimateDF() }.min() ?: 0L
     val moveChildren = children.sortedBy { it.estimateDF() }
     init {
-        advanceToMatch()
+        val startAt = advanceToMatch()
+        println("AndEval.advanceToMatch.startAt=$startAt, $moveChildren")
     }
 
     override fun docID(): Int = current
     fun advanceToMatch(): Int {
-        while(true) {
+        while(current < NO_MORE_DOCS) {
             var match = true
-            moveChildren.forEach { child ->
+            for (child in moveChildren) {
                 var pos = child.docID()
                 if (pos < current) {
-                    pos = child.advance(current)
-                    if (pos == NO_MORE_DOCS) return NO_MORE_DOCS
+                    pos = child.nextMatching(current)
                 }
                 if (pos > current) {
                     current = pos
                     match = false
-                    return@forEach
+                    break
                 }
             }
 
             if (match) return current
         }
+        return current
     }
 
     override fun advance(target: Int): Int {
-        current = maxOf(current, target)
-        return advanceToMatch()
+        if (current < target) {
+            current = target
+            return advanceToMatch()
+        }
+        return current
     }
     override fun estimateDF(): Long = cost
 
     override fun matches(doc: Int): Boolean {
-        syncTo(doc)
-        return children.all { it.matches(doc) }
+        if (current > doc) return false
+        if (current == doc) return true
+        return advance(doc) == doc
     }
 }
 
@@ -241,6 +248,9 @@ private class WeightedEval(override val child: QueryEvalNode, val weight: Float)
 private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
     val background = mu * child.getCountStats().nonzeroCountProbability()
     override fun score(doc: Int): Float {
+        if (!matches(doc)) {
+            println("TRAP")
+        }
         val c = child.count(doc).toDouble()
         val length = child.length(doc).toDouble()
         return Math.log((c + background) / (length + mu)).toFloat()
