@@ -197,8 +197,6 @@ class ScoringTest {
         val search = index.irene.search(iq, index.ND)
         val gres = index.galago.transformAndExecuteQuery(gq, pmake {
             set("requested", index.ND)
-            set("annotate", true)
-            set("processingModel", "rankeddocument")
         })
         val gTruth = gres.scoredDocuments.associate { Pair(it.name, it) }
 
