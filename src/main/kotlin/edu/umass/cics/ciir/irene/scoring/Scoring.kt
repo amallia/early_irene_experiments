@@ -120,7 +120,7 @@ abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<
         for (child in moveChildren) {
             var where = child.docID()
             if (where < target) {
-                where = child.advance(target)
+                where = child.nextMatching(target)
             }
             assert(where >= target)
             newMin = minOf(newMin, where)

@@ -34,7 +34,7 @@ fun main(args: Array<String>) {
     if (argp.isList("fields") || argp.isString("fields")) {
         fields.addAll(argp.getAsList("fields", String::class.java))
     } else {
-        fields.addAll(listOf("body", "anchor_text"))
+        fields.addAll(listOf("short_text"))
         //fields.addAll(listOf<String>("body", "anchor_text", "short_text", "links", "props", "categories_text", "redirects", "citation_titles"))
     }
     val paramWeights = ArrayList<Double>()
@@ -55,8 +55,8 @@ fun main(args: Array<String>) {
     val avgDLMu = argp.get("avgDLMu", false)
     val defaultMu = argp.get("mu", 7000.0)
     val depth = argp.get("depth", 100)
-    val bgW = argp.get("bgW", 0.7)
-    val ugW = argp.get("ugW", 0.3)
+    val bgW = argp.get("bgW", 0.1)
+    val ugW = argp.get("ugW", 0.8)
 
     //val fields = arrayListOf<String>("body", "anchor_text", "citation_titles", "redirects", "categories_text", "short_text")
 
@@ -65,6 +65,7 @@ fun main(args: Array<String>) {
         println("fieldMu = $fieldMu")
 
         queries.forEach { qid, qtext ->
+            println("$qid $qtext $model")
             val queryJudgments = qrels[qid]!!
             val qterms = index.tokenize(qtext)
 
@@ -113,10 +114,11 @@ fun main(args: Array<String>) {
                 }
                 else -> error("No such model=$model")
             }
+            println(query)
             val results = index.search(query, depth)
             val qres = results.toQueryResults(index)
 
-            if (argp.get("printTopK", false)) {
+            if (argp.get("printTopK", true)) {
                 println(qres.take(5).joinToString(separator = "\n") { "${it.rank}\t${it.name}\t${it.score}" })
             }
 
