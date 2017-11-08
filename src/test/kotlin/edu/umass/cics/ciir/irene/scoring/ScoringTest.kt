@@ -115,10 +115,10 @@ class CTIResource : ExternalResource() {
     override fun after() { index?.close() }
 }
 
-public class ScoringTest {
-    public companion object {
+class ScoringTest {
+    companion object {
         @ClassRule @JvmField
-        public val resource = CTIResource()
+        val resource = CTIResource()
     }
 
     val EPSILON = 0.0001

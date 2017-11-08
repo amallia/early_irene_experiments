@@ -6,6 +6,12 @@ import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluators
 import org.lemurproject.galago.utility.Parameters
 
+inline fun <T> List<T>.forEachSeqPair(fn: (T,T)->Unit) {
+    (0 until this.size-1).forEach { i ->
+        fn(this[i], this[i+1])
+    }
+}
+
 /**
  *
  * @author jfoley.
@@ -46,6 +52,8 @@ fun main(args: Array<String>) {
     val avgDLMu = argp.get("avgDLMu", false)
     val defaultMu = argp.get("mu", 7000.0)
     val depth = argp.get("depth", 100)
+    val bgW = argp.get("bgW", 0.7)
+    val ugW = argp.get("ugW", 0.3)
 
     //val fields = arrayListOf<String>("body", "anchor_text", "citation_titles", "redirects", "categories_text", "short_text")
 
@@ -78,6 +86,22 @@ fun main(args: Array<String>) {
                         WeightExpr(DirQLExpr(TextExpr(term, field), mu ?: defaultMu), weight / norm)
                     })
                 })
+                "ubg" -> CombineExpr(fields.map { field ->
+                    val mu = if (avgDLMu) fieldMu[field] else defaultMu
+                    val unigrams = MeanExpr(qterms.map { term ->
+                        DirQLExpr(TextExpr(term, field), mu ?: defaultMu)
+                    })
+                    val bigrams = ArrayList<QExpr>()
+                    qterms.forEachSeqPair { t1, t2 ->
+                        val q = DirQLExpr(OrderedWindowExpr(listOf(TextExpr(t1, field), TextExpr(t2, field))), mu ?: defaultMu)
+                        bigrams.add(q)
+                    }
+                    if (bigrams.isNotEmpty()) {
+                        SumExpr(MeanExpr(bigrams).weighted(bgW), unigrams.weighted(ugW))
+                    } else {
+                        unigrams
+                    }
+                }, paramWeights)
                 "mixture" -> {
                     val fieldExprs = listOf("body", "short_text").map { field ->
                         MeanExpr(qterms.map { DirQLExpr(TextExpr(it, field)) })
