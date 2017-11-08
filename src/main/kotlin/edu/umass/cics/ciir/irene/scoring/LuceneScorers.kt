@@ -16,20 +16,17 @@ data class IQContext(val index: IreneIndex, val context: LeafReaderContext) {
     val searcher = index.searcher
     val lengths = HashMap<String, NumericDocValues>()
 
-    fun create(term: Term, needed: DataNeeded): LeafEvalNode {
-        return create(term, needed, lengths.computeIfAbsent(term.field(), { field ->
+    fun create(term: Term, needed: DataNeeded, stats: CountStats): LeafEvalNode {
+        return create(term, needed, stats, lengths.computeIfAbsent(term.field(), { field ->
             lucene_try { context.reader().getNormValues(field) } ?: error("Couldn't find norms for ``$field''.")
         }))
     }
-    fun create(term: Term, needed: DataNeeded, lengths: NumericDocValues): LeafEvalNode {
+    fun create(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): LeafEvalNode {
         val termContext = TermContext.build(searcher.topReaderContext, term)!!
-        val cstats = searcher.collectionStatistics(term.field())!!
-        val termStats = searcher.termStatistics(term, termContext)!!
-        val stats = CountStats("term:$term", termStats, cstats)
         val state = termContext[context.ord] ?: return LuceneMissingTerm(term, stats, lengths)
         val termIter = context.reader().terms(term.field()).iterator()
         termIter.seekExact(term.bytes(), state)
-        return LuceneTermPostings(stats, termIter.postings(null, needed.textFlags()), lengths)
+        return LuceneTermPostings(needed, stats, termIter.postings(null, needed.textFlags()), lengths)
     }
 }
 
@@ -45,25 +42,52 @@ private class IQModelWeight(val q: QExpr, val iqm: IreneQueryModel) : Weight(iqm
 
     override fun scorer(context: LeafReaderContext?): Scorer {
         val ctx = IQContext(iqm.index, context!!)
-        return IreneQueryScorer(exprToEval(q, ctx))
+        return IreneQueryScorer(exprToEval(q, ctx), ctx)
     }
 }
 
-class QueryEvalNodeIter(val node: QueryEvalNode) : QueryEvalNode, DocIdSetIterator() {
-    override fun advance(target: Int): Int = node.advance(target)
+class QueryEvalNodeIter(val node: QueryEvalNode) : DocIdSetIterator() {
+    init {
+        //node.syncTo(0)
+        //nextMatching(0)
+    }
+    fun nextMatching(doc: Int): Int {
+        var id = doc
+        while(id < NO_MORE_DOCS) {
+            if (node.matches(id)) {
+                return id
+            }
+            id = node.nextDoc()
+        }
+        return NO_MORE_DOCS
+    }
+    override fun advance(target: Int): Int = nextMatching(target)
     override fun nextDoc(): Int = node.advance(docID() + 1)
     override fun docID() = node.docID()
-    override fun score(doc: Int): Float = node.score(doc)
-    override fun count(doc: Int): Int = node.count(doc)
-    override fun matches(doc: Int): Boolean = node.matches(doc)
-    override fun explain(doc: Int): Explanation = node.explain(doc)
-    override fun estimateDF(): Long = node.estimateDF()
+    fun score(doc: Int): Float {
+        node.syncTo(doc)
+        return node.score(doc)
+    }
+    fun count(doc: Int): Int {
+        node.syncTo(doc)
+        return node.count(doc)
+    }
+    fun matches(doc: Int): Boolean {
+        node.syncTo(doc)
+        return node.matches(doc)
+    }
+    fun explain(doc: Int): Explanation {
+        node.syncTo(doc)
+        return node.explain(doc)
+    }
+    fun estimateDF(): Long = node.estimateDF()
     override fun cost(): Long = node.estimateDF()
 }
 
-class IreneQueryScorer(val eval: QueryEvalNode) : Scorer(null) {
+class IreneQueryScorer(val eval: QueryEvalNode, val ctx: IQContext) : Scorer(null) {
+    val iter = QueryEvalNodeIter(eval)
     override fun docID(): Int = eval.docID()
-    override fun iterator(): DocIdSetIterator = QueryEvalNodeIter(eval)
+    override fun iterator(): DocIdSetIterator = iter
     override fun score(): Float {
         val returned = eval.score(eval.docID())
         if (java.lang.Float.isInfinite(returned)) {

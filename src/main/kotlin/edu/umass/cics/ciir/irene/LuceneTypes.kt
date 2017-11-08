@@ -44,8 +44,8 @@ inline fun <T> lucene_try(action: ()->T): T? {
     }
 }
 
-enum class DataNeeded(val level: Int) {
-    DOCS(0), COUNTS(1), POSITIONS(2), SCORES(3);
+enum class DataNeeded() {
+    DOCS, COUNTS, POSITIONS, SCORES;
     fun textFlags(): Int = when(this) {
         DOCS -> PostingsEnum.NONE.toInt()
         COUNTS -> PostingsEnum.FREQS.toInt()

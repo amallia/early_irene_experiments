@@ -33,7 +33,7 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
     fun prepare(index: IreneIndex, q: QExpr): QExpr {
         val pq = simplify(q)
         applyEnvironment(this, pq)
-        analyzeDataNeededRecursive(q)
+        analyzeDataNeededRecursive(pq)
         applyIndex(index, pq)
         return pq
     }

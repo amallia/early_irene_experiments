@@ -16,6 +16,7 @@ import org.junit.rules.ExternalResource
 import org.lemurproject.galago.core.index.mem.MemoryIndex
 import org.lemurproject.galago.core.retrieval.LocalRetrieval
 import java.io.Closeable
+import java.util.*
 
 /**
  * @author jfoley.
@@ -35,8 +36,8 @@ class CommonTestIndexes : Closeable {
     val contentsField = "body"
 
     val docs = listOf(doc1,doc2,doc3)
-    val ND: Int get() = docs.size
-    val names = docs.indices.map {"doc${it+1}"}
+    val names = ArrayList<String>()
+    val ND: Int get() = names.size
     val gMemIndex = MemoryIndex(pmake {
         set("nonstemming", false)
         set("corpus", true)
@@ -54,25 +55,31 @@ class CommonTestIndexes : Closeable {
         }
 
         IreneIndexer(params).use { writer ->
-            docs.forEachIndexed { i, doc ->
-                writer.push(
-                        StringField(idField, names[i], Field.Store.YES),
-                        TextField(contentsField, doc, Field.Store.YES))
+            (0 until 10).forEach {
+                val shuf = docs.toMutableList()
+                Collections.shuffle(shuf)
+                docs.forEachIndexed { num, doc ->
+                    val name = "doc${names.size}"
+                    names.add(name)
+                    writer.push(
+                            StringField(idField, name, Field.Store.YES),
+                            TextField(contentsField, doc, Field.Store.YES))
 
-                val tokens = params.analyzer.tokenize("body", doc)
+                    val tokens = params.analyzer.tokenize("body", doc)
 
-                val gdoc = GDoc()
-                gdoc.name = names[i]
-                gdoc.terms = tokens
-                gdoc.text = doc
-                gdoc.tags = emptyList()
-                gMemIndex.process(gdoc)
+                    val gdoc = GDoc()
+                    gdoc.name = name
+                    gdoc.terms = tokens
+                    gdoc.text = doc
+                    gdoc.tags = emptyList()
+                    gMemIndex.process(gdoc)
 
-                ltrIndex.add(LTRDoc(names[i], HashMap<String, Double>(), -1, doc))
+                    ltrIndex.add(LTRDoc(name, HashMap<String, Double>(), -1, doc))
 
-                terms.addAll(tokens)
-                tokens.toSet().forEach {
-                    df.incr(it)
+                    terms.addAll(tokens)
+                    tokens.toSet().forEach {
+                        df.incr(it)
+                    }
                 }
             }
             writer.commit()
@@ -133,6 +140,41 @@ public class ScoringTest {
         }
     }
 
+    fun cmpResults(str: String, gq: GExpr, iq: QExpr, index: CommonTestIndexes) {
+        val search = index.irene.search(iq, index.ND)
+        val gres = index.galago.transformAndExecuteQuery(gq, pmake {
+            set("requested", index.ND)
+            set("annotate", true)
+            set("processingModel", "rankeddocument")
+        })
+        val gTruth = gres.scoredDocuments.associate { Pair(it.name, it) }
+
+        if (search.totalHits != gTruth.size.toLong()) {
+            val found = search.scoreDocs.map { it.doc }.toSet()
+            gTruth.values.forEach { sdoc ->
+                val id = index.irene.documentById(sdoc.name)!!
+                if (!found.contains(id)) {
+                    println("Can't score document $id correctly... $str")
+                    println(sdoc.annotation)
+                    println(index.irene.explain(iq, id))
+                }
+            }
+        }
+
+        Assert.assertEquals(str, search.totalHits, gTruth.size.toLong())
+
+        search.scoreDocs.forEach { ldoc ->
+            val name = index.irene.getDocumentName(ldoc.doc)!!
+            val sameDoc = gTruth[name] ?: error("Galago returned different documents! $str")
+
+            Assert.assertEquals(index.names[ldoc.doc], name)
+            dblEquals(ldoc.score.toDouble(), sameDoc.score) {
+                println(sameDoc.annotation)
+                println(index.irene.explain(iq, ldoc.doc))
+            }
+        }
+    }
+
     @Test
     fun testEquivQL() {
         val index = resource.index!!
@@ -143,37 +185,24 @@ public class ScoringTest {
                 addChild(GExpr.Text(t2))
             }
             val iq = QueryLikelihood(listOf(t1, t2))
-
-            val search = index.irene.search(iq, index.ND)
-            val gres = index.galago.transformAndExecuteQuery(gq, pmake {
-                set("requested", index.ND)
-                set("annotate", true)
-                set("processingModel", "rankeddocument")
-            })
-            val gTruth = gres.scoredDocuments.associate { Pair(it.name, it) }
-
-            if (search.totalHits != gTruth.size.toLong()) {
-                (0 until index.ND).forEach {
-                    println(index.irene.explain(iq, it))
-                }
-            }
-
-            Assert.assertEquals("$t1, $t2", search.totalHits, gTruth.size.toLong())
-
-            search.scoreDocs.forEach { ldoc ->
-                val name = index.irene.getDocumentName(ldoc.doc)!!
-                val sameDoc = gTruth[name] ?: error("Galago returned different documents!")
-
-                Assert.assertEquals(index.names[ldoc.doc], name)
-                dblEquals(ldoc.score.toDouble(), sameDoc.score) {
-                    println(sameDoc.annotation)
-                    println(index.irene.explain(iq, ldoc.doc))
-                }
-            }
-
+            cmpResults("$t1, $t2", gq, iq, index)
         }
+    }
 
+    @Test
+    fun testEquivWithMissing() {
+        val index = resource.index!!
 
+        index.forEachTermPair { t1, t2 ->
+            val t3 = "NEVER_GONNA_HAPPEN"
+            val gq = GExpr("combine").apply {
+                addChild(GExpr.Text(t1))
+                addChild(GExpr.Text(t2))
+                addChild(GExpr.Text(t3))
+            }
+            val iq = QueryLikelihood(listOf(t1, t2, t3))
+            cmpResults("$t1, $t2, NULL", gq, iq, index)
+        }
     }
 
 }

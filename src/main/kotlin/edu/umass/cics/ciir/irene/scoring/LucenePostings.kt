@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.IntList
 import edu.umass.cics.ciir.irene.CountStats
+import edu.umass.cics.ciir.irene.DataNeeded
 import org.apache.lucene.index.NumericDocValues
 import org.apache.lucene.index.PostingsEnum
 import org.apache.lucene.index.Term
@@ -11,7 +12,6 @@ import org.apache.lucene.search.Explanation
  *
  * @author jfoley.
  */
-
 data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths: NumericDocValues) : LeafEvalNode, QueryEvalNode {
     override fun positions(doc: Int): PositionsIter = error("Don't ask for positions if count is zero!")
     override fun docID(): Int = NO_MORE_DOCS
@@ -30,11 +30,14 @@ data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths:
     }
 }
 
-class LuceneTermPostings(val stats: CountStats, val postings: PostingsEnum, val lengths: NumericDocValues) : LeafEvalNode, QueryEvalNode {
+class LuceneTermPostings(val needed: DataNeeded, val stats: CountStats, val postings: PostingsEnum, val lengths: NumericDocValues) : LeafEvalNode, QueryEvalNode {
+    // Lucene requires we call nextDoc() before doing anything else.
+    init { postings.nextDoc() }
 
     var posDoc = -1
     var positions = IntList()
     override fun positions(doc: Int): PositionsIter {
+        assert(needed == DataNeeded.POSITIONS)
         if (posDoc != doc) {
             posDoc = doc
             positions.clear()
@@ -49,9 +52,15 @@ class LuceneTermPostings(val stats: CountStats, val postings: PostingsEnum, val 
     }
 
     override fun docID(): Int = postings.docID()
-    override fun advance(target: Int): Int = postings.advance(target)
+    override fun advance(target: Int): Int {
+        if (postings.docID() < target) {
+            return postings.advance(target)
+        }
+        return postings.docID()
+    }
     override fun score(doc: Int): Float = count(doc).toFloat()
     override fun count(doc: Int): Int {
+        assert(needed == DataNeeded.COUNTS)
         if(matches(doc)) {
             return postings.freq()
         }
@@ -59,17 +68,15 @@ class LuceneTermPostings(val stats: CountStats, val postings: PostingsEnum, val 
     }
 
     override fun matches(doc: Int): Boolean {
-        val current = postings.docID()
-        if (current > doc) return false
-        else if (current == doc) return true
-        return doc == postings.advance(doc)
+        syncTo(doc)
+        return docID() == doc
     }
 
     override fun explain(doc: Int): Explanation {
         if (matches(doc)) {
-            return Explanation.match(count(doc).toFloat(), "@doc=$doc")
+            return Explanation.match(count(doc).toFloat(), "@doc=$doc, lengths@${lengths.docID()}")
         } else {
-            return Explanation.noMatch("@doc=${postings.docID()} doc=$doc")
+            return Explanation.noMatch("@doc=${postings.docID()} doc=$doc, lengths@=${lengths.docID()}")
         }
     }
 
@@ -79,7 +86,7 @@ class LuceneTermPostings(val stats: CountStats, val postings: PostingsEnum, val 
         if (lengths.advanceExact(doc)) {
             return lengths.longValue().toInt()
         }
-        return 0
+        return 0;
     }
 
 }

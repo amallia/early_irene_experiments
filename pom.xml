@@ -98,7 +98,6 @@
                 <version>2.4</version>
                 <configuration>
                     <archive>
-                        <irene>true</irene>
                         <manifest>
                             <mainClass>${mainClass}</mainClass>
                             <classpathPrefix>lib/</classpathPrefix>

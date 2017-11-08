@@ -154,6 +154,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
 
     fun tokenize(text: String, field: String=defaultField) = this.analyzer.tokenize(field, text)
     fun explain(q: QExpr, doc: Int): Explanation = searcher.explain(prepare(q), doc)
+    val totalDocuments: Int = reader.numDocs()
 }
 
 

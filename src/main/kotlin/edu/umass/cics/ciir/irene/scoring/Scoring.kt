@@ -1,9 +1,7 @@
 package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.irene.*
-import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.NamedMeasures
-import edu.umass.cics.ciir.sprf.getEvaluators
+import edu.umass.cics.ciir.sprf.*
 import org.apache.lucene.index.Term
 import org.apache.lucene.search.DocIdSetIterator
 import org.apache.lucene.search.Explanation
@@ -15,14 +13,14 @@ import java.io.File
  */
 
 fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
-    is TextExpr -> ctx.create(Term(q.field, q.text), q.needed)
+    is TextExpr -> ctx.create(Term(q.field, q.text), q.needed, q.stats ?: error("Missed applyIndex pass."))
     is LuceneExpr -> TODO()
     is SynonymExpr -> TODO()
     is AndExpr -> BooleanAndEval(q.children.map { exprToEval(it, ctx) })
     is OrExpr -> BooleanOrEval(q.children.map { exprToEval(it, ctx) })
     is CombineExpr -> WeightedSumEval(
             q.children.map { exprToEval(it, ctx) },
-            q.weights.map { it.toFloat() }.toFloatArray())
+            q.weights.map { it }.toDoubleArray())
     is MultExpr -> TODO()
     is MaxExpr -> MaxEval(q.children.map { exprToEval(it, ctx) })
     is WeightExpr -> WeightedEval(exprToEval(q.child, ctx), q.weight.toFloat())
@@ -44,10 +42,27 @@ interface QueryEvalNode {
     fun matches(doc: Int): Boolean
     fun explain(doc: Int): Explanation
     fun estimateDF(): Long
-    fun cost(): Long = estimateDF()
-    fun nextDoc(): Int = advance(docID() + 1)
+
+    fun nextMatching(doc: Int): Int {
+        var id = doc
+        while(id < NO_MORE_DOCS) {
+            if (matches(id)) {
+                return id
+            }
+            id = advance(id+1)
+        }
+        return NO_MORE_DOCS
+    }
+    fun nextDoc(): Int {
+        return nextMatching(docID()+1)
+    }
     fun advance(target: Int): Int
     val done: Boolean get() = docID() == NO_MORE_DOCS
+    fun syncTo(target: Int) {
+        if (docID() < target) {
+            advance(target)
+        }
+    }
 }
 interface CountEvalNode : QueryEvalNode {
     fun getCountStats(): CountStats
@@ -72,6 +87,9 @@ private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val
 abstract class RecursiveEval<out T : QueryEvalNode>(val children: List<T>) : QueryEvalNode {
     val className = this.javaClass.simpleName
     val N = children.size
+    override fun syncTo(target: Int) {
+        children.forEach { it.syncTo(target) }
+    }
     override fun explain(doc: Int): Explanation {
         val expls = children.map { it.explain(doc) }
         if (matches(doc)) {
@@ -81,36 +99,33 @@ abstract class RecursiveEval<out T : QueryEvalNode>(val children: List<T>) : Que
     }
 }
 abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
-    private var current: Int = children.map { it.docID() }.min()!!
     val cost = children.map { it.estimateDF() }.max() ?: 0L
     val moveChildren = children.sortedByDescending { it.estimateDF() }
-    override fun docID(): Int = current
+    override fun docID(): Int = children.map { it.docID() }.min()!!
     override fun advance(target: Int): Int {
         var nextMin = NO_MORE_DOCS
-        moveChildren.forEach { child ->
+        for (child in moveChildren) {
             var where = child.docID()
-            while (where < target) {
-                where = child.advance(target)
-                // be aggressive; "hit" may exist where match fails.
-                if (child.matches(where)) break
+            if (where < target) {
+                where = child.nextMatching(target)
             }
             nextMin = minOf(nextMin, where)
-            if (nextMin == target) return@forEach
         }
-        current = nextMin
         return nextMin
     }
     override fun estimateDF(): Long = cost
 
     override fun matches(doc: Int): Boolean {
-        if (current > doc) return false
-        else if (current < doc) return advance(doc) == doc
-        return current == doc
+        syncTo(doc)
+        return children.any { it.matches(doc) }
     }
 }
 
 abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
     private var current: Int = 0
+    init {
+        advanceToMatch()
+    }
     val cost = children.map { it.estimateDF() }.min() ?: 0L
     val moveChildren = children.sortedBy { it.estimateDF() }
     override fun docID(): Int = current
@@ -142,9 +157,8 @@ abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval
     override fun estimateDF(): Long = cost
 
     override fun matches(doc: Int): Boolean {
-        if (current > doc) return false
-        else if (current < doc) return advance(doc) == doc
-        return current == doc
+        syncTo(doc)
+        return children.all { it.matches(doc) }
     }
 }
 
@@ -174,13 +188,15 @@ private class MaxEval(children: List<QueryEvalNode>) : OrEval<QueryEvalNode>(chi
     }
 }
 // Also known as #combine for you galago/indri folks.
-private class WeightedSumEval(children: List<QueryEvalNode>, val weights: FloatArray) : OrEval<QueryEvalNode>(children) {
+private class WeightedSumEval(children: List<QueryEvalNode>, val weights: DoubleArray) : OrEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float {
-        var sum = 0f
+
+        var sum = 0.0
         children.forEachIndexed { i, child ->
+            child.syncTo(doc)
             sum += weights[i] * child.score(doc)
         }
-        return sum
+        return sum.toFloat()
     }
 
     override fun explain(doc: Int): Explanation {
@@ -200,7 +216,11 @@ private abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
     override fun docID(): Int = child.docID()
     override fun advance(target: Int): Int = child.advance(target)
     override fun estimateDF(): Long = child.estimateDF()
-    override fun matches(doc: Int): Boolean = child.matches(doc)
+    override fun matches(doc: Int): Boolean {
+        child.syncTo(doc)
+        return child.matches(doc)
+    }
+    override fun syncTo(target: Int) = child.syncTo(target)
 }
 
 private class WeightedEval(override val child: QueryEvalNode, val weight: Float): SingleChildEval<QueryEvalNode>() {
@@ -242,30 +262,60 @@ fun main(args: Array<String>) {
     val evals = getEvaluators(listOf("ap", "ndcg"))
     val ms = NamedMeasures()
 
-    IreneIndex(IndexParams().apply {
-        withPath(File("robust.irene2"))
-    }).use { index ->
-        println(index.getStats(Term("body", "president")))
+    dataset.getIndex().use { galago ->
+        IreneIndex(IndexParams().apply {
+            withPath(File("robust.irene2"))
+        }).use { index ->
+            val mu = index.getAverageDL("body")
+            println(index.getStats(Term("body", "president")))
 
-        queries.forEach { qid, qtext ->
-            val q = SumExpr(index.analyzer.tokenize("body", qtext).map { DirQLExpr(TextExpr(it)) })
+            queries.forEach { qid, qtext ->
+                //if (qid != "301") return@forEach
+                println("$qid $qtext")
+                val qterms = index.analyzer.tokenize("body", qtext)
+                val q = MeanExpr(qterms.map { DirQLExpr(TextExpr(it)) })
 
-            val topK = index.search(q, 1000)
-            val results = topK.toQueryResults(index)
+                val gq = GExpr("combine").apply { addTerms(qterms) }
 
-            val queryJudgments = qrels[qid]!!
-            evals.forEach { measure, evalfn ->
-                val score = try {
-                    evalfn.evaluate(results, queryJudgments)
-                } catch (npe: NullPointerException) {
-                    System.err.println("NULL in eval...")
-                    -Double.MAX_VALUE
+                val top5 = galago.transformAndExecuteQuery(gq, pmake {
+                    set("requested", 5)
+                    set("annotate", true)
+                    set("processingModel", "rankeddocument")
+                }).scoredDocuments
+                val topK = index.search(q, 1000)
+                val results = topK.toQueryResults(index)
+
+                //if (argp.get("printTopK", false)) {
+                (0 until Math.min(5, topK.totalHits.toInt())).forEach { i ->
+                    val id = results[i]
+                    val gd = top5[i]
+
+                    if (i == 0 && id.name != gd.name) {
+                        println(gd.annotation)
+                        val missed = index.documentById(gd.name)!!
+                        println("Missed document=$missed")
+                        println(index.explain(q, missed))
+                    }
+
+                    println("${id.rank}\t${id.name}\t${id.score}")
+                    println("${gd.rank}\t${gd.name}\t${gd.score}")
                 }
-                ms.push("$measure.irene2", score)
-            }
+                //}
 
-            println(ms.means())
+                val queryJudgments = qrels[qid]!!
+                evals.forEach { measure, evalfn ->
+                    val score = try {
+                        evalfn.evaluate(results, queryJudgments)
+                    } catch (npe: NullPointerException) {
+                        System.err.println("NULL in eval...")
+                        -Double.MAX_VALUE
+                    }
+                    ms.push("$measure.irene2", score)
+                }
+
+                println(ms.means())
+            }
         }
+        println(ms.means())
     }
-    println(ms.means())
 }
