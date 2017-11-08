@@ -138,6 +138,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
     fun getStats(term: Term): CountStats? {
         return termStatsCache.get(term, {CalculateStatistics.lookupTermStatistics(searcher, it)}) ?: CalculateStatistics.fieldStats(searcher, term.field())
     }
+    fun getStats(expr: QExpr): CountStats? = getExprStats(expr)?.join()
 
     private fun prepare(expr: QExpr): IreneQueryModel = IreneQueryModel(this, this.language, expr)
 

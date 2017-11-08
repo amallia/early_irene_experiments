@@ -54,9 +54,7 @@ class OrderedWindow(val stats: LazyCountStats, children: List<PositionsEvalNode>
         // TODO: someday error if there are different fields.
     }
     //val stats = children.map { it.getCountStats() }
-
-    override fun score(doc: Int): Float = error("notImpl")
-
+    override fun score(doc: Int): Float = count(doc).toFloat()
     var lastDoc = -1
     var lastCount = 0
     override fun count(doc: Int): Int {
@@ -100,4 +98,6 @@ class PositionsIter(val data: IntArray, val size: Int=data.size, var index: Int 
     }
     val position: Int get() = data[index]
     val count: Int get() = size
+
+    override fun toString() = (0 until size).map { data[it] }.toList().toString()
 }

@@ -123,13 +123,13 @@ abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<
 
 abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
     private var current: Int = 0
+    val cost = children.map { it.estimateDF() }.min() ?: 0L
+    val moveChildren = children.sortedBy { it.estimateDF() }
     init {
         advanceToMatch()
     }
-    val cost = children.map { it.estimateDF() }.min() ?: 0L
-    val moveChildren = children.sortedBy { it.estimateDF() }
-    override fun docID(): Int = current
 
+    override fun docID(): Int = current
     fun advanceToMatch(): Int {
         while(true) {
             var match = true

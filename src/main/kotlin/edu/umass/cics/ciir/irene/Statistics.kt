@@ -33,9 +33,7 @@ data class CountStats(var text: String, var cf: Long, var df: Long, var cl: Long
 }
 
 class LazyCountStats(val expr: QExpr, val index: IreneIndex) {
-    private val stats: CountStats by lazy {
-        index.getExprStats(expr)?.join()!!
-    }
+    private val stats: CountStats by lazy { index.getStats(expr)!! }
     fun get(): CountStats = stats
 }
 

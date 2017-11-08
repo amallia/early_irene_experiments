@@ -15,6 +15,7 @@ import org.junit.Test
 import org.junit.rules.ExternalResource
 import org.lemurproject.galago.core.index.mem.MemoryIndex
 import org.lemurproject.galago.core.retrieval.LocalRetrieval
+import org.lemurproject.galago.core.retrieval.iterator.CountIterator
 import java.io.Closeable
 import java.util.*
 
@@ -45,6 +46,7 @@ class CommonTestIndexes : Closeable {
     val ltrIndex = ArrayList<LTRDoc>()
     val df = HashMap<String, Int>()
     val terms = HashSet<String>()
+    val tokenVectors = ArrayList<List<String>>()
 
     lateinit var irene: IreneIndex
     lateinit var galago: LocalRetrieval
@@ -66,6 +68,7 @@ class CommonTestIndexes : Closeable {
                             TextField(contentsField, doc, Field.Store.YES))
 
                     val tokens = params.analyzer.tokenize("body", doc)
+                    tokenVectors.add(tokens)
 
                     val gdoc = GDoc()
                     gdoc.name = name
@@ -132,9 +135,38 @@ public class ScoringTest {
         val bgStats = index.galago.getCollectionStatistics(GExpr("lengths"))
         index.terms.forEach { term ->
             val istats = index.irene.getStats(term)!!
-            val gstats = index.galago.getNodeStatistics(GExpr("counts", term))!!
+            val gstats = (index.galago.createIterator(pmake {}, GExpr("counts", term)) as CountIterator).calculateStatistics()
+            println(gstats)
             Assert.assertEquals("cf $term", gstats.nodeFrequency, istats.cf)
             Assert.assertEquals("df $term", gstats.nodeDocumentCount, istats.df)
+            Assert.assertEquals("dc $term", bgStats.documentCount, istats.dc)
+            Assert.assertEquals("cl $term", bgStats.collectionLength, istats.cl)
+        }
+    }
+
+    @Test
+    fun testBigramStats() {
+        val index = resource.index!!
+        val bgStats = index.galago.getCollectionStatistics(GExpr("lengths"))
+        index.forEachTermPair { t1, t2 ->
+            val odi = OrderedWindowExpr(listOf(TextExpr(t1),TextExpr(t2)))
+            val istats = index.irene.getStats(odi)!!
+            // Galago does this wrong!
+            var df = 0L
+            var cf = 0L
+            index.tokenVectors.forEach { tvec ->
+                var hits = 0
+                (0 until tvec.size-1).forEach { i ->
+                    if (tvec[i] == t1 && tvec[i+1] == t2)
+                        hits++
+                }
+                if (hits > 0) df++
+                cf+=hits
+            }
+
+            val term = "od:1($t1 $t2)"
+            Assert.assertEquals("cf $term", cf, istats.cf)
+            Assert.assertEquals("df $term", df, istats.df)
             Assert.assertEquals("dc $term", bgStats.documentCount, istats.dc)
             Assert.assertEquals("cl $term", bgStats.collectionLength, istats.cl)
         }

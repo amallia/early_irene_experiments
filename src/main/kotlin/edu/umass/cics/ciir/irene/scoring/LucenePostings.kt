@@ -102,5 +102,13 @@ class LuceneTermPositions(stats: CountStats, postings: PostingsEnum, lengths: Nu
         }
         return PositionsIter(positions.unsafeArray(), positions.fill)
     }
+
+    override fun explain(doc: Int): Explanation {
+        if (matches(doc)) {
+            return Explanation.match(count(doc).toFloat(), "@doc=$doc, lengths@${lengths.docID()} positions=${positions(doc)}")
+        } else {
+            return Explanation.noMatch("@doc=${postings.docID()} doc=$doc, lengths@=${lengths.docID()} positions=[]")
+        }
+    }
 }
 
