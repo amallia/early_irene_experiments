@@ -22,7 +22,10 @@ data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths:
     override fun estimateDF() = 0L
     override fun getCountStats(): CountStats = stats
     override fun length(doc: Int): Int {
-        if (lengths.advanceExact(doc)) {
+        if (lengths.docID() < doc) {
+            lengths.advance(doc)
+        }
+        if (lengths.docID() == doc) {
             return lengths.longValue().toInt()
         }
         return 0
@@ -71,7 +74,10 @@ open class LuceneTermCounts(stats: CountStats, postings: PostingsEnum, val lengt
     }
     override fun getCountStats(): CountStats = stats
     override fun length(doc: Int): Int {
-        if (lengths.advanceExact(doc)) {
+        if (lengths.docID() < doc) {
+            lengths.advance(doc)
+        }
+        if (lengths.docID() == doc) {
             return lengths.longValue().toInt()
         }
         return 0;

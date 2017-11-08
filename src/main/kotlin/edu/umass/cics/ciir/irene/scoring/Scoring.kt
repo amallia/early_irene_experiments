@@ -99,9 +99,10 @@ abstract class RecursiveEval<out T : QueryEvalNode>(val children: List<T>) : Que
     }
 }
 abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
+    var current = children.map { it.nextMatching(0) }.min()!!
     val cost = children.map { it.estimateDF() }.max() ?: 0L
     val moveChildren = children.sortedByDescending { it.estimateDF() }
-    override fun docID(): Int = children.map { it.docID() }.min()!!
+    override fun docID(): Int = current
     override fun advance(target: Int): Int {
         var nextMin = NO_MORE_DOCS
         for (child in moveChildren) {
@@ -111,6 +112,7 @@ abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<
             }
             nextMin = minOf(nextMin, where)
         }
+        current = nextMin
         return nextMin
     }
     override fun estimateDF(): Long = cost
@@ -241,7 +243,7 @@ private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: 
     override fun score(doc: Int): Float {
         val c = child.count(doc).toDouble()
         val length = child.length(doc).toDouble()
-        return Math.log((c+ background) / (length + mu)).toFloat()
+        return Math.log((c + background) / (length + mu)).toFloat()
     }
     override fun count(doc: Int): Int = TODO("not yet")
     override fun explain(doc: Int): Explanation {

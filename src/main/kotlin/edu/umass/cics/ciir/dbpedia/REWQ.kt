@@ -34,7 +34,8 @@ fun main(args: Array<String>) {
     if (argp.isList("fields") || argp.isString("fields")) {
         fields.addAll(argp.getAsList("fields", String::class.java))
     } else {
-        fields.addAll(listOf<String>("body", "anchor_text", "short_text", "links", "props", "categories_text", "redirects", "citation_titles"))
+        fields.addAll(listOf("body", "anchor_text"))
+        //fields.addAll(listOf<String>("body", "anchor_text", "short_text", "links", "props", "categories_text", "redirects", "citation_titles"))
     }
     val paramWeights = ArrayList<Double>()
     if (argp.isList("weights") || argp.isDouble("weights")) {
@@ -46,9 +47,11 @@ fun main(args: Array<String>) {
             }
         }
         paramWeights.addAll(argW)
+    } else {
+        paramWeights.addAll(fields.map { 1.0 })
     }
 
-    val model = argp.get("model", "prms")
+    val model = argp.get("model", "ubg")
     val avgDLMu = argp.get("avgDLMu", false)
     val defaultMu = argp.get("mu", 7000.0)
     val depth = argp.get("depth", 100)

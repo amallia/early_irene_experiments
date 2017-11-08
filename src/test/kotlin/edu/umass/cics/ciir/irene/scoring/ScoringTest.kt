@@ -136,7 +136,7 @@ class ScoringTest {
         index.terms.forEach { term ->
             val istats = index.irene.getStats(term)!!
             val gstats = (index.galago.createIterator(pmake {}, GExpr("counts", term)) as CountIterator).calculateStatistics()
-            println(gstats)
+            //println(gstats)
             Assert.assertEquals("cf $term", gstats.nodeFrequency, istats.cf)
             Assert.assertEquals("df $term", gstats.nodeDocumentCount, istats.df)
             Assert.assertEquals("dc $term", bgStats.documentCount, istats.dc)
