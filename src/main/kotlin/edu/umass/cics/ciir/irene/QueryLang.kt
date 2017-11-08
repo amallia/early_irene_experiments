@@ -130,10 +130,12 @@ data class MaxExpr(override val children: List<QExpr>) : OpExpr() {
 }
 
 data class OrderedWindowExpr(override var children: List<QExpr>, var step: Int=1) : OpExpr() {
-    var computedStats: CountStats? = null
     override fun copy() = OrderedWindowExpr(copyChildren(), step)
-
 }
+data class UnorderedWindowExpr(override var children: List<QExpr>, var width: Int=4) : OpExpr() {
+    override fun copy() = UnorderedWindowExpr(copyChildren(), width)
+}
+
 data class WeightExpr(override var child: QExpr, var weight: Double = 1.0) : SingleChildExpr() {
     override fun copy() = WeightExpr(child.copy(), weight)
 }
@@ -281,9 +283,9 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
         is WeightExpr, is CombineExpr, is MultExpr, is MaxExpr -> {
             DataNeeded.SCORES
         }
-        is OrderedWindowExpr -> {
+        is UnorderedWindowExpr, is OrderedWindowExpr -> {
             if (q.children.size <= 1) {
-                throw TypeCheckError("Need more than 1 child for an OrderedWindow, e.g. $q")
+                throw TypeCheckError("Need more than 1 child for an window Expr, e.g. $q")
             }
             DataNeeded.POSITIONS
         }

@@ -47,14 +47,14 @@ class CountStatsCollectorManager(val start: CountStats) : CollectorManager<Count
     }
 
     override fun newCollector(): CountStatsCollector = CountStatsCollector()
-    class CountStatsLeafCollector(val accum: CountStats) : LeafCollector {
+    class CountStatsLeafCollector(val docBase: Int, val accum: CountStats) : LeafCollector {
         lateinit var scoreFn: Scorer
         override fun setScorer(scorer: Scorer?) { scoreFn = scorer!! }
 
         override fun collect(doc: Int) {
             val score = scoreFn.score()
             val count = score.toInt()
-            assert(score - count < 1e-10, {"Collecting count stats but got float score: $doc -> $score -> $count"})
+            assert(score - count < 1e-10, {"Collecting count stats but got float score: ${docBase+doc} -> $score -> $count"})
 
             if (count > 0) {
                 accum.cf += count
@@ -66,7 +66,7 @@ class CountStatsCollectorManager(val start: CountStats) : CollectorManager<Count
     class CountStatsCollector : Collector {
         val stats = CountStats("tmp:CountStatsCollector")
         override fun needsScores(): Boolean = false
-        override fun getLeafCollector(context: LeafReaderContext?): LeafCollector = CountStatsLeafCollector(stats)
+        override fun getLeafCollector(context: LeafReaderContext?): LeafCollector = CountStatsLeafCollector(context!!.docBase, stats)
     }
 }
 

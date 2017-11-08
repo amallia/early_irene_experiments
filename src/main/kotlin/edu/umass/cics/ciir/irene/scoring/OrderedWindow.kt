@@ -48,17 +48,63 @@ fun countOrderedWindows(arrayIterators: List<PositionsIter>, step: Int): Int {
     return hits
 }
 
-class OrderedWindow(val stats: LazyCountStats, children: List<PositionsEvalNode>, val step: Int) : AndEval<PositionsEvalNode>(children), CountEvalNode {
+fun countUnorderedWindows(iters: List<PositionsIter>, width: Int): Int {
+    var hits = 0
+
+    var max = iters.get(0).position + 1
+    var min = iters.get(0).position
+    for (i in 1 until iters.size) {
+        val pos = iters.get(i).position
+        max = Math.max(max, pos + 1)
+        min = Math.min(min, pos)
+    }
+
+    while (true) {
+        val match = (max - min <= width) || width == -1
+        if (match) {
+            hits++
+        }
+
+        val oldMin = min
+        // now, reset bounds
+        max = Integer.MIN_VALUE
+        min = Integer.MAX_VALUE
+        for (iter in iters) {
+            var pos = iter.position
+            if (pos == oldMin) {
+                val notDone = iter.next()
+                if (!notDone) {
+                    return hits
+                }
+                assert(iter.position > oldMin)
+            }
+            pos = iter.position
+            max = maxOf(max, pos + 1)
+            min = minOf(min, pos)
+        }
+    }
+}
+
+class PositionsIter(val data: IntArray, val size: Int=data.size, var index: Int = 0) {
+    val done: Boolean get() = index >= size
+    fun reset() { index = 0}
+    fun next(): Boolean {
+        index++
+        return !done
+    }
+    val position: Int get() = data[index]
+    val count: Int get() = size
+
+    override fun toString() = (0 until size).map { data[it] }.toList().toString()
+}
+
+abstract class CountWindow(val stats: LazyCountStats, children: List<PositionsEvalNode>) : AndEval<PositionsEvalNode>(children), CountEvalNode {
     init {
         assert(children.size > 1)
-        children.forEach {
-            assert(it is PositionsEvalNode)
-        }
-        // TODO: someday error if there are different fields.
     }
-    //val stats = children.map { it.getCountStats() }
     var lastDoc = -1
     var lastCount = 0
+    abstract fun compute(iters: List<PositionsIter>): Int
     override fun count(doc: Int): Int {
         if (doc == lastDoc) return lastCount
 
@@ -74,32 +120,28 @@ class OrderedWindow(val stats: LazyCountStats, children: List<PositionsEvalNode>
         }
 
         lastDoc = doc
-        lastCount = countOrderedWindows(iters, step)
+        lastCount = compute(iters)
         return lastCount
     }
-
     override fun matches(doc: Int): Boolean {
-        //println("OrderedWindow.matches($doc) = [super=${super.matches(doc)}, me=${count(doc)}, @$lastDoc,c=$lastCount")
-        // all iterators have match?
         if (super.matches(doc)) {
             return count(doc) > 0
         }
         return false
     }
-
     override fun getCountStats(): CountStats = stats.get()
     override fun length(doc: Int): Int = children[0].length(doc)
 }
 
-class PositionsIter(val data: IntArray, val size: Int=data.size, var index: Int = 0) {
-    val done: Boolean get() = index >= size
-    fun reset() { index = 0}
-    fun next(): Boolean {
-        index++
-        return !done
+class OrderedWindow(stats: LazyCountStats, children: List<PositionsEvalNode>, val step: Int) : CountWindow(stats, children) {
+    override fun compute(iters: List<PositionsIter>): Int {
+        return countOrderedWindows(iters, step)
     }
-    val position: Int get() = data[index]
-    val count: Int get() = size
+}
 
-    override fun toString() = (0 until size).map { data[it] }.toList().toString()
+class UnorderedWindow(stats: LazyCountStats, children: List<PositionsEvalNode>, val width: Int) : CountWindow(stats, children) {
+    override fun compute(iters: List<PositionsIter>): Int {
+        val count = countUnorderedWindows(iters, width)
+        return count
+    }
 }

@@ -178,6 +178,30 @@ class ScoringTest {
         }
     }
 
+    @Test
+    fun testWindowStats() {
+        val index = resource.index!!
+
+        val bgStats = index.galago.getCollectionStatistics(GExpr("lengths"))
+        index.forEachTermPair { t1, t2 ->
+            listOf(3,6,9).forEach { width ->
+                val udi = UnorderedWindowExpr(listOf(TextExpr(t1),TextExpr(t2)), width)
+                val udg = GExpr("uw").apply {
+                    setf("default", width)
+                    listOf(t1, t2).forEach { addChild(GExpr.Text(it)) }
+                }
+                val istats = index.irene.getStats(udi)!!
+                val gstats = index.galago.getNodeStatistics(index.galago.transformQuery(udg, Parameters.create()));
+
+                val term = "uw:$width($t1 $t2)"
+                Assert.assertEquals("cf $term", gstats.nodeFrequency, istats.cf)
+                Assert.assertEquals("df $term", gstats.nodeDocumentCount, istats.df)
+                Assert.assertEquals("dc $term", bgStats.documentCount, istats.dc)
+                Assert.assertEquals("cl $term", bgStats.collectionLength, istats.cl)
+            }
+        }
+    }
+
     fun galagoOd1(terms: List<String>) = GExpr("od").apply {
         setf("default", 1)
         terms.forEach { addChild(GExpr.Text(it)) }

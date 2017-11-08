@@ -30,7 +30,12 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is BoolToScoreExpr -> TODO()
     is CountToBoolExpr -> TODO()
     is RequireExpr -> RequireEval(exprToEval(q.cond, ctx), exprToEval(q.value, ctx))
-    is OrderedWindowExpr -> OrderedWindow(LazyCountStats(q.copy(), ctx.index), q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.step)
+    is OrderedWindowExpr -> OrderedWindow(
+            LazyCountStats(q.copy(), ctx.index),
+            q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.step)
+    is UnorderedWindowExpr -> UnorderedWindow(
+            LazyCountStats(q.copy(), ctx.index),
+            q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.width)
 }
 
 
