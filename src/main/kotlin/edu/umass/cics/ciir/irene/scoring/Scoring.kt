@@ -30,7 +30,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is BoolToScoreExpr -> TODO()
     is CountToBoolExpr -> TODO()
     is RequireExpr -> RequireEval(exprToEval(q.cond, ctx), exprToEval(q.value, ctx))
-    is OrderedWindowExpr -> OrderedWindow(LazyCountStats(q.copy(), ctx.index), q.children.map { exprToEval(it, ctx) as LeafEvalNode}, q.step)
+    is OrderedWindowExpr -> OrderedWindow(LazyCountStats(q.copy(), ctx.index), q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.step)
 }
 
 
@@ -68,7 +68,7 @@ interface CountEvalNode : QueryEvalNode {
     fun getCountStats(): CountStats
     fun length(doc: Int): Int
 }
-interface LeafEvalNode : CountEvalNode {
+interface PositionsEvalNode : CountEvalNode {
     fun positions(doc: Int): PositionsIter
 }
 

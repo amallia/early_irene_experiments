@@ -16,17 +16,23 @@ data class IQContext(val index: IreneIndex, val context: LeafReaderContext) {
     val searcher = index.searcher
     val lengths = HashMap<String, NumericDocValues>()
 
-    fun create(term: Term, needed: DataNeeded, stats: CountStats): LeafEvalNode {
+    fun create(term: Term, needed: DataNeeded, stats: CountStats): QueryEvalNode {
         return create(term, needed, stats, lengths.computeIfAbsent(term.field(), { field ->
             lucene_try { context.reader().getNormValues(field) } ?: error("Couldn't find norms for ``$field''.")
         }))
     }
-    fun create(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): LeafEvalNode {
+    fun create(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): QueryEvalNode {
         val termContext = TermContext.build(searcher.topReaderContext, term)!!
         val state = termContext[context.ord] ?: return LuceneMissingTerm(term, stats, lengths)
         val termIter = context.reader().terms(term.field()).iterator()
         termIter.seekExact(term.bytes(), state)
-        return LuceneTermPostings(needed, stats, termIter.postings(null, needed.textFlags()), lengths)
+        val postings = termIter.postings(null, needed.textFlags())
+        return when(needed) {
+            DataNeeded.DOCS -> LuceneTermDocs(stats, postings)
+            DataNeeded.COUNTS -> LuceneTermCounts(stats, postings, lengths)
+            DataNeeded.POSITIONS -> LuceneTermPositions(stats, postings, lengths)
+            DataNeeded.SCORES -> error("Impossible!")
+        }
     }
 }
 
