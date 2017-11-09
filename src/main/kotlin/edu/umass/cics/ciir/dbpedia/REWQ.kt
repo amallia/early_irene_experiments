@@ -51,7 +51,7 @@ fun main(args: Array<String>) {
         paramWeights.addAll(fields.map { 1.0 })
     }
 
-    val model = argp.get("model", "ubg")
+    val model = argp.get("model", "sdm")
     val avgDLMu = argp.get("avgDLMu", false)
     val defaultMu = argp.get("mu", 7000.0)
     val depth = argp.get("depth", 100)
@@ -90,21 +90,9 @@ fun main(args: Array<String>) {
                         WeightExpr(DirQLExpr(TextExpr(term, field), mu ?: defaultMu), weight / norm)
                     })
                 })
-                "ubg" -> CombineExpr(fields.map { field ->
+                "sdm" -> CombineExpr(fields.map { field ->
                     val mu = if (avgDLMu) fieldMu[field] else defaultMu
-                    val unigrams = MeanExpr(qterms.map { term ->
-                        DirQLExpr(TextExpr(term, field), mu ?: defaultMu)
-                    })
-                    val bigrams = ArrayList<QExpr>()
-                    qterms.forEachSeqPair { t1, t2 ->
-                        val q = DirQLExpr(OrderedWindowExpr(listOf(TextExpr(t1, field), TextExpr(t2, field))), mu ?: defaultMu)
-                        bigrams.add(q)
-                    }
-                    if (bigrams.isNotEmpty()) {
-                        SumExpr(MeanExpr(bigrams).weighted(bgW), unigrams.weighted(ugW))
-                    } else {
-                        unigrams
-                    }
+                    SequentialDependenceModel(qterms, field, makeScorer={ DirQLExpr(it, mu ?: defaultMu) });
                 }, paramWeights)
                 "mixture" -> {
                     val fieldExprs = listOf("body", "short_text").map { field ->

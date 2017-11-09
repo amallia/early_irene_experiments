@@ -71,11 +71,15 @@ fun QueryLikelihood(terms: List<String>, field: String?=null, mu: Double?=null):
 }
 
 fun SequentialDependenceModel(terms: List<String>, field: String?=null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, makeScorer: (QExpr)->QExpr = {DirQLExpr(it)}): QExpr {
+    if (terms.isEmpty()) throw IllegalStateException("Empty SDM")
+    if (terms.size == 1) {
+        return makeScorer(TextExpr(terms[0], field))
+    }
 
     val nonStop = terms.filter { stopwords.contains(it) }
 
     val unigrams: List<QExpr> =
-            (if (nonStop.size >= 1) { nonStop } else terms)
+            (if (nonStop.isNotEmpty()) { nonStop } else terms)
                     .map { makeScorer(TextExpr(it, field)) }
 
     val bigrams = ArrayList<QExpr>()
