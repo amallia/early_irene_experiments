@@ -31,13 +31,32 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is CountToBoolExpr -> TODO()
     is RequireExpr -> RequireEval(exprToEval(q.cond, ctx), exprToEval(q.value, ctx))
     is OrderedWindowExpr -> OrderedWindow(
-            LazyCountStats(q.copy(), ctx.index),
+            computeCountStats(q, ctx),
             q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.step)
     is UnorderedWindowExpr -> UnorderedWindow(
-            LazyCountStats(q.copy(), ctx.index),
+            computeCountStats(q, ctx),
             q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.width)
 }
 
+fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
+    if (q is OrderedWindowExpr || q is UnorderedWindowExpr) {
+        val method = ctx.env.estimateStats ?: return LazyCountStats(q.copy(), ctx.index)
+        val cstats = q.children.map { c ->
+            if (c is TextExpr) {
+                c.stats!!
+            } else {
+                error("Can't estimate stats with non-TextExpr children. $c")
+            }
+        }
+        return when(method) {
+            "min" -> MinEstimatedCountStats(q.copy(), cstats)
+            "prob" -> ProbEstimatedCountStats(q.copy(), cstats)
+            else -> TODO("estimateStats strategy = $method")
+        }
+    } else {
+        TODO("computeCountStats($q)")
+    }
+}
 
 const val NO_MORE_DOCS = DocIdSetIterator.NO_MORE_DOCS
 interface QueryEvalNode {

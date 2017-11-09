@@ -22,6 +22,7 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
     var defaultDirichletMu: Double = 1500.0
     var defaultBM25b: Double = 0.75
     var defaultBM25k: Double = 1.2
+    var estimateStats: String? = null
 
     fun simplify(q: QExpr): QExpr {
         val pq = q.copy()
@@ -63,6 +64,7 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
         result = 31 * result + defaultBM25k.hashCode()
         return result
     }
+
 
 }
 
@@ -368,6 +370,10 @@ fun applyIndex(index: IreneIndex, root: QExpr) {
             if (q.stats == null) {
                 error("Query uses field ``$field'' which does not exist in index, via $q")
             }
+        } else if (q is UnorderedWindowExpr) {
+
+        } else if (q is OrderedWindowExpr) {
+
         }
     }
 }

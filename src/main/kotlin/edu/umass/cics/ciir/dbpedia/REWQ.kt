@@ -64,6 +64,7 @@ fun main(args: Array<String>) {
     //val fields = arrayListOf<String>("body", "anchor_text", "citation_titles", "redirects", "categories_text", "short_text")
 
     dataset.getIreneIndex().use { index ->
+        index.env.estimateStats = argp.get("estimateStats", "min")
         val fieldMu = fields.associate { Pair(it, index.getAverageDL(it)) }
         println("fieldMu = $fieldMu")
 
@@ -96,7 +97,11 @@ fun main(args: Array<String>) {
                     val weights = fieldMu.normalize()
                     val mu = if (avgDLMu) fieldMu[field] else defaultMu
 
-                    SequentialDependenceModel(qterms, field, makeScorer={ DirQLExpr(it, mu ?: defaultMu) }, stopwords=stopwords, fullProx = 0.1).weighted(weights[field])
+                    // ap=0.231, ndcg=0.465, p5=0.595
+                    // ap=0.234, ndcg=0.464, p5=0.595
+                    // w/estimateStats = "min" // ap=0.233 ndcg=0.459, p5=0.605
+                    // w/estimateStats = "prob" // ap=0.230 ndcg=0.459, p5=0.589
+                    SequentialDependenceModel(qterms, field, makeScorer={ DirQLExpr(it, mu ?: defaultMu) }, stopwords=stopwords).weighted(weights[field])
                 })
                 "sdm" -> CombineExpr(fields.map { field ->
                     val mu = if (avgDLMu) fieldMu[field] else defaultMu

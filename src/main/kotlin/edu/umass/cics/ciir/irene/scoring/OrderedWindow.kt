@@ -1,7 +1,7 @@
 package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.irene.CountStats
-import edu.umass.cics.ciir.irene.LazyCountStats
+import edu.umass.cics.ciir.irene.CountStatsStrategy
 
 /**
  *
@@ -98,7 +98,7 @@ class PositionsIter(val data: IntArray, val size: Int=data.size, var index: Int 
     override fun toString() = (0 until size).map { data[it] }.toList().toString()
 }
 
-abstract class CountWindow(val stats: LazyCountStats, children: List<PositionsEvalNode>) : AndEval<PositionsEvalNode>(children), CountEvalNode {
+abstract class CountWindow(val stats: CountStatsStrategy, children: List<PositionsEvalNode>) : AndEval<PositionsEvalNode>(children), CountEvalNode {
     init {
         assert(children.size > 1)
     }
@@ -133,13 +133,13 @@ abstract class CountWindow(val stats: LazyCountStats, children: List<PositionsEv
     override fun length(doc: Int): Int = children[0].length(doc)
 }
 
-class OrderedWindow(stats: LazyCountStats, children: List<PositionsEvalNode>, val step: Int) : CountWindow(stats, children) {
+class OrderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val step: Int) : CountWindow(stats, children) {
     override fun compute(iters: List<PositionsIter>): Int {
         return countOrderedWindows(iters, step)
     }
 }
 
-class UnorderedWindow(stats: LazyCountStats, children: List<PositionsEvalNode>, val width: Int) : CountWindow(stats, children) {
+class UnorderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val width: Int) : CountWindow(stats, children) {
     override fun compute(iters: List<PositionsIter>): Int {
         val count = countUnorderedWindows(iters, width)
         return count

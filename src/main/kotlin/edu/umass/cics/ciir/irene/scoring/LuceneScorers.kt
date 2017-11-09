@@ -12,8 +12,10 @@ import org.apache.lucene.search.*
  * @author jfoley.
  */
 
-data class IQContext(val index: IreneIndex, val context: LeafReaderContext) {
-    val searcher = index.searcher
+data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
+    val env = iqm.env
+    val index = iqm.index
+    val searcher = iqm.index.searcher
     val lengths = HashMap<String, NumericDocValues>()
 
     fun create(term: Term, needed: DataNeeded, stats: CountStats): QueryEvalNode {
@@ -42,12 +44,12 @@ private class IQModelWeight(val q: QExpr, val iqm: IreneQueryModel) : Weight(iqm
     }
 
     override fun explain(context: LeafReaderContext?, doc: Int): Explanation {
-        val ctx = IQContext(iqm.index, context!!)
+        val ctx = IQContext(iqm, context!!)
         return exprToEval(q, ctx).explain(doc)
     }
 
     override fun scorer(context: LeafReaderContext?): Scorer {
-        val ctx = IQContext(iqm.index, context!!)
+        val ctx = IQContext(iqm, context!!)
         return IreneQueryScorer(exprToEval(q, ctx), ctx)
     }
 }

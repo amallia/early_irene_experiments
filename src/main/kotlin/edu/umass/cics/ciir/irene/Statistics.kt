@@ -32,9 +32,47 @@ data class CountStats(var text: String, var cf: Long, var df: Long, var cl: Long
     }
 }
 
-class LazyCountStats(val expr: QExpr, val index: IreneIndex) {
+sealed class CountStatsStrategy {
+    abstract fun get(): CountStats
+}
+class LazyCountStats(val expr: QExpr, val index: IreneIndex) : CountStatsStrategy() {
     private val stats: CountStats by lazy { index.getStats(expr)!! }
-    fun get(): CountStats = stats
+    override fun get(): CountStats = stats
+}
+inline fun <T> List<T>.lazyMinAs(func: (T)->Long): Long? {
+    var curMin: Long? = null
+    for (x in this) {
+        val cur = func(x)
+        if (curMin == null || (curMin > cur)) {
+            curMin = cur
+        }
+    }
+    return curMin
+}
+class MinEstimatedCountStats(expr: QExpr, cstats: List<CountStats>): CountStatsStrategy() {
+    override fun get(): CountStats = estimatedStats
+    private val estimatedStats = CountStats("Est($expr)",
+            cstats.lazyMinAs { it.cf }?:0,
+            cstats.lazyMinAs { it.df }?:0, cstats[0].cl, cstats[0].dc)
+}
+class ProbEstimatedCountStats(expr: QExpr, cstats: List<CountStats>): CountStatsStrategy() {
+    override fun get(): CountStats = estimatedStats
+    private val estimatedStats = CountStats("Est($expr)",0,0,cstats[0].cl, cstats[0].dc).apply {
+        if (cstats.lazyMinAs { it.cf } ?: 0L == 0L) {
+            // one term does not exist, all things are zero.
+        } else {
+            cf = Math.exp(
+                    // size of collection
+                    Math.log(cl.toDouble()) +
+                    // multiply probabilities together in logspace / term-independence model
+                    cstats.map { Math.log(it.countProbability()) }.sum()).toLong()
+            df = Math.exp(
+                    // size of collection (# docs)
+                    Math.log(df.toDouble()) +
+                    // multiply probabilities together in logspace / term-independence model
+                    cstats.map { Math.log(it.binaryProbability()) }.sum()).toLong()
+        }
+    }
 }
 
 class CountStatsCollectorManager(val start: CountStats) : CollectorManager<CountStatsCollectorManager.CountStatsCollector, CountStats> {

@@ -95,7 +95,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
     val reader = DirectoryReader.open(io.open().use())
     val searcher = IndexSearcher(reader, jobPool)
     val analyzer = params.analyzer
-    val language = IreneQueryLanguage()
+    val env = IreneQueryLanguage()
     private val termStatsCache: Cache<Term, CountStats> = Caffeine.newBuilder().maximumSize(100_000).build()
     private val exprStatsCache = Caffeine.newBuilder().maximumSize(100_000).build<QExpr, ForkJoinTask<CountStats>>()
 
@@ -140,7 +140,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
     }
     fun getStats(expr: QExpr): CountStats? = getExprStats(expr)?.join()
 
-    private fun prepare(expr: QExpr): IreneQueryModel = IreneQueryModel(this, this.language, expr)
+    private fun prepare(expr: QExpr): IreneQueryModel = IreneQueryModel(this, this.env, expr)
 
     fun getExprStats(expr: QExpr): ForkJoinTask<CountStats>? {
         return exprStatsCache.get(expr, { missing ->
