@@ -283,4 +283,20 @@ class ScoringTest {
         }
     }
 
+    @Test
+    fun testEquivSDMMissing() {
+        val index = resource.index!!
+
+        index.forEachTermPair { t1, t2 ->
+            val t3 = "NEVER_GONNA_HAPPEN"
+            val gq = GExpr("sdm").apply {
+                addChild(GExpr.Text(t1))
+                addChild(GExpr.Text(t2))
+                addChild(GExpr.Text(t3))
+            }
+            // if this ever breaks, check to make sure defaults are in sync with Galago.
+            val iq = SequentialDependenceModel(listOf(t1, t2, t3))
+            cmpResults("sdm($t1, $t2, NULL)", gq, iq, index)
+        }
+    }
 }

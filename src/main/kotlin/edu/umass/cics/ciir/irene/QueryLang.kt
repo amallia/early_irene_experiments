@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.irene
 
+import edu.umass.cics.ciir.dbpedia.forEachSeqPair
 import edu.umass.cics.ciir.sprf.pmake
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
@@ -67,6 +68,28 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
 // Easy "model"-based constructor.
 fun QueryLikelihood(terms: List<String>, field: String?=null, mu: Double?=null): QExpr {
     return MeanExpr(terms.map { DirQLExpr(TextExpr(it, field), mu) })
+}
+
+fun SequentialDependenceModel(terms: List<String>, field: String?=null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, makeScorer: (QExpr)->QExpr = {DirQLExpr(it)}): QExpr {
+
+    val nonStop = terms.filter { stopwords.contains(it) }
+
+    val unigrams: List<QExpr> =
+            (if (nonStop.size >= 1) { nonStop } else terms)
+                    .map { makeScorer(TextExpr(it, field)) }
+
+    val bigrams = ArrayList<QExpr>()
+    val ubigrams = ArrayList<QExpr>()
+    terms.forEachSeqPair { lhs, rhs ->
+        val ts = listOf(lhs, rhs).map { TextExpr(it, field) }
+        bigrams.add(makeScorer(OrderedWindowExpr(ts, odStep)))
+        ubigrams.add(makeScorer(UnorderedWindowExpr(ts, uwWidth)))
+    }
+
+    return SumExpr(
+            MeanExpr(unigrams).weighted(uniW),
+            MeanExpr(bigrams).weighted(odW),
+            MeanExpr(ubigrams).weighted(uwW))
 }
 
 sealed class QExpr {
