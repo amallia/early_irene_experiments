@@ -7,6 +7,7 @@ import org.apache.lucene.analysis.core.WhitespaceAnalyzer
 import org.apache.lucene.index.Term
 import org.apache.lucene.queryparser.classic.QueryParser
 import org.lemurproject.galago.utility.Parameters
+import java.util.*
 
 typealias LuceneQuery = org.apache.lucene.search.Query
 
@@ -70,30 +71,39 @@ fun QueryLikelihood(terms: List<String>, field: String?=null, mu: Double?=null):
     return MeanExpr(terms.map { DirQLExpr(TextExpr(it, field), mu) })
 }
 
-fun SequentialDependenceModel(terms: List<String>, field: String?=null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, makeScorer: (QExpr)->QExpr = {DirQLExpr(it)}): QExpr {
+fun SequentialDependenceModel(terms: List<String>, field: String?=null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, fullProx: Double? = null, fullProxWidth:Int=12, makeScorer: (QExpr)->QExpr = {DirQLExpr(it)}): QExpr {
     if (terms.isEmpty()) throw IllegalStateException("Empty SDM")
     if (terms.size == 1) {
         return makeScorer(TextExpr(terms[0], field))
     }
 
-    val nonStop = terms.filter { stopwords.contains(it) }
-
-    val unigrams: List<QExpr> =
-            (if (nonStop.isNotEmpty()) { nonStop } else terms)
-                    .map { makeScorer(TextExpr(it, field)) }
+    val nonStop = terms.filterNot { stopwords.contains(it) }
+    val bestTerms = (if (nonStop.isNotEmpty()) { nonStop } else terms)
+    val unigrams: List<QExpr> = bestTerms
+            .map { makeScorer(TextExpr(it, field)) }
 
     val bigrams = ArrayList<QExpr>()
     val ubigrams = ArrayList<QExpr>()
     terms.forEachSeqPair { lhs, rhs ->
         val ts = listOf(lhs, rhs).map { TextExpr(it, field) }
         bigrams.add(makeScorer(OrderedWindowExpr(ts, odStep)))
+    }
+    bestTerms.forEachSeqPair { lhs, rhs ->
+        val ts = listOf(lhs, rhs).map { TextExpr(it, field) }
         ubigrams.add(makeScorer(UnorderedWindowExpr(ts, uwWidth)))
     }
 
-    return SumExpr(
+    val exprs = arrayListOf<QExpr>(
             MeanExpr(unigrams).weighted(uniW),
             MeanExpr(bigrams).weighted(odW),
             MeanExpr(ubigrams).weighted(uwW))
+
+    if (fullProx != null) {
+        val fullProxTerms = if (bestTerms.size >= 2) bestTerms else terms
+        exprs.add(makeScorer(UnorderedWindowExpr(fullProxTerms.map { TextExpr(it, field) }, fullProxWidth)).weighted(fullProx))
+    }
+
+    return SumExpr(exprs)
 }
 
 sealed class QExpr {
@@ -106,7 +116,8 @@ sealed class QExpr {
         children.forEach { it.visit(each) }
     }
 
-    fun weighted(x: Double) = WeightExpr(this, x)
+    // Get a weighted version of this node if weight is non-null.
+    fun weighted(x: Double?) = if(x != null) WeightExpr(this, x) else this
 }
 sealed class LeafExpr : QExpr() {
     override val children: List<QExpr> get() = emptyList()

@@ -4,12 +4,18 @@ import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluators
+import edu.umass.cics.ciir.sprf.inqueryStop
 import org.lemurproject.galago.utility.Parameters
 
 inline fun <T> List<T>.forEachSeqPair(fn: (T,T)->Unit) {
     (0 until this.size-1).forEach { i ->
         fn(this[i], this[i+1])
     }
+}
+
+fun <T> Map<T, Double>.normalize(): Map<T, Double> {
+    val norm = this.values.sum()
+    return this.mapValues { (_,v) -> v/norm }
 }
 
 /**
@@ -34,8 +40,8 @@ fun main(args: Array<String>) {
     if (argp.isList("fields") || argp.isString("fields")) {
         fields.addAll(argp.getAsList("fields", String::class.java))
     } else {
-        fields.addAll(listOf("short_text"))
-        //fields.addAll(listOf<String>("body", "anchor_text", "short_text", "links", "props", "categories_text", "redirects", "citation_titles"))
+        //fields.addAll(listOf("short_text"))
+        fields.addAll(listOf<String>("body", "anchor_text", "short_text", "links", "props", "categories_text", "redirects", "citation_titles"))
     }
     val paramWeights = ArrayList<Double>()
     if (argp.isList("weights") || argp.isDouble("weights")) {
@@ -47,16 +53,13 @@ fun main(args: Array<String>) {
             }
         }
         paramWeights.addAll(argW)
-    } else {
-        paramWeights.addAll(fields.map { 1.0 })
     }
 
-    val model = argp.get("model", "sdm")
+    val model = argp.get("model", "avgl_fsdm")
     val avgDLMu = argp.get("avgDLMu", false)
     val defaultMu = argp.get("mu", 7000.0)
     val depth = argp.get("depth", 100)
-    val bgW = argp.get("bgW", 0.1)
-    val ugW = argp.get("ugW", 0.8)
+    val stopwords: Set<String> = if (argp.get("stopSDM", true)) { inqueryStop } else { emptySet() }
 
     //val fields = arrayListOf<String>("body", "anchor_text", "citation_titles", "redirects", "categories_text", "short_text")
 
@@ -82,17 +85,22 @@ fun main(args: Array<String>) {
                         if (stats == null) {
                             null
                         } else Pair(field, stats.nonzeroCountProbability())
-                    }.filterNotNull().associate {it}
+                    }.filterNotNull().associate {it}.normalize()
 
-                    val norm = weights.values.sum()
                     MeanExpr(weights.map { (field, weight) ->
                         val mu = if (avgDLMu) fieldMu[field] else defaultMu
-                        WeightExpr(DirQLExpr(TextExpr(term, field), mu ?: defaultMu), weight / norm)
+                        WeightExpr(DirQLExpr(TextExpr(term, field), mu ?: defaultMu), weight)
                     })
+                })
+                "avgl_fsdm" -> SumExpr(fields.map { field ->
+                    val weights = fieldMu.normalize()
+                    val mu = if (avgDLMu) fieldMu[field] else defaultMu
+
+                    SequentialDependenceModel(qterms, field, makeScorer={ DirQLExpr(it, mu ?: defaultMu) }, stopwords=stopwords, fullProx = 0.1).weighted(weights[field])
                 })
                 "sdm" -> CombineExpr(fields.map { field ->
                     val mu = if (avgDLMu) fieldMu[field] else defaultMu
-                    SequentialDependenceModel(qterms, field, makeScorer={ DirQLExpr(it, mu ?: defaultMu) });
+                    SequentialDependenceModel(qterms, field, makeScorer={ DirQLExpr(it, mu ?: defaultMu) }, stopwords=stopwords, fullProx = 0.1);
                 }, paramWeights)
                 "mixture" -> {
                     val fieldExprs = listOf("body", "short_text").map { field ->
