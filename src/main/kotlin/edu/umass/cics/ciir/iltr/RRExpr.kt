@@ -1,17 +1,40 @@
 package edu.umass.cics.ciir.iltr
 
+import edu.umass.cics.ciir.irene.CountStats
+import edu.umass.cics.ciir.irene.TextExpr
 import edu.umass.cics.ciir.sprf.GExpr
 import edu.umass.cics.ciir.sprf.cfProbability
+import edu.umass.cics.ciir.sprf.setf
+import org.lemurproject.galago.core.index.stats.FieldStatistics
 import org.lemurproject.galago.core.retrieval.LocalRetrieval
 
 /**
  * @author jfoley
  */
 class RREnv(val retr: LocalRetrieval) {
-    val mu = 1500.0
-    val bm25b = 0.75
-    val bm25k = 1.2
+    var defaultField = "document"
+    var mu = 1500.0
+    var bm25b = 0.75
+    var bm25k = 1.2
     val lengths = retr.getCollectionStatistics(GExpr("lengths"))!!
+    val lengthsInfo = HashMap<String, FieldStatistics>()
+    private fun getFieldStats(field: String): FieldStatistics {
+        return lengthsInfo.computeIfAbsent(field, {retr.getCollectionStatistics(GExpr("lengths", field))})
+    }
+
+    fun getStats(term: String, field: String?=null): CountStats {
+        val fieldName = field ?: defaultField
+        val t = TextExpr(term, fieldName)
+        val node = GExpr("counts", t.text).apply { setf("field", fieldName) }
+        val stats = retr.getNodeStatistics(node)
+        val fstats = getFieldStats(fieldName)
+
+        return CountStats(t.toString(),
+                cf=stats.nodeFrequency,
+                df=stats.nodeDocumentCount,
+                dc=fstats.documentCount,
+                cl=fstats.collectionLength)
+    }
 
     fun mean(exprs: List<RRExpr>) = RRMean(this, exprs)
     fun mean(vararg exprs: RRExpr) = RRMean(this, exprs.toList())
@@ -146,5 +169,12 @@ class RRJaccardSimilarity(env: RREnv, val target: Set<String>, val empty: Double
         val overlap = (uniq intersect target).size.toDouble()
         val domain = (uniq union target).size.toDouble()
         return overlap / domain
+    }
+}
+
+class RRLogLogisticTFScore(env: RREnv, val term: String) : RRLeafExpr(env) {
+    val nstats = env.retr.getNodeStatistics(GExpr("counts", term))
+    override fun eval(doc: LTRDoc): Double {
+        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
 }

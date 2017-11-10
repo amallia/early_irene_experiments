@@ -105,6 +105,14 @@ data class RelevanceModel(val weights: TObjectDoubleHashMap<String>) {
 class BagOfWords(terms: List<String>) {
     val counts = TObjectIntHashMap<String>()
     val length = terms.size.toDouble()
+    val l2norm: Double by lazy {
+        var sumSq = 0.0
+        counts.forEachValue { c ->
+            sumSq += c*c
+            true
+        }
+        Math.sqrt(sumSq)
+    }
     init {
         terms.forEach { counts.adjustOrPutValue(it, 1, 1) }
     }
@@ -113,6 +121,7 @@ class BagOfWords(terms: List<String>) {
         if (!counts.containsKey(term)) return 0
         return counts[term]
     }
+
 }
 
 fun computeRelevanceModel(docs: List<LTRDoc>, feature: String, depth: Int, flat: Boolean = false, stopwords: Set<String> = inqueryStop): RelevanceModel {
