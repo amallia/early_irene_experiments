@@ -20,3 +20,9 @@ fun <N : Number> List<N>.mean(): Double {
     if (this.size == 1) return this[0].toDouble()
     return this.sumByDouble { it.toDouble() } / this.size.toDouble()
 }
+
+inline fun <T> List<T>.meanByDouble(mapper: (T)->Double): Double {
+    if (this.isEmpty()) return 0.0
+    if (this.size == 1) return mapper(this[0])
+    return this.sumByDouble { mapper(it) } / this.size.toDouble()
+}

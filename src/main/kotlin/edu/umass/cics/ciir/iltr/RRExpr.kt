@@ -44,6 +44,8 @@ class RREnv(val retr: LocalRetrieval) {
 
     fun ql(terms: List<String>) = mean(terms.map { RRDirichletTerm(this, it) })
     fun bm25(terms: List<String>) = sum(terms.map { RRBM25Term(this, it) })
+    fun mult(vararg exprs: RRExpr) = RRMult(this, exprs.toList())
+    fun const(x: Double) = RRConst(this, x)
 
 }
 
@@ -89,12 +91,14 @@ class RRSum(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
 }
 class RRMean(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
     val N = exprs.size.toDouble()
+    override fun eval(doc: LTRDoc): Double = exprs.sumByDouble { it.eval(doc) } / N
+}
+
+class RRMult(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
     override fun eval(doc: LTRDoc): Double {
-        var sum = 0.0;
-        exprs.forEach {
-            sum += it.eval(doc)
-        }
-        return sum / N
+        var prod = 1.0
+        exprs.forEach { prod *= it.eval(doc) }
+        return prod
     }
 }
 
@@ -115,6 +119,9 @@ class RRFeature(env: RREnv, val name: String): RRLeafExpr(env) {
     override fun eval(doc: LTRDoc): Double {
         return doc.features[name]!!
     }
+}
+class RRConst(env: RREnv, val value: Double) : RRLeafExpr(env) {
+    override fun eval(doc: LTRDoc): Double = value
 }
 
 class RRBM25Term(env: RREnv, val term: String, val b: Double = env.bm25b, val k: Double = env.bm25k) : RRLeafExpr(env) {

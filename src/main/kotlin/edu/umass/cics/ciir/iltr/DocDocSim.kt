@@ -14,7 +14,7 @@ import java.util.*
  * @author jfoley
  */
 
-fun ReflexivePair(lhs: Int, rhs: Int) = Pair(minOf(lhs, rhs), maxOf(lhs, rhs))
+fun <T: Comparable<in T>> ReflexivePair(lhs: T, rhs: T) = Pair(minOf(lhs, rhs), maxOf(lhs, rhs))
 
 fun createNewVector(n: Int=300, d: Int=30, rand: Random=Random()): FloatArray {
     val pieces = floatArrayOf(-1f, 1f)

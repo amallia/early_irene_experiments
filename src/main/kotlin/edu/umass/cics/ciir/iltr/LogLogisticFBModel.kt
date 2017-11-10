@@ -1,10 +1,15 @@
 package edu.umass.cics.ciir.iltr
 
+import com.github.benmanes.caffeine.cache.Caffeine
+import edu.umass.cics.ciir.Debouncer
 import edu.umass.cics.ciir.dbpedia.normalize
 import edu.umass.cics.ciir.mean
+import edu.umass.cics.ciir.meanByDouble
 import edu.umass.cics.ciir.push
 import edu.umass.cics.ciir.sprf.DataPaths
+import edu.umass.cics.ciir.sprf.GExpr
 import edu.umass.cics.ciir.sprf.getEvaluators
+import edu.umass.cics.ciir.sprf.pmake
 import org.lemurproject.galago.utility.Parameters
 import java.util.*
 import kotlin.collections.HashMap
@@ -14,13 +19,39 @@ import kotlin.collections.HashMap
  * @author jfoley.
  */
 data class HyperParam(val fbDocs: Int, var fbTerms: Int, val c: Double, var lambda: Double = 0.5)
+val msg = Debouncer()
+fun computePMI(env: RREnv, w1: String, w2: String): Double {
+    if (w1 == w2) {
+        val p = env.getStats(w1).binaryProbability()
+        // = p * log (p/p*p) = p * log(1/p) = p * -log(p)
+        return -p * Math.log(p)
+    }
+
+    val denom = env.getStats(w1).binaryProbability() * env.getStats(w2).binaryProbability()
+
+    val isectQ = GExpr("bool-to-count").apply {
+        addChild(GExpr("band").apply {
+            addChild(GExpr.Text(w1))
+            addChild(GExpr.Text(w2))
+        })
+    }
+
+    if (msg.ready()) {
+        println("\t\t\tcomputePMI $w1 $w2")
+    }
+
+    val isectStats = env.retr.getNodeStatistics(env.retr.transformQuery(isectQ, pmake {}))
+    val p = isectStats.nodeDocumentCount.toDouble() / env.lengths.documentCount.toDouble()
+
+    return p * Math.log(p / denom)
+}
 
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val dsName = argp.get("dataset", "robust")
     val dataset = DataPaths.get(dsName)
     val evals = getEvaluators(listOf("ap", "ndcg"))
-    val tuningMeasure = evals["ndcg"]!!
+    val tuningMeasure = evals["ap"]!!
     val qrels = dataset.getQueryJudgments()
     val fbDocsN = argp.get("fbDocs", 10)
     val fbTermsN = argp.get("fbTerms", 50)
@@ -38,8 +69,13 @@ fun main(args: Array<String>) {
         splitToQids.push(splitId, qid)
     }
 
+    val pmiCache = Caffeine.newBuilder().maximumSize(100_000).build<Pair<String,String>, Double>()
+
     dataset.getIndex().use { retr ->
         val env = RREnv(retr)
+        val computePMI: (Pair<String,String>)->Double = { (w1, w2) ->
+            computePMI(env, w1, w2)
+        }
         forEachQuery(dsName) { q ->
             //if (q.qid.toInt() > 310) return@forEachQuery
             val queryJudgments = qrels[q.qid]
@@ -53,15 +89,22 @@ fun main(args: Array<String>) {
             terms.forEach { term ->
                 val AllCValues = RRLogLogisticTFScore.OriginalPaperCValues
 
+                val sem = q.qterms.sumByDouble { q ->
+                    val key = ReflexivePair(q, term)
+                    val s_wq = pmiCache.get(key, computePMI)!!
+                    //val s_qq = pmiCache.get()
+                    s_wq
+                }
+
                 if (sweepCValues) { AllCValues } else { listOf(7.0) }
                         .forEach { c ->
                             val params = HyperParam(fbDocsN, fbTermsN, c)
-                            val fwExpr = RRLogLogisticTFScore(env, term, c)
-                            var sum = 0.0
-                            fbDocs.forEach { doc ->
-                                sum += fwExpr.eval(doc)
-                            }
-                            val fw = sum / fbDocs.size.toDouble()
+                            val llExpr = RRLogLogisticTFScore(env, term, c)
+                            val priorExpr = env.feature("title-ql-prior")
+
+
+                            val fwExpr = env.mult(llExpr, priorExpr, env.const(sem))
+                            val fw = fbDocs.meanByDouble { fwExpr.eval(it) }
 
                             fbTerms
                                     .computeIfAbsent(params, {ArrayList<WeightedTerm>()})
@@ -121,5 +164,7 @@ fun main(args: Array<String>) {
         testScore
     }.mean()
 
+    // Condensed-List Regular LL, with DirQL eval: AP=0.269
+    // CL LL+Rel: AP=0.277
     println("Overall Test Mean: $testMean")
 }
