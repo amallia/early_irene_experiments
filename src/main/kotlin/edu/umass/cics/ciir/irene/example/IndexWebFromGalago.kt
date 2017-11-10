@@ -1,6 +1,8 @@
 package edu.umass.cics.ciir.irene.example
 
 import edu.umass.cics.ciir.chai.ShardWriters
+import edu.umass.cics.ciir.chai.smartDoLines
+import edu.umass.cics.ciir.chai.smartPrint
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndexer
 import edu.umass.cics.ciir.sprf.DataPaths
@@ -184,29 +186,59 @@ object ExtractLinks {
     }
 }
 
+data class DocRepr(val id: String, val text: MutableList<String> = ArrayList<String>(), val neighbors: MutableList<String> = ArrayList<String>()) {
+    fun toJSON() = pmake {
+        set("id", id)
+        set("anchor_texts", text)
+        set("inlink_neighbors", neighbors.joinToString(separator=" "))
+    }
+}
+
 object ExtractLinksReduce {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)
-        val dsName = argp.get("dataset", "gov2")
-        val dataset = DataPaths.get(dsName)
+        val dsName = argp.get("dataset", "wt10g")
         val outDir = File(argp.get("output", "$dsName.links"))
-        val anchorLimit = argp.get("maxAnchorSize", 1 shl 12);
         val shards = argp.get("shards", 50)
         val shardId = argp.get("shardId", 0)
 
+        val shardDir = File(outDir, "shard$shardId")
 
-        val urlToDoc = HashMap<String, String>()
-
-        StreamCreator.openInputStream(File(outDir, "shard$shardId/inlinks.jsonl.gz")).bufferedReader().useLines { lines ->
-            lines.forEach { line ->
+        val urlToDoc = HashMap<String, DocRepr>()
+        val inputFile = File(shardDir, "/inlinks.jsonl.gz")
+        inputFile.smartDoLines { line ->
+            val record = parseRecord(Parameters.parseString(line))
+            when(record) {
+                is DocHasURLRecord -> urlToDoc.put(record.url, DocRepr(record.id))
+                else -> {}
+            }
+        }
+        File(shardDir, "edges.tsv.gz").smartPrint { edges ->
+            inputFile.smartDoLines { line ->
                 val record = parseRecord(Parameters.parseString(line))
                 when(record) {
-                    is DocHasURLRecord -> urlToDoc.put(record.url, record.id)
-                    is AnchorRecord -> TODO()
+                    is AnchorRecord -> {
+                        val found = urlToDoc[record.dest]
+                        if (found != null) {
+                            // in-collection edges only.
+                            edges.println("${record.id}\t${found.id}")
+                            // Save edge? [record.id
+                            if (record.text.isNotBlank()) {
+                                found.text.add(record.text)
+                            }
+                            found.neighbors.add(record.id)
+                        }
+                    }
+                    else -> {}
                 }
             }
         }
-
-
+        File(shardDir, "docs.jsonl.gz").smartPrint { docs ->
+            urlToDoc.forEach { url, repr ->
+                if (repr.neighbors.isNotEmpty() || repr.text.isNotEmpty()) {
+                    docs.println(repr.toJSON())
+                }
+            }
+        }
     }
 }
