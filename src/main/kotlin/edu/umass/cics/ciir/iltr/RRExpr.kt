@@ -72,6 +72,8 @@ class RRWeighted(env: RREnv, val weight: Double, inner: RRExpr): RRSingleChildEx
     override fun eval(doc: LTRDoc): Double {
         return weight * inner.eval(doc)
     }
+
+    override fun toString(): String = "RRWeighted($weight, $inner)"
 }
 
 sealed class RRCCExpr(env: RREnv, val exprs: List<RRExpr>): RRExpr(env)
@@ -83,6 +85,7 @@ class RRSum(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
         }
         return sum
     }
+    override fun toString(): String = "RRSum($exprs)"
 }
 class RRMean(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
     val N = exprs.size.toDouble()
@@ -105,6 +108,8 @@ class RRDirichletTerm(env: RREnv, val term: String, val mu: Double = env.mu) : R
         val length = doc.freqs.length + mu
         return Math.log((count + bg) / length)
     }
+
+    override fun toString(): String = "RRDirichletTerm($term)"
 }
 class RRFeature(env: RREnv, val name: String): RRLeafExpr(env) {
     override fun eval(doc: LTRDoc): Double {

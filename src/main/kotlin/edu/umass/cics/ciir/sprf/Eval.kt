@@ -8,12 +8,17 @@ import java.util.*
 /**
  * @author jfoley
  */
-class NamedMeasures {
-    val measures = HashMap<String, TDoubleArrayList>()
-    fun push(what: String, x: Double) {
-        measures.computeIfAbsent(what, { TDoubleArrayList() }).add(x)
+
+open class KeyedMeasure<K> {
+    val measures = HashMap<K, TDoubleArrayList>()
+    fun push(what: K, x: Double) {
+        this[what].add(x)
     }
-    fun means(): TreeMap<String, Double> = measures.mapValuesTo(TreeMap()) { (_,arr) -> arr.mean() }
+    operator fun get(index: K): TDoubleArrayList = measures.computeIfAbsent(index, { TDoubleArrayList() })
+    open fun means(): Map<K, Double> = measures.mapValues { (_,arr) -> arr.mean() }
+}
+class NamedMeasures : KeyedMeasure<String>() {
+    override fun means(): TreeMap<String, Double> = measures.mapValuesTo(TreeMap()) { (_,arr) -> arr.mean() }
 }
 
 fun getEvaluators(metricNames: List<String>) = metricNames.associate { Pair(it, QueryEvaluatorFactory.create(it, Parameters.create())!!) }

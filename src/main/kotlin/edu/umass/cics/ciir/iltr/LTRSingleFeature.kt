@@ -44,9 +44,14 @@ data class LTRDoc(val name: String, val features: HashMap<String, Double>, val r
 
 data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>, val docs: List<LTRDoc>) {
     fun ranked(ftr: String): ArrayList<LTRDocByFeature> = docs.mapTo(ArrayList<LTRDocByFeature>(docs.size)) { LTRDocByFeature(ftr, it) }
-    fun ranked(expr: RRExpr): ArrayList<LTRDocByFeature> = docs.mapTo(ArrayList<LTRDocByFeature>(docs.size)) { LTRDocByFeature(expr.toString(), it, -1, expr.eval(it)) }
+    fun ranked(expr: RRExpr): ArrayList<LTRDocByFeature> = docs.mapTo(ArrayList<LTRDocByFeature>(docs.size)) { LTRDocByFeature("RRExpr", it, -1, expr.eval(it)) }
     fun toQResults(ftr: String): QueryResults {
         val ranked = ranked(ftr)
+        Ranked.setRanksByScore(ranked)
+        return QueryResults(ranked)
+    }
+    fun toQResults(rrExpr: RRExpr): QueryResults {
+        val ranked = ranked(rrExpr)
         Ranked.setRanksByScore(ranked)
         return QueryResults(ranked)
     }
