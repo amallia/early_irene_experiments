@@ -1,8 +1,11 @@
 package edu.umass.cics.ciir.sprf
 
+import edu.umass.cics.ciir.Debouncer
 import org.lemurproject.galago.core.eval.QueryResults
+import org.lemurproject.galago.core.index.corpus.CorpusReader
 import org.lemurproject.galago.core.index.stats.FieldStatistics
 import org.lemurproject.galago.core.index.stats.NodeStatistics
+import org.lemurproject.galago.core.retrieval.LocalRetrieval
 import org.lemurproject.galago.core.retrieval.iterator.CountIterator
 import org.lemurproject.galago.core.retrieval.iterator.ScoreIterator
 import org.lemurproject.galago.core.retrieval.iterator.TransformIterator
@@ -18,6 +21,7 @@ import org.lemurproject.galago.utility.Parameters
 typealias GExpr = org.lemurproject.galago.core.retrieval.query.Node
 typealias GResults = org.lemurproject.galago.core.retrieval.Results
 typealias GDoc = org.lemurproject.galago.core.parse.Document
+typealias GDocArgs = org.lemurproject.galago.core.parse.Document.DocumentComponents
 
 val inqueryStop: Set<String> = WordLists.getWordListOrDie("inquery")
 
@@ -90,3 +94,27 @@ fun pmake(block: Parameters.() -> Unit): Parameters = Parameters.create().apply(
 
 fun Parameters.getStr(key: String): String = this.getString(key)!!
 
+inline fun LocalRetrieval.forAllGDocs(print: Boolean=true, each: (GDoc)->Unit) {
+    // Get text and metadata, but not terms/tags.
+    val pullParams = GDocArgs(true, true, false)
+    val index = this.index
+    val part = index.getIndexPart("corpus") ?: error("No corpus in index.")
+    val corpus = part as? CorpusReader ?: error("corpus part is not a corpus.")
+    val total = corpus.manifest.getLong("keyCount")
+    val msg = Debouncer()
+    val iterator = corpus.getIterator()
+    var done = 0L
+    while(!iterator.isDone) {
+        val gdoc = iterator.getDocument(pullParams)!!
+        each(gdoc)
+        done++
+        if (print && msg.ready()) {
+            println("forAllGDocs: ${msg.estimate(done, total)}")
+        }
+
+        iterator.nextKey()
+    }
+    if (print) {
+        println("forAllGDocs: ${msg.estimate(done, total)}")
+    }
+}
