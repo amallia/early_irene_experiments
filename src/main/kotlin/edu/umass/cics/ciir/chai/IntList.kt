@@ -1,4 +1,4 @@
-package edu.umass.cics.ciir
+package edu.umass.cics.ciir.chai
 
 import java.util.*
 

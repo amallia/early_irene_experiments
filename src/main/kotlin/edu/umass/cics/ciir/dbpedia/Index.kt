@@ -1,6 +1,6 @@
 package edu.umass.cics.ciir.dbpedia
 
-import edu.umass.cics.ciir.Debouncer
+import edu.umass.cics.ciir.chai.Debouncer
 import edu.umass.cics.ciir.irene.BoolField
 import edu.umass.cics.ciir.irene.IreneEnglishAnalyzer
 import edu.umass.cics.ciir.irene.IreneIndexer

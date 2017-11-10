@@ -1,6 +1,6 @@
 package edu.umass.cics.ciir.sprf
 
-import edu.umass.cics.ciir.Debouncer
+import edu.umass.cics.ciir.chai.Debouncer
 import org.lemurproject.galago.core.eval.QueryResults
 import org.lemurproject.galago.core.index.corpus.CorpusReader
 import org.lemurproject.galago.core.index.stats.FieldStatistics

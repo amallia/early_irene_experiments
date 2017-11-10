@@ -1,6 +1,6 @@
 package edu.umass.cics.ciir.irene.example
 
-import edu.umass.cics.ciir.dbpedia.ShardWriters
+import edu.umass.cics.ciir.chai.ShardWriters
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndexer
 import edu.umass.cics.ciir.sprf.DataPaths
@@ -108,6 +108,18 @@ fun galagoScrubUrl(input: String?): String? {
     return url.toLowerCase()
 }
 
+sealed class ExtractLinksRecord
+data class DocHasURLRecord(val id: String, val url: String, val outlinks: Int): ExtractLinksRecord() {
+    constructor(p: Parameters): this(p.getString("id")!!, p.getString("url")!!, p.getInt("outlinks"))
+}
+data class AnchorRecord(val id: String, val dest: String, val text: String): ExtractLinksRecord() {
+    constructor(p: Parameters): this(p.getString("id")!!, p.getString("dest")!!, p.getString("text")!!)
+}
+private fun parseRecord(p: Parameters): ExtractLinksRecord {
+    if (p.isString("dest")) return AnchorRecord(p)
+    return DocHasURLRecord(p)
+}
+
 object ExtractLinks {
     fun String?.limit(n: Int): String? {
         if (this == null) return null
@@ -169,5 +181,32 @@ object ExtractLinks {
                 }
             }
         }
+    }
+}
+
+object ExtractLinksReduce {
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val dsName = argp.get("dataset", "gov2")
+        val dataset = DataPaths.get(dsName)
+        val outDir = File(argp.get("output", "$dsName.links"))
+        val anchorLimit = argp.get("maxAnchorSize", 1 shl 12);
+        val shards = argp.get("shards", 50)
+        val shardId = argp.get("shardId", 0)
+
+
+        val urlToDoc = HashMap<String, String>()
+
+        StreamCreator.openInputStream(File(outDir, "shard$shardId/inlinks.jsonl.gz")).bufferedReader().useLines { lines ->
+            lines.forEach { line ->
+                val record = parseRecord(Parameters.parseString(line))
+                when(record) {
+                    is DocHasURLRecord -> urlToDoc.put(record.url, record.id)
+                    is AnchorRecord -> TODO()
+                }
+            }
+        }
+
+
     }
 }

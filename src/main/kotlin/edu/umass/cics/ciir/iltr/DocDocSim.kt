@@ -1,7 +1,7 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.Debouncer
-import edu.umass.cics.ciir.sample
+import edu.umass.cics.ciir.chai.Debouncer
+import edu.umass.cics.ciir.chai.sample
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluators
@@ -14,7 +14,7 @@ import java.util.*
  * @author jfoley
  */
 
-fun <T: Comparable<in T>> ReflexivePair(lhs: T, rhs: T) = Pair(minOf(lhs, rhs), maxOf(lhs, rhs))
+fun <T: Comparable<T>> ReflexivePair(lhs: T, rhs: T) = Pair(minOf(lhs, rhs), maxOf(lhs, rhs))
 
 fun createNewVector(n: Int=300, d: Int=30, rand: Random=Random()): FloatArray {
     val pieces = floatArrayOf(-1f, 1f)

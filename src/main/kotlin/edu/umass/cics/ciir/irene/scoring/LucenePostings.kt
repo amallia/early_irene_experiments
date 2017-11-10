@@ -1,6 +1,6 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.IntList
+import edu.umass.cics.ciir.chai.IntList
 import edu.umass.cics.ciir.irene.CountStats
 import org.apache.lucene.index.NumericDocValues
 import org.apache.lucene.index.PostingsEnum

@@ -1,4 +1,4 @@
-package edu.umass.cics.ciir
+package edu.umass.cics.ciir.chai
 
 import java.time.Duration
 
@@ -59,7 +59,7 @@ class Debouncer
         }
 
         override fun toString(): String {
-            return String.format("%d/%d items, %4.1f items/s [%s left]; [%s spent], %2.1f%% complete.", itemsComplete, totalItems, itemsPerSecond(), Debouncer.prettyTimeOfMillis(remaining.toLong()), Debouncer.prettyTimeOfMillis(time), percentComplete())
+            return String.format("%d/%d items, %4.1f items/s [%s left]; [%s spent], %2.1f%% complete.", itemsComplete, totalItems, itemsPerSecond(), prettyTimeOfMillis(remaining.toLong()), prettyTimeOfMillis(time), percentComplete())
         }
     }
 
