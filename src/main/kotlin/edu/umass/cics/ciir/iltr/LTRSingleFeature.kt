@@ -24,8 +24,8 @@ class LTRDocByFeature(val feature: String, val doc: LTRDoc, rank: Int, score: Do
 }
 
 data class LTRDoc(val name: String, val features: HashMap<String, Double>, val rank: Int, val tokenized: String) {
-    val terms: List<String> = tokenized.split(" ")
-    val freqs = BagOfWords(terms)
+    val terms: List<String> by lazy { tokenized.split(" ") }
+    val freqs: BagOfWords by lazy { BagOfWords(terms) }
 
     constructor(p: Parameters): this(p.getStr("id"),
             hashMapOf(
