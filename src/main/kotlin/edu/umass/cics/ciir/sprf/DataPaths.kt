@@ -63,6 +63,7 @@ class Robust04 : IRDataset {
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "gob" -> "/media/jfoley/flash/robust04.galago"
         "oakey" -> "/mnt/scratch/jfoley/robust04.galago/"
+        "sydney" -> "/mnt/nfs/work3/sjh/indexes/robust04.index"
         else -> notImpl(IRDataset.host)
     })
     override fun getTitleQueryFile(): File = File(getQueryDir(), "robust04/rob04.titles.tsv")
@@ -145,6 +146,26 @@ private class DBPE : WikiSource() {
     }
 }
 
+class Clue09BSpam60 : IRDataset {
+    override fun getIndexFile(): File = File(when(IRDataset.host) {
+        "sydney" -> "/mnt/nfs/work3/sjh/indexes/clueweb-09-b-spam60.index/"
+        else -> notImpl(IRDataset.host)
+    })
+    override fun getTitleQueryFile(): File = File(getQueryDir(), "clue09/clueweb.titles.tsv")
+    override fun getDescQueryFile(): File = File(getQueryDir(), "clue09/clueweb.descs.tsv")
+    override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "clue09/clueweb.qrels")
+}
+
+class WT10G : IRDataset {
+    override fun getIndexFile(): File = File(when(IRDataset.host) {
+        "sydney" -> "/mnt/nfs/work3/sjh/indexes/wt10g.index/"
+        else -> notImpl(IRDataset.host)
+    })
+    override fun getTitleQueryFile(): File = File(getQueryDir(), "wt10g/wt10g.titles.tsv")
+    override fun getDescQueryFile(): File = File(getQueryDir(), "wt10g/wt10g.descs.tsv")
+    override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "wt10g/wt10g.qrels")
+}
+
 /**
  * @author jfoley
  */
@@ -152,14 +173,18 @@ object DataPaths {
     val Robust = Robust04()
     val Gov2 = Gov2()
     val Gov2_MQT = MQ2007()
+    val Clue09BSpam60 = Clue09BSpam60()
+    val WT10G = WT10G()
 
     val REWQ_Clue12: WikiSource = Clue12Rewq()
     val DBPE: WikiSource = DBPE()
 
     fun get(name: String): IRDataset = when(name) {
-        "robust" -> Robust
-        "robust04" -> Robust
+        "robust", "robust04" -> Robust
         "gov2" -> Gov2
+        "mq07", "gov2mqt" -> Gov2_MQT
+        "clue09", "clue09b", "clue09bspam60" -> Clue09BSpam60
+        "wt10g" -> WT10G
         else -> notImpl(name)
     }
 
