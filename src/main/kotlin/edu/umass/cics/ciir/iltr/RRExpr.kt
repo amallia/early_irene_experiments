@@ -3,7 +3,6 @@ package edu.umass.cics.ciir.iltr
 import edu.umass.cics.ciir.irene.CountStats
 import edu.umass.cics.ciir.irene.TextExpr
 import edu.umass.cics.ciir.sprf.GExpr
-import edu.umass.cics.ciir.sprf.cfProbability
 import edu.umass.cics.ciir.sprf.setf
 import org.lemurproject.galago.core.index.stats.FieldStatistics
 import org.lemurproject.galago.core.retrieval.LocalRetrieval
@@ -98,9 +97,8 @@ class RRMean(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
 
 sealed class RRLeafExpr(env: RREnv) : RRExpr(env)
 class RRDirichletTerm(env: RREnv, val term: String, val mu: Double = env.mu) : RRLeafExpr(env) {
-    val tStats = env.retr.getNodeStatistics(GExpr("counts", term))
-    val bgStats = env.lengths
-    val bg = mu * tStats.cfProbability(bgStats)
+    val stats = env.getStats(term)
+    val bg = mu * stats.nonzeroCountProbability()
 
     override fun eval(doc: LTRDoc): Double {
         val count = doc.freqs.count(term).toDouble()
@@ -115,10 +113,10 @@ class RRFeature(env: RREnv, val name: String): RRLeafExpr(env) {
 }
 
 class RRBM25Term(env: RREnv, val term: String, val b: Double = env.bm25b, val k: Double = env.bm25k) : RRLeafExpr(env) {
-    val nstats = env.retr.getNodeStatistics(GExpr("counts", term))
-    val avgDL = env.lengths.avgLength;
-    val df = nstats.nodeDocumentCount;
-    val dc = env.lengths.documentCount;
+    val stats = env.getStats(term)
+    val avgDL = stats.avgDL();
+    val df = stats.df;
+    val dc = stats.dc;
 
     val idf = Math.log(dc / (df + 0.5))
 
@@ -172,9 +170,21 @@ class RRJaccardSimilarity(env: RREnv, val target: Set<String>, val empty: Double
     }
 }
 
-class RRLogLogisticTFScore(env: RREnv, val term: String) : RRLeafExpr(env) {
-    val nstats = env.retr.getNodeStatistics(GExpr("counts", term))
+class RRLogLogisticTFScore(env: RREnv, val term: String, val c: Double = 1.0) : RRLeafExpr(env) {
+    companion object {
+        val OriginalPaperCValues = arrayListOf<Number>(0.5,0.75,1,2,3,4,5,6,7,8,9).map { it.toDouble() }
+    }
+    val stats = env.getStats(term)
+    val avgl = stats.avgDL()
+    val lambda_w = stats.binaryProbability()
+    init {
+        assert(stats.cf > 0) { "Term ``$term'' must actually occur in the collection for this feature to make sense." }
+    }
+
     override fun eval(doc: LTRDoc): Double {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        val tf = doc.freqs.count(term)
+        val lengthRatio = avgl / doc.freqs.length
+        val t = tf * Math.log(1.0 + c * lengthRatio)
+        return Math.log((t + lambda_w) / lambda_w)
     }
 }
