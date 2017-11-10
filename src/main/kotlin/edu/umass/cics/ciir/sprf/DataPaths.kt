@@ -32,6 +32,7 @@ interface IRDataset {
         "sydney" -> "/mnt/nfs/work1/jfoley/queries/"
         else -> notImpl(host)
     })
+    val name: String
 
     fun getIndex(): LocalRetrieval = getIndex(Parameters.create())
     fun getIndex(p: Parameters): LocalRetrieval = LocalRetrieval(getIndexFile().absolutePath, p)
@@ -60,6 +61,7 @@ interface IRDataset {
 }
 
 class Robust04 : IRDataset {
+    override val name: String get() = "robust"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "gob" -> "/media/jfoley/flash/robust04.galago"
         "oakey" -> "/mnt/scratch/jfoley/robust04.galago/"
@@ -72,6 +74,7 @@ class Robust04 : IRDataset {
 }
 
 open class Gov2 : IRDataset {
+    override val name: String get() = "gov2"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "oakey" -> "/mnt/scratch/jfoley/gov2.galago/"
         "sydney" -> "/mnt/nfs/work3/sjh/indexes/gov2.index/"
@@ -84,6 +87,7 @@ open class Gov2 : IRDataset {
 }
 
 class MQ2007 : Gov2() {
+    override val name: String get() = "mq2007"
     override fun getDescQueryFile(): File = error("No description queries in MQ2007")
     override fun getTitleQueryFile(): File = File(getQueryDir(), "million_query_track/gov2/mq.gov2.judged.tsv")
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "million_query_track/gov2/mq.gov2.judged.qrel")
@@ -102,12 +106,14 @@ abstract class WikiSource : IRDataset {
 }
 
 class Clue12Rewq : WikiSource() {
+    override val name: String get() = "rewq-clue12"
     override fun getTitleQueryFile(): File = File(getQueryDir(), "clue12/web1314.queries.tsv")
     override fun getDescQueryFile(): File = File(getQueryDir(), "clue12/web1314.descs.tsv")
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "rewq/clue12.mturk.qrel")
 }
 
 private class DBPE : WikiSource() {
+    override val name: String get() = "dbpedia-entity-v2"
     override fun getQueryDir(): File = File("deps/dbpedia-entity/collection/v2/")
     override fun getTitleQueryFile(): File = File(getQueryDir(), "queries-v2_stopped.txt")
     override fun getDescQueryFile(): File = error("No description queries for this dataset.")
@@ -147,6 +153,7 @@ private class DBPE : WikiSource() {
 }
 
 class Clue09BSpam60 : IRDataset {
+    override val name: String get() = "clue09bspam60"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "sydney" -> "/mnt/nfs/work3/sjh/indexes/clueweb-09-b-spam60.index/"
         else -> notImpl(IRDataset.host)
@@ -157,6 +164,7 @@ class Clue09BSpam60 : IRDataset {
 }
 
 class WT10G : IRDataset {
+    override val name: String get() = "wt10g"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "sydney" -> "/mnt/nfs/work3/sjh/indexes/wt10g.index/"
         else -> notImpl(IRDataset.host)
@@ -189,8 +197,10 @@ object DataPaths {
     }
 
     @JvmStatic fun main(args: Array<String>) {
-        val nj = Gov2_MQT.qrels.size
-        val nq = Gov2_MQT.title_qs.size
-        println("Queries in Gov2 MQT: $nq == $nj")
+        listOf(Robust, Gov2, Gov2_MQT, Clue09BSpam60, WT10G, REWQ_Clue12, DBPE).forEach { collection ->
+            val nj = collection.qrels.size
+            val nq = collection.title_qs.size
+            println("${collection.name} Queries: submitted: $nq == with-qrels: $nj")
+        }
     }
 }
