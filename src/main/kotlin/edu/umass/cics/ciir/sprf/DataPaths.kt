@@ -70,7 +70,7 @@ class Robust04 : IRDataset {
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "robust04/robust04.qrels")
 }
 
-class Gov2 : IRDataset {
+open class Gov2 : IRDataset {
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "oakey" -> "/mnt/scratch/jfoley/gov2.galago/"
         "sydney" -> "/mnt/nfs/work3/sjh/indexes/gov2.index/"
@@ -80,6 +80,12 @@ class Gov2 : IRDataset {
     override fun getTitleQueryFile(): File = File(getQueryDir(), "gov2/gov2.titles.tsv")
     override fun getDescQueryFile(): File = File(getQueryDir(), "gov2/gov2.descs.tsv")
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "gov2/gov2.qrels")
+}
+
+class MQ2007 : Gov2() {
+    override fun getDescQueryFile(): File = error("No description queries in MQ2007")
+    override fun getTitleQueryFile(): File = File(getQueryDir(), "million_query_track/gov2/mq.gov2.judged.tsv")
+    override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "million_query_track/gov2/mq.gov2.judged.qrel")
 }
 
 abstract class WikiSource : IRDataset {
@@ -145,6 +151,7 @@ private class DBPE : WikiSource() {
 object DataPaths {
     val Robust = Robust04()
     val Gov2 = Gov2()
+    val Gov2_MQT = MQ2007()
 
     val REWQ_Clue12: WikiSource = Clue12Rewq()
     val DBPE: WikiSource = DBPE()
@@ -154,5 +161,11 @@ object DataPaths {
         "robust04" -> Robust
         "gov2" -> Gov2
         else -> notImpl(name)
+    }
+
+    @JvmStatic fun main(args: Array<String>) {
+        val nj = Gov2_MQT.qrels.size
+        val nq = Gov2_MQT.title_qs.size
+        println("Queries in Gov2 MQT: $nq == $nj")
     }
 }
