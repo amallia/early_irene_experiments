@@ -78,7 +78,7 @@ class CommonTestIndexes : Closeable {
                     gdoc.tags = emptyList()
                     gMemIndex.process(gdoc)
 
-                    ltrIndex.add(LTRDoc(name, HashMap<String, Double>(), -1, doc))
+                    ltrIndex.add(LTRDoc(name, doc))
 
                     terms.addAll(tokens)
                     tokens.toSet().forEach {

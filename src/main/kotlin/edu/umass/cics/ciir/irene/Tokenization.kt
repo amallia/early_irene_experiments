@@ -7,6 +7,9 @@ import org.apache.lucene.analysis.en.KStemFilter
 import org.apache.lucene.analysis.standard.StandardFilter
 import org.apache.lucene.analysis.standard.StandardTokenizer
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute
+import org.lemurproject.galago.core.parse.TagTokenizer
+import org.lemurproject.galago.utility.StringPooler
+import kotlin.concurrent.getOrSet
 
 /**
  *
@@ -35,3 +38,27 @@ fun Analyzer.tokenize(field: String, input: String): List<String> {
     }
     return tokens
 }
+
+interface GenericTokenizer {
+    fun tokenize(fields: Map<String, String>) = fields.mapValues { (field, text) -> tokenize(text, field) }
+    fun tokenize(input: String, field: String): List<String>
+}
+class WhitespaceTokenizer() : GenericTokenizer {
+    val ws = "\\s+".toRegex()
+    override fun tokenize(input: String, field: String): List<String> = input.split(ws)
+}
+class LuceneTokenizer(val analyzer: Analyzer) : GenericTokenizer {
+    override fun tokenize(input: String, field: String): List<String> = analyzer.tokenize(field, input)
+}
+class GalagoTokenizer : GenericTokenizer {
+    init {
+        StringPooler.disable()
+    }
+    private val local = ThreadLocal<TagTokenizer>()
+    val tok: TagTokenizer get() = local.getOrSet { TagTokenizer() }
+    override fun tokenize(input: String, field: String): List<String> {
+        val gdoc = tok.tokenize(input)
+        return gdoc.terms
+    }
+}
+

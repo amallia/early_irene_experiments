@@ -53,6 +53,7 @@ fun main(args: Array<String>) {
     val evals = getEvaluators(listOf("ap", "ndcg"))
     val tuningMeasure = evals["ap"]!!
     val qrels = dataset.getQueryJudgments()
+    val field = argp.get("field", "document")
     val fbDocsN = argp.get("fbDocs", 10)
     val fbTermsN = argp.get("fbTerms", 50)
     val sweepLambdas = argp.get("sweepLambdas", false)
@@ -82,7 +83,7 @@ fun main(args: Array<String>) {
             println("${q.qid} ${q.qterms}")
 
             val fbDocs = q.docs.take(fbDocsN)
-            val terms = fbDocs.flatMapTo(HashSet<String>()) { it.terms }
+            val terms = fbDocs.flatMapTo(HashSet<String>()) { it.terms(field) }
 
             val fbTerms = HashMap<HyperParam, ArrayList<WeightedTerm>>()
 
@@ -99,7 +100,7 @@ fun main(args: Array<String>) {
                 if (sweepCValues) { AllCValues } else { listOf(7.0) }
                         .forEach { c ->
                             val params = HyperParam(fbDocsN, fbTermsN, c)
-                            val llExpr = RRLogLogisticTFScore(env, term, c)
+                            val llExpr = RRLogLogisticTFScore(env, term, field, c)
                             val priorExpr = env.feature("title-ql-prior")
 
                             val fwExpr = env.mult(llExpr, priorExpr, env.const(sem))

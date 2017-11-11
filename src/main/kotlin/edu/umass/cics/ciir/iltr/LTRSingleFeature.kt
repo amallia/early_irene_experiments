@@ -1,14 +1,15 @@
 package edu.umass.cics.ciir.iltr
 
+import edu.umass.cics.ciir.irene.GenericTokenizer
 import edu.umass.cics.ciir.irene.IreneQueryLanguage
 import edu.umass.cics.ciir.irene.QueryLikelihood
+import edu.umass.cics.ciir.irene.WhitespaceTokenizer
 import edu.umass.cics.ciir.sprf.*
 import gnu.trove.map.hash.TObjectDoubleHashMap
 import gnu.trove.map.hash.TObjectIntHashMap
 import org.lemurproject.galago.core.eval.EvalDoc
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QueryResults
-import org.lemurproject.galago.core.retrieval.query.Node
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
 import org.lemurproject.galago.utility.lists.Ranked
@@ -25,16 +26,32 @@ class LTRDocByFeature(val feature: String, val doc: LTRDoc, rank: Int, score: Do
     constructor(feature: String, doc: LTRDoc) : this(feature, doc, -1, doc.features[feature]!!)
 }
 
-data class LTRDoc(val name: String, val features: HashMap<String, Double>, val rank: Int, val tokenized: String) {
-    val terms: List<String> by lazy { tokenized.split(" ") }
+data class LTRDocField(val name: String, val text: String, val tokenizer: GenericTokenizer = WhitespaceTokenizer()) {
+    val terms: List<String> by lazy { tokenizer.tokenize(text, name) }
     val freqs: BagOfWords by lazy { BagOfWords(terms) }
+    fun toEntry() = Pair(name, this)
+    val length: Int get() = terms.size
+    val uniqTerms: Int get() = freqs.counts.size()
+    fun count(term: String): Int = freqs.count(term)
+    val termSet: Set<String> get() = freqs.counts.keySet()
+}
+
+data class LTRDoc(val name: String, val features: HashMap<String, Double>, val rank: Int, val fields: HashMap<String,LTRDocField>, var defaultField: String = "document") {
+    @Deprecated("Always specify field!")
+    val freqs: BagOfWords get() = fields[defaultField]!!.freqs
+
+    fun field(field: String): LTRDocField = fields[field] ?: error("No such field: $field in $this.")
+    fun terms(field: String) = field(field).terms
+    fun freqs(field: String) = field(field).freqs
+
+    constructor(name: String, text: String, tokenizer: GenericTokenizer = WhitespaceTokenizer()): this(name, hashMapOf(), -1, hashMapOf(LTRDocField("document", text, tokenizer).toEntry()), "document")
 
     constructor(p: Parameters): this(p.getStr("id"),
             hashMapOf(
                     Pair("title-ql", p.getDouble("title-ql")),
                     Pair("title-ql-prior", p.getDouble("title-ql-prior"))),
             p.getInt("rank"),
-            p.getStr("tokenized"))
+            hashMapOf(LTRDocField("document", p.getStr("tokenized")).toEntry()))
 
     fun toJSONFeatures(qrels: QueryJudgments, qid: String) = pmake {
         set("label", qrels[name])
@@ -92,8 +109,12 @@ data class WeightedTerm(val score: Double, val term: String) : Comparable<Weight
     }
 }
 
+fun List<WeightedTerm>.normalized(): List<WeightedTerm> {
+    val total = this.sumByDouble { it.score }
+    return this.map { WeightedTerm(it.score / total, it.term) }
+}
+
 data class RelevanceModel(val weights: TObjectDoubleHashMap<String>) {
-    val total = weights.values().sum()
     fun toTerms(): List<WeightedTerm> {
         val output = ArrayList<WeightedTerm>(weights.size())
         weights.forEachEntry {term, weight ->
@@ -101,13 +122,7 @@ data class RelevanceModel(val weights: TObjectDoubleHashMap<String>) {
         }
         return output
     }
-    fun toTerms(k: Int): List<WeightedTerm> = toTerms().sorted().take(k)
-    fun toQuery(k: Int): GExpr = GExpr("combine").apply {
-        toTerms(k).forEachIndexed { i, wt ->
-            setf("$i", wt.score)
-            addChild(Node.Text(wt.term))
-        }
-    }
+    fun toTerms(k: Int): List<WeightedTerm> = toTerms().sorted().take(k).normalized()
 }
 
 class BagOfWords(terms: List<String>) {
@@ -132,13 +147,13 @@ class BagOfWords(terms: List<String>) {
 
 }
 
-fun computeRelevanceModel(docs: List<LTRDoc>, feature: String, depth: Int, flat: Boolean = false, stopwords: Set<String> = inqueryStop): RelevanceModel {
+fun computeRelevanceModel(docs: List<LTRDoc>, feature: String, depth: Int, flat: Boolean = false, stopwords: Set<String> = inqueryStop, field: String = "document"): RelevanceModel {
     val fbdocs = docs.sortedByDescending { it.features[feature]!! }.take(depth)
 
     val rmModel = TObjectDoubleHashMap<String>()
     fbdocs.forEach { doc ->
-        val local = doc.freqs.counts
-        val length = doc.freqs.length
+        val local = doc.field(field).freqs.counts
+        val length = doc.field(field).freqs.length
 
         val prior = if (flat) 1.0 else doc.features[feature]!!
         local.forEachEntry {term, count ->
@@ -150,11 +165,6 @@ fun computeRelevanceModel(docs: List<LTRDoc>, feature: String, depth: Int, flat:
     }
 
     return RelevanceModel(rmModel)
-}
-
-fun normalize(wt: List<WeightedTerm>): List<WeightedTerm> {
-    val norm = wt.map { it.score }.sum()
-    return wt.map { WeightedTerm(it.score / norm, it.term) }
 }
 
 fun main(args: Array<String>) {
@@ -191,13 +201,13 @@ fun main(args: Array<String>) {
 
                 arrayListOf<Int>(5, 10, 25).forEach { fbDocs ->
                     val rm = computeRelevanceModel(q.docs, "title-ql-prior", fbDocs)
-                    val wt = normalize(rm.toTerms(fbTerms))
+                    val wt = rm.toTerms(fbTerms)
                     val rme_exprs = wt.map { env.term(it.term).weighted(it.score) }
                     feature_exprs.put("rm3-k$fbDocs", env.feature("title-ql").mixed(rmLambda, env.sum(rme_exprs)))
                     feature_exprs.put("jaccard-rm3-k$fbDocs", RRJaccardSimilarity(env, wt.map { it.term }.toSet()))
                 }
 
-                q.docs.forEachIndexed { i, doc ->
+                q.docs.forEachIndexed { _, doc ->
                     feature_exprs.forEach { fname, fexpr ->
                         doc.features.put(fname, fexpr.eval(doc))
                     }

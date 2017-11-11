@@ -46,96 +46,96 @@ fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val dsName = argp.get("dataset", "robust")
     val dataset = DataPaths.get(dsName)
+    val fieldName = argp.get("field", "document")
     val passageSize = 50
     val width = 5
     val dim = 30
     val dimSet = 3
 
-    dataset.getIndex().use { retr ->
-        forEachQuery(dsName) { q ->
-            if (q.qid != "301") return@forEachQuery
-            println("${q.qid} ${q.qterms}")
+    forEachQuery(dsName) { q ->
+        if (q.qid != "301") return@forEachQuery
+        println("${q.qid} ${q.qterms}")
 
-            val vocab = HashMap<String, Int>()
-            val vectors = HashMap<Int, FloatArray>()
-            val passages = q.docs.mapIndexed { i, doc ->
-                val intTerms = doc.terms.map { w -> vocab.computeIfAbsent(w, {vocab.size}) }
-                (0 until intTerms.size step passageSize).map { start ->
-                    val end = minOf(start+50, doc.terms.size)
-                    Pair(i, intTerms.subList(start, end))
-                }
-            }.flatten()
-            println("numPassages = ${passages.size}, vocab = ${vocab.size}")
+        val vocab = HashMap<String, Int>()
+        val vectors = HashMap<Int, FloatArray>()
+        val passages = q.docs.mapIndexed { i, doc ->
+            val field = doc.field(fieldName)
+            val intTerms = field.terms.map { w -> vocab.computeIfAbsent(w, {vocab.size}) }
+            (0 until intTerms.size step passageSize).map { start ->
+                val end = minOf(start+50, field.terms.size)
+                Pair(i, intTerms.subList(start, end))
+            }
+        }.flatten()
+        println("numPassages = ${passages.size}, vocab = ${vocab.size}")
 
-            vocab.values.forEach { vectors.put(it, createNewVector(dim, dimSet)) }
+        vocab.values.forEach { vectors.put(it, createNewVector(dim, dimSet)) }
 
-            val context = FloatArray(dim) { 0f }
-            val msg = Debouncer()
-            passages.forEach { (_, pws) ->
-                pws.forEachWindow(width) { ws ->
-                    // clear context:
-                    context.clear()
-                    // sum up context:
-                    ws.forEach { w ->
-                        val wv = vectors[w]!!
-                        context.indices.forEach { i ->
-                            context[i] += wv[i]
-                        }
-                    }
-                    if (msg.ready()) {
-                        println(ws.map{ w -> vectors[w]!!.toList() })
-                        println(context.toList())
-                    }
-                    ws.forEach { w ->
-                        val wv = vectors[w]!!
-                        context.indices.forEach { i ->
-                            wv[i] += context[i]
-                        }
-                        wv.normalize()
+        val context = FloatArray(dim) { 0f }
+        val msg = Debouncer()
+        passages.forEach { (_, pws) ->
+            pws.forEachWindow(width) { ws ->
+                // clear context:
+                context.clear()
+                // sum up context:
+                ws.forEach { w ->
+                    val wv = vectors[w]!!
+                    context.indices.forEach { i ->
+                        context[i] += wv[i]
                     }
                 }
-            }
-
-            vectors.entries.sample(5).forEach { (wi, wvi) ->
-                println("\tw[$wi] = ${wvi.toList()}")
-            }
-
-            val passageVecs = HashMap<Int, ArrayList<FloatArray>>()
-            passages.forEach { (docid, passage) ->
-                val pvec = FloatArray(dim)
-                passage.map {
-                    val wv = vectors[it]!!
-                    wv.indices.forEach { i ->
-                        pvec[i] += wv[i]
+                if (msg.ready()) {
+                    println(ws.map{ w -> vectors[w]!!.toList() })
+                    println(context.toList())
+                }
+                ws.forEach { w ->
+                    val wv = vectors[w]!!
+                    context.indices.forEach { i ->
+                        wv[i] += context[i]
                     }
-                }
-                pvec.indices.forEach { i ->
-                    pvec[i] /= passage.size.toFloat()
-                }
-
-                passageVecs.computeIfAbsent(docid, {ArrayList<FloatArray>()}).add(pvec)
-            }
-
-
-            val similarities = HashMap<Pair<Int,Int>, Double>()
-            val dvsim = HashMap<Pair<Int,Int>, Double>()
-            val docVectors = q.docs.map { it.freqs }
-
-            // All pairs:
-            (0 until docVectors.size-1).forEach { i ->
-                (i until docVectors.size).forEach { j ->
-                    val key = ReflexivePair(i, j)
-                    similarities.put(key,
-                            cosineSimilarity(docVectors[i], docVectors[j]))
-                    dvsim.put(key, meanSimilarity(passageVecs[i]!!, passageVecs[j]!!))
+                    wv.normalize()
                 }
             }
-
-            println(similarities.size)
-            val keys = similarities.keys.sample(30)
-            println(keys.map { similarities[it] })
-            println(keys.map { dvsim[it] })
         }
+
+        vectors.entries.sample(5).forEach { (wi, wvi) ->
+            println("\tw[$wi] = ${wvi.toList()}")
+        }
+
+        val passageVecs = HashMap<Int, ArrayList<FloatArray>>()
+        passages.forEach { (docid, passage) ->
+            val pvec = FloatArray(dim)
+            passage.map {
+                val wv = vectors[it]!!
+                wv.indices.forEach { i ->
+                    pvec[i] += wv[i]
+                }
+            }
+            pvec.indices.forEach { i ->
+                pvec[i] /= passage.size.toFloat()
+            }
+
+            passageVecs.computeIfAbsent(docid, {ArrayList<FloatArray>()}).add(pvec)
+        }
+
+
+        val similarities = HashMap<Pair<Int,Int>, Double>()
+        val dvsim = HashMap<Pair<Int,Int>, Double>()
+        val docVectors = q.docs.map { it.freqs(fieldName) }
+
+        // All pairs:
+        (0 until docVectors.size-1).forEach { i ->
+            (i until docVectors.size).forEach { j ->
+                val key = ReflexivePair(i, j)
+                similarities.put(key,
+                        cosineSimilarity(docVectors[i], docVectors[j]))
+                dvsim.put(key, meanSimilarity(passageVecs[i]!!, passageVecs[j]!!))
+            }
+        }
+
+        println(similarities.size)
+        val keys = similarities.keys.sample(30)
+        println(keys.map { similarities[it] })
+        println(keys.map { dvsim[it] })
     }
 }
 
