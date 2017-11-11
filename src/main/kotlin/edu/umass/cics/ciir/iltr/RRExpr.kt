@@ -14,6 +14,7 @@ class RREnv(val retr: LocalRetrieval) {
     var mu = 1500.0
     var bm25b = 0.75
     var bm25k = 1.2
+    var absoluteDiscountingDelta = 0.7
     val lengths = retr.getCollectionStatistics(GExpr("lengths"))!!
     val lengthsInfo = HashMap<String, FieldStatistics>()
     private fun getFieldStats(field: String): FieldStatistics {
@@ -161,6 +162,17 @@ class RRDirichletTerm(env: RREnv, val term: String, var mu: Double = env.mu) : R
 
     override fun toString(): String = "RRDirichletTerm($term)"
 }
+class RRAbsoluteDiscounting(env: RREnv, val term: String, var delta: Double = env.absoluteDiscountingDelta) : RRLeafExpr(env) {
+    val bg = env.getStats(term).nonzeroCountProbability()
+    override fun eval(doc: LTRDoc): Double {
+        val length = doc.freqs.length
+        val uniq = doc.freqs.counts.size().toDouble()
+        val sigma = delta * (uniq / length)
+        val count = maxOf(0.0, doc.freqs.count(term).toDouble() - delta)
+        return Math.log((count / length) + sigma * bg)
+    }
+}
+
 class RRFeature(env: RREnv, val name: String): RRLeafExpr(env) {
     override fun eval(doc: LTRDoc): Double {
         return doc.features[name]!!
@@ -198,6 +210,14 @@ class RRAvgWordLength(env: RREnv) : RRLeafExpr(env) {
         }
         return sum / n
     }
+}
+
+/**
+ * This calculates the number of unique terms in a document divided by its length. Similar to how noisy the document is, so I called it hte DocInfoQuotient. This is used in Absolute Discounting.
+ */
+class RRDocInfoQuotient(env: RREnv): RRLeafExpr(env) {
+    override fun eval(doc: LTRDoc): Double =
+            doc.freqs.counts.size().toDouble() / doc.freqs.length
 }
 
 class RRDocLength(env: RREnv) : RRLeafExpr(env) {

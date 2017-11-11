@@ -179,7 +179,8 @@ fun main(args: Array<String>) {
 
                 val feature_exprs = hashMapOf<String, RRExpr>(
                         Pair("bm25", env.bm25(q.qterms)),
-                        Pair("ql", QueryLikelihood(q.qterms).toRRExpr(env)),
+                        Pair("LM-dir", QueryLikelihood(q.qterms).toRRExpr(env)),
+                        Pair("LM-abs", env.mean(q.qterms.map { RRAbsoluteDiscounting(env, it) })),
                         //Pair("sdm", SequentialDependenceModel(q.qterms).toRRExpr(env)),
                         Pair("avgwl", RRAvgWordLength(env)),
                         Pair("docl", RRDocLength(env)),
@@ -202,7 +203,7 @@ fun main(args: Array<String>) {
                     }
                 }
 
-                arrayListOf<String>("rm3-k5", "rm3-k10", "rm3-k25", "bm25", "title-ql").forEach { method ->
+                arrayListOf<String>("rm3-k5", "rm3-k10", "rm3-k25", "bm25", "title-ql", "LM-abs", "LM-dir").forEach { method ->
                     evals.forEach { measure, evalfn ->
                         val score = try {
                             evalfn.evaluate(q.toQResults(method), queryJudgments)
