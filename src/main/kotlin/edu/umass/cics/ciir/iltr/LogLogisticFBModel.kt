@@ -2,10 +2,10 @@ package edu.umass.cics.ciir.iltr
 
 import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.chai.Debouncer
-import edu.umass.cics.ciir.dbpedia.normalize
 import edu.umass.cics.ciir.chai.mean
 import edu.umass.cics.ciir.chai.meanByDouble
 import edu.umass.cics.ciir.chai.push
+import edu.umass.cics.ciir.dbpedia.normalize
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.GExpr
 import edu.umass.cics.ciir.sprf.getEvaluators
@@ -92,8 +92,8 @@ fun main(args: Array<String>) {
                 val sem = q.qterms.sumByDouble { q ->
                     val key = ReflexivePair(q, term)
                     val s_wq = pmiCache.get(key, computePMI)!!
-                    //val s_qq = pmiCache.get()
-                    s_wq
+                    val s_qq = pmiCache.get(ReflexivePair(q,q), computePMI)!!
+                    s_wq / s_qq
                 }
 
                 if (sweepCValues) { AllCValues } else { listOf(7.0) }
@@ -101,7 +101,6 @@ fun main(args: Array<String>) {
                             val params = HyperParam(fbDocsN, fbTermsN, c)
                             val llExpr = RRLogLogisticTFScore(env, term, c)
                             val priorExpr = env.feature("title-ql-prior")
-
 
                             val fwExpr = env.mult(llExpr, priorExpr, env.const(sem))
                             val fw = fbDocs.meanByDouble { fwExpr.eval(it) }
