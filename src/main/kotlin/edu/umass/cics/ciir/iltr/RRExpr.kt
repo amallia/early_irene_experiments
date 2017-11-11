@@ -1,7 +1,6 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.irene.CountStats
-import edu.umass.cics.ciir.irene.TextExpr
+import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.GExpr
 import edu.umass.cics.ciir.sprf.setf
 import org.lemurproject.galago.core.index.stats.FieldStatistics
@@ -47,6 +46,34 @@ class RREnv(val retr: LocalRetrieval) {
     fun mult(vararg exprs: RRExpr) = RRMult(this, exprs.toList())
     fun const(x: Double) = RRConst(this, x)
 
+    fun fromQExpr(q: QExpr): RRExpr = when(q) {
+        is TextExpr -> TODO()
+        is LuceneExpr -> error("Can't support LuceneExpr.")
+        is SynonymExpr -> TODO()
+        is AndExpr -> TODO()
+        is OrExpr -> TODO()
+        // make sum of weighted:
+        is CombineExpr -> sum(q.children.zip(q.weights).map { (child, weight) ->
+            fromQExpr(child).weighted(weight)
+        })
+        is MultExpr -> RRMult(this, q.children.map { fromQExpr(it) })
+        is MaxExpr -> RRMax(this, q.children.map { fromQExpr(it) })
+        is OrderedWindowExpr -> TODO()
+        is UnorderedWindowExpr -> TODO()
+        is WeightExpr -> RRWeighted(this, q.weight, fromQExpr(q.child))
+        is DirQLExpr -> {
+            val child = q.child
+            if (child is TextExpr) {
+                val mu = q.mu ?: this.mu
+                RRDirichletTerm(this, child.text, mu)
+            } else error("RRExpr can't handle non-phrases right now.")
+        }
+        is BM25Expr -> TODO()
+        is CountToScoreExpr -> TODO()
+        is BoolToScoreExpr -> TODO()
+        is CountToBoolExpr -> TODO()
+        is RequireExpr -> TODO()
+    }
 }
 
 sealed class RRExpr(val env: RREnv) {
@@ -78,7 +105,11 @@ class RRWeighted(env: RREnv, val weight: Double, inner: RRExpr): RRSingleChildEx
     override fun toString(): String = "RRWeighted($weight, $inner)"
 }
 
-sealed class RRCCExpr(env: RREnv, val exprs: List<RRExpr>): RRExpr(env)
+sealed class RRCCExpr(env: RREnv, val exprs: List<RRExpr>): RRExpr(env) {
+    init {
+        assert(exprs.size > 0)
+    }
+}
 class RRSum(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
     override fun eval(doc: LTRDoc): Double {
         var sum = 0.0;
@@ -93,6 +124,12 @@ class RRMean(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
     val N = exprs.size.toDouble()
     override fun eval(doc: LTRDoc): Double = exprs.sumByDouble { it.eval(doc) } / N
 }
+class RRMax(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
+    override fun eval(doc: LTRDoc): Double {
+        return exprs.map { it.eval(doc) }.max()!!
+    }
+    override fun toString(): String = "RRSum($exprs)"
+}
 
 class RRMult(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
     override fun eval(doc: LTRDoc): Double {
@@ -103,7 +140,7 @@ class RRMult(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
 }
 
 sealed class RRLeafExpr(env: RREnv) : RRExpr(env)
-class RRDirichletTerm(env: RREnv, val term: String, val mu: Double = env.mu) : RRLeafExpr(env) {
+class RRDirichletTerm(env: RREnv, val term: String, var mu: Double = env.mu) : RRLeafExpr(env) {
     val stats = env.getStats(term)
     val bg = mu * stats.nonzeroCountProbability()
 
