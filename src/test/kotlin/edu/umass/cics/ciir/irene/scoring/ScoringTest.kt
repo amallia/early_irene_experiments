@@ -5,7 +5,6 @@ import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.GDoc
 import edu.umass.cics.ciir.sprf.GExpr
 import edu.umass.cics.ciir.sprf.pmake
-import edu.umass.cics.ciir.sprf.setf
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
 import org.apache.lucene.document.Field
 import org.apache.lucene.document.StringField
@@ -152,7 +151,8 @@ class ScoringTest {
         val bgStats = index.galago.getCollectionStatistics(GExpr("lengths"))
         index.forEachTermPair { t1, t2 ->
             val odi = OrderedWindowExpr(listOf(TextExpr(t1),TextExpr(t2)))
-            val odg = galagoOd1(listOf(t1, t2));
+            val odg = odi.toGalago()
+            //val odg = galagoOd1(listOf(t1, t2));
             val istats = index.irene.getStats(odi)!!
             val gstats = index.galago.getNodeStatistics(index.galago.transformQuery(odg, Parameters.create()));
             // Galago does this wrong!
@@ -186,10 +186,7 @@ class ScoringTest {
         index.forEachTermPair { t1, t2 ->
             listOf(3,6,9).forEach { width ->
                 val udi = UnorderedWindowExpr(listOf(TextExpr(t1),TextExpr(t2)), width)
-                val udg = GExpr("uw").apply {
-                    setf("default", width)
-                    listOf(t1, t2).forEach { addChild(GExpr.Text(it)) }
-                }
+                val udg = udi.toGalago()
                 val istats = index.irene.getStats(udi)!!
                 val gstats = index.galago.getNodeStatistics(index.galago.transformQuery(udg, Parameters.create()));
 
@@ -202,18 +199,13 @@ class ScoringTest {
         }
     }
 
-    fun galagoOd1(terms: List<String>) = GExpr("od").apply {
-        setf("default", 1)
-        terms.forEach { addChild(GExpr.Text(it)) }
-    }
-
     @Test
     fun testBigramScores() {
         val index = resource.index!!
 
         index.forEachTermPair { t1, t2 ->
             val odi = DirQLExpr(OrderedWindowExpr(listOf(TextExpr(t1), TextExpr(t2))))
-            val odg = GExpr("combine").apply { addChild(galagoOd1(listOf(t1, t2))) }
+            val odg = odi.toGalago()
             cmpResults("dirichlet.od($t1,$t2)", odg, odi, index)
         }
     }
@@ -221,6 +213,8 @@ class ScoringTest {
     fun cmpResults(str: String, gq: GExpr, iq: QExpr, index: CommonTestIndexes) {
         val search = index.irene.search(iq, index.ND)
         val gres = index.galago.transformAndExecuteQuery(gq, pmake {
+            set("processingModel", "rankeddocument")
+            set("annotate", true)
             set("requested", index.ND)
         })
         val gTruth = gres.scoredDocuments.associate { Pair(it.name, it) }
@@ -258,11 +252,8 @@ class ScoringTest {
         val index = resource.index!!
 
         index.forEachTermPair { t1, t2 ->
-            val gq = GExpr("combine").apply {
-                addChild(GExpr.Text(t1))
-                addChild(GExpr.Text(t2))
-            }
             val iq = QueryLikelihood(listOf(t1, t2))
+            val gq = iq.toGalago()
             cmpResults("$t1, $t2", gq, iq, index)
         }
     }
@@ -273,12 +264,8 @@ class ScoringTest {
 
         index.forEachTermPair { t1, t2 ->
             val t3 = "NEVER_GONNA_HAPPEN"
-            val gq = GExpr("combine").apply {
-                addChild(GExpr.Text(t1))
-                addChild(GExpr.Text(t2))
-                addChild(GExpr.Text(t3))
-            }
             val iq = QueryLikelihood(listOf(t1, t2, t3))
+            val gq = iq.toGalago()
             cmpResults("$t1, $t2, NULL", gq, iq, index)
         }
     }
@@ -289,13 +276,16 @@ class ScoringTest {
 
         index.forEachTermPair { t1, t2 ->
             val t3 = "NEVER_GONNA_HAPPEN"
+            val iq = SequentialDependenceModel(listOf(t1, t2, t3))
+            val gq2 = iq.toGalago()
+            cmpResults("sdm($t1, $t2, NULL)", gq2, iq, index)
+
+            // if this ever breaks, check to make sure defaults are in sync with Galago.
             val gq = GExpr("sdm").apply {
                 addChild(GExpr.Text(t1))
                 addChild(GExpr.Text(t2))
                 addChild(GExpr.Text(t3))
             }
-            // if this ever breaks, check to make sure defaults are in sync with Galago.
-            val iq = SequentialDependenceModel(listOf(t1, t2, t3))
             cmpResults("sdm($t1, $t2, NULL)", gq, iq, index)
         }
     }

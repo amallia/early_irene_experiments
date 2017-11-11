@@ -24,14 +24,6 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
     var defaultBM25k: Double = 1.2
     var estimateStats: String? = null
 
-    fun simplify(q: QExpr): QExpr {
-        val pq = q.copy()
-
-        // combine weights until query stops changing.
-        while(combineWeights(pq)) { }
-
-        return pq
-    }
 
     fun prepare(index: IreneIndex, q: QExpr): QExpr {
         val pq = simplify(q)
@@ -66,6 +58,13 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
     }
 
 
+}
+
+fun simplify(q: QExpr): QExpr {
+    val pq = q.copy()
+    // combine weights until query stops changing.
+    while(combineWeights(pq)) { }
+    return pq
 }
 
 // Easy "model"-based constructor.
