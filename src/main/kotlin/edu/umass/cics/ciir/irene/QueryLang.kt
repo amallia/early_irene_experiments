@@ -24,6 +24,7 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
     var defaultBM25k: Double = 1.2
     var estimateStats: String? = null
 
+    fun toTextExprs(text: String, field: String = defaultField): List<TextExpr> = analyzer.tokenize(field, text).map { TextExpr(it, field) }
 
     fun prepare(index: IreneIndex, q: QExpr): QExpr {
         val pq = simplify(q)
@@ -94,7 +95,7 @@ fun SequentialDependenceModel(terms: List<String>, field: String?=null, stopword
         ubigrams.add(makeScorer(UnorderedWindowExpr(ts, uwWidth)))
     }
 
-    val exprs = arrayListOf<QExpr>(
+    val exprs = arrayListOf(
             MeanExpr(unigrams).weighted(uniW),
             MeanExpr(bigrams).weighted(odW),
             MeanExpr(ubigrams).weighted(uwW))
@@ -122,6 +123,16 @@ sealed class QExpr {
 }
 sealed class LeafExpr : QExpr() {
     override val children: List<QExpr> get() = emptyList()
+}
+sealed class ConstExpr : LeafExpr()
+data class ConstScoreExpr(var x: Double): ConstExpr() {
+    override fun copy(): QExpr = ConstScoreExpr(x)
+}
+data class ConstCountExpr(var x: Int): ConstExpr() {
+    override fun copy(): QExpr = ConstCountExpr(x)
+}
+data class ConstBoolExpr(var x: Boolean): ConstExpr() {
+    override fun copy(): QExpr = ConstBoolExpr(x)
 }
 sealed class OpExpr : QExpr() {
 }
@@ -257,6 +268,9 @@ fun toJSON(q: QExpr): Parameters = when(q) {
         set("child", toJSON(q.child))
         set("gt", q.gt)
     }
+    is ConstScoreExpr -> pmake { set("constant", q.x) }
+    is ConstCountExpr -> pmake { set("constant", q.x) }
+    is ConstBoolExpr -> pmake { set("constant", q.x) }
 }
 
 fun combineWeights(q: QExpr): Boolean {
@@ -337,6 +351,9 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
             analyzeDataNeededRecursive(q.value, childNeeds)
             return
         }
+        is ConstScoreExpr -> return assert(needed == DataNeeded.SCORES)
+        is ConstCountExpr -> return assert(needed == DataNeeded.COUNTS)
+        is ConstBoolExpr -> return assert(needed == DataNeeded.DOCS)
     }
     q.children.forEach { analyzeDataNeededRecursive(it, childNeeds) }
 }

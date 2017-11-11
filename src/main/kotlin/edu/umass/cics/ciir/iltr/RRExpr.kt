@@ -73,7 +73,16 @@ class RREnv(val retr: LocalRetrieval) {
         is BoolToScoreExpr -> TODO()
         is CountToBoolExpr -> TODO()
         is RequireExpr -> TODO()
+        is ConstScoreExpr -> RRConst(this, q.x)
+        is ConstCountExpr -> RRConst(this, q.x.toDouble())
+        is ConstBoolExpr -> RRConst(this, if (q.x) 1.0 else 0.0)
     }
+}
+
+fun QExpr.toRRExpr(env: RREnv): RRExpr {
+    val q = simplify(this)
+    analyzeDataNeededRecursive(q)
+    return env.fromQExpr(q)
 }
 
 sealed class RRExpr(val env: RREnv) {

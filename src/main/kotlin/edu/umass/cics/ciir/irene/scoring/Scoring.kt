@@ -36,6 +36,9 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is UnorderedWindowExpr -> UnorderedWindow(
             computeCountStats(q, ctx),
             q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.width)
+    is ConstScoreExpr -> ConstEvalNode(q.x.toFloat())
+    is ConstCountExpr -> ConstEvalNode(q.x)
+    is ConstBoolExpr -> if(q.x) ConstTrueNode(ctx.numDocs()) else ConstEvalNode(0)
 }
 
 fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
@@ -109,6 +112,40 @@ interface CountEvalNode : QueryEvalNode {
 }
 interface PositionsEvalNode : CountEvalNode {
     fun positions(doc: Int): PositionsIter
+}
+
+class ConstTrueNode(val numDocs: Int) : QueryEvalNode {
+    var current = 0
+    override fun docID(): Int = current
+    override fun score(doc: Int): Float = 1f
+    override fun count(doc: Int): Int = 1
+    override fun matches(doc: Int): Boolean = true
+    override fun explain(doc: Int): Explanation = Explanation.match(1f, "ConstTrueNode")
+    override fun estimateDF(): Long = numDocs.toLong()
+    override fun advance(target: Int): Int {
+        if (current < target) {
+            current = target
+            if (current >= numDocs) {
+                current = NO_MORE_DOCS
+            }
+        }
+        return current
+    }
+
+}
+
+class ConstEvalNode(val count: Int, val score: Float) : QueryEvalNode {
+    constructor(count: Int) : this(count, count.toFloat())
+    constructor(score: Float) : this(1, score)
+
+    override fun docID(): Int = NO_MORE_DOCS
+    override fun score(doc: Int): Float = score
+    override fun count(doc: Int): Int = count
+    override fun matches(doc: Int): Boolean = false
+
+    override fun explain(doc: Int): Explanation = Explanation.noMatch("ConstEvalNode(count=$count, score=$score)")
+    override fun estimateDF(): Long = 0L
+    override fun advance(target: Int): Int = NO_MORE_DOCS
 }
 
 private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val miss: Float=-Float.MAX_VALUE): QueryEvalNode {

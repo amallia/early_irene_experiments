@@ -36,6 +36,7 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
             DataNeeded.SCORES -> error("Impossible!")
         }
     }
+    fun numDocs(): Int = context.reader().numDocs()
 }
 
 private class IQModelWeight(val q: QExpr, val iqm: IreneQueryModel) : Weight(iqm) {

@@ -63,7 +63,6 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
                 setf("field", q.field)
             }
         }
-        is LuceneExpr -> error("Can never support LuceneExpr -> Galago Query.")
         is SynonymExpr -> GExpr("syn", children(q))
         is AndExpr -> GExpr("band", children(q))
         is OrExpr -> GExpr("bor", children(q))
@@ -76,7 +75,6 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
         is MultExpr -> GExpr("wsum", children(q)).apply {
             setf("norm", false)
         }
-        is MaxExpr -> TODO()
         is OrderedWindowExpr -> GExpr("od", children(q)).apply {
             setf("default", q.step)
         }
@@ -99,9 +97,12 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
             setf("b", q.b)
             setf("k", q.k)
         }
-        is CountToScoreExpr -> TODO()
         is BoolToScoreExpr -> GExpr("bool", children(q))
-        is CountToBoolExpr -> TODO()
         is RequireExpr -> GExpr("require", listOf(toGalagoRecursive(q.cond), toGalagoRecursive(q.value)))
+        is MaxExpr -> TODO()
+        is CountToBoolExpr -> TODO()
+        is CountToScoreExpr -> TODO()
+        is ConstScoreExpr, is ConstCountExpr, is ConstBoolExpr -> error("Galago does not support constants in its queries.")
+        is LuceneExpr -> error("Can never support LuceneExpr -> Galago Query.")
     }
 }
