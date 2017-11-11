@@ -3,8 +3,6 @@ package edu.umass.cics.ciir.iltr
 import edu.umass.cics.ciir.chai.Debouncer
 import edu.umass.cics.ciir.chai.sample
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.NamedMeasures
-import edu.umass.cics.ciir.sprf.getEvaluators
 import edu.umass.cics.ciir.sprf.mean
 import gnu.trove.list.array.TDoubleArrayList
 import org.lemurproject.galago.utility.Parameters
@@ -48,22 +46,14 @@ fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val dsName = argp.get("dataset", "robust")
     val dataset = DataPaths.get(dsName)
-    val evals = getEvaluators(listOf("ap", "ndcg"))
-    val ms = NamedMeasures()
-    val qrels = dataset.getQueryJudgments()
-    val fbTerms = 100
-    val rmLambda = 0.2
     val passageSize = 50
     val width = 5
     val dim = 30
     val dimSet = 3
-    val random = Random()
 
     dataset.getIndex().use { retr ->
-        val env = RREnv(retr)
         forEachQuery(dsName) { q ->
             if (q.qid != "301") return@forEachQuery
-            val queryJudgments = qrels[q.qid]
             println("${q.qid} ${q.qterms}")
 
             val vocab = HashMap<String, Int>()

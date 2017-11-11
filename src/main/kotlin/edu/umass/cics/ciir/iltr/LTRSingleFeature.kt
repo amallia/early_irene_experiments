@@ -1,5 +1,7 @@
 package edu.umass.cics.ciir.iltr
 
+import edu.umass.cics.ciir.irene.IreneQueryLanguage
+import edu.umass.cics.ciir.irene.QueryLikelihood
 import edu.umass.cics.ciir.sprf.*
 import gnu.trove.map.hash.TObjectDoubleHashMap
 import gnu.trove.map.hash.TObjectIntHashMap
@@ -165,6 +167,9 @@ fun main(args: Array<String>) {
     val fbTerms = 100
     val rmLambda = 0.2
 
+    val lang = IreneQueryLanguage()
+    lang.defaultField = "document"
+
     StreamCreator.openOutputStream("$dsName.features.jsonl.gz").printer().use { out ->
         dataset.getIndex().use { retr ->
             val env = RREnv(retr)
@@ -174,7 +179,8 @@ fun main(args: Array<String>) {
 
                 val feature_exprs = hashMapOf<String, RRExpr>(
                         Pair("bm25", env.bm25(q.qterms)),
-                        Pair("ql", env.ql(q.qterms)),
+                        Pair("ql", QueryLikelihood(q.qterms).toRRExpr(env)),
+                        //Pair("sdm", SequentialDependenceModel(q.qterms).toRRExpr(env)),
                         Pair("avgwl", RRAvgWordLength(env)),
                         Pair("docl", RRDocLength(env)),
                         Pair("meantp", env.mean(q.qterms.map { RRTermPosition(env, it) })),

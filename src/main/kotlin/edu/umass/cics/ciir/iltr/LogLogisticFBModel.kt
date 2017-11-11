@@ -6,6 +6,9 @@ import edu.umass.cics.ciir.chai.mean
 import edu.umass.cics.ciir.chai.meanByDouble
 import edu.umass.cics.ciir.chai.push
 import edu.umass.cics.ciir.dbpedia.normalize
+import edu.umass.cics.ciir.irene.AndExpr
+import edu.umass.cics.ciir.irene.TextExpr
+import edu.umass.cics.ciir.irene.toGalago
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.GExpr
 import edu.umass.cics.ciir.sprf.getEvaluators
@@ -30,10 +33,7 @@ fun computePMI(env: RREnv, w1: String, w2: String): Double {
     val denom = env.getStats(w1).binaryProbability() * env.getStats(w2).binaryProbability()
 
     val isectQ = GExpr("bool-to-count").apply {
-        addChild(GExpr("band").apply {
-            addChild(GExpr.Text(w1))
-            addChild(GExpr.Text(w2))
-        })
+        addChild(AndExpr(listOf(TextExpr(w1, w2))).toGalago())
     }
 
     if (msg.ready()) {
