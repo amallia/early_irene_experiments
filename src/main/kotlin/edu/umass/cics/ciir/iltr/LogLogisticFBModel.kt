@@ -21,7 +21,7 @@ import kotlin.collections.HashMap
  *
  * @author jfoley.
  */
-data class HyperParam(val fbDocs: Int, var fbTerms: Int, val c: Double, var lambda: Double = 0.5)
+data class LLHyperParam(val fbDocs: Int, var fbTerms: Int, val c: Double, var lambda: Double = 0.5) : HyperParam
 val msg = Debouncer()
 fun computePMI(env: RREnv, w1: String, w2: String): Double {
     if (w1 == w2) {
@@ -83,9 +83,9 @@ fun main(args: Array<String>) {
             println("${q.qid} ${q.qterms}")
 
             val fbDocs = q.docs.take(fbDocsN)
-            val terms = fbDocs.flatMapTo(HashSet<String>()) { it.terms(field) }
+            val terms = fbDocs.flatMapTo(HashSet()) { it.terms(field) }
 
-            val fbTerms = HashMap<HyperParam, ArrayList<WeightedTerm>>()
+            val fbTerms = HashMap<LLHyperParam, ArrayList<WeightedTerm>>()
 
             terms.forEach { term ->
                 val AllCValues = RRLogLogisticTFScore.OriginalPaperCValues
@@ -99,7 +99,7 @@ fun main(args: Array<String>) {
 
                 if (sweepCValues) { AllCValues } else { listOf(7.0) }
                         .forEach { c ->
-                            val params = HyperParam(fbDocsN, fbTermsN, c)
+                            val params = LLHyperParam(fbDocsN, fbTermsN, c)
                             val llExpr = RRLogLogisticTFScore(env, term, field, c)
                             val priorExpr = env.feature("title-ql-prior")
 
@@ -107,16 +107,16 @@ fun main(args: Array<String>) {
                             val fw = fbDocs.meanByDouble { fwExpr.eval(it) }
 
                             fbTerms
-                                    .computeIfAbsent(params, {ArrayList<WeightedTerm>()})
+                                    .computeIfAbsent(params, {ArrayList()})
                                     .add(WeightedTerm(fw, term))
                         }
             }
 
             println("\tComputed fbTerms for ${fbTerms.size} settings.")
 
-            val expQueries = HashMap<HyperParam, RRExpr>()
+            val expQueries = HashMap<LLHyperParam, RRExpr>()
             fbTerms.forEach { (params, wts) ->
-                val fbTermsOpts = arrayListOf<Int>(10,20,50,100)
+                val fbTermsOpts = arrayListOf(10,20,50,100)
                 if (sweepFBTerms) { fbTermsOpts } else { listOf(params.fbTerms) }
                         .forEach { numT ->
                             val hp = params.copy(fbTerms = numT)
@@ -165,6 +165,7 @@ fun main(args: Array<String>) {
     }.mean()
 
     // Condensed-List Regular LL, with DirQL eval: AP=0.269
-    // CL LL+Rel: AP=0.277
+    // CL LL+Rel: AP=0.277 (noSweep)
+    // CL LL+Rel+Sem: AP=0.249 (withSweep)
     println("Overall Test Mean: $testMean")
 }

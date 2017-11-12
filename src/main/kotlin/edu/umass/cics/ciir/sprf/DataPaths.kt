@@ -34,6 +34,9 @@ interface IRDataset {
     })
     val name: String
 
+    fun getBM25B(): Double? = null
+    fun getBM25K(): Double? = null
+
     fun getIndex(): LocalRetrieval = getIndex(Parameters.create())
     fun getIndex(p: Parameters): LocalRetrieval = LocalRetrieval(getIndexFile().absolutePath, p)
 
@@ -71,6 +74,10 @@ class Robust04 : IRDataset {
     override fun getTitleQueryFile(): File = File(getQueryDir(), "robust04/rob04.titles.tsv")
     override fun getDescQueryFile(): File = File(getQueryDir(), "robust04/rob04.descs.tsv")
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "robust04/robust04.qrels")
+
+    // granularity chosen at which all training splits agree.
+    override fun getBM25B(): Double? = 0.25
+    override fun getBM25K(): Double? = 0.75
 }
 
 open class Gov2 : IRDataset {

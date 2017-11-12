@@ -183,6 +183,10 @@ fun main(args: Array<String>) {
     StreamCreator.openOutputStream("$dsName.features.jsonl.gz").printer().use { out ->
         dataset.getIndex().use { retr ->
             val env = RREnv(retr)
+
+            dataset.getBM25B()?.let { env.bm25b = it }
+            dataset.getBM25K()?.let { env.bm25k = it }
+
             forEachQuery(dsName) { q ->
                 val queryJudgments = qrels[q.qid]
                 println(q.qterms)
