@@ -37,6 +37,9 @@ interface IRDataset {
     fun getBM25B(): Double? = null
     fun getBM25K(): Double? = null
 
+    abstract fun getIndexParams(): IndexParams
+    fun getIreneIndex(): IreneIndex = IreneIndex(getIndexParams())
+
     fun getIndex(): LocalRetrieval = getIndex(Parameters.create())
     fun getIndex(p: Parameters): LocalRetrieval = LocalRetrieval(getIndexFile().absolutePath, p)
 
@@ -64,6 +67,19 @@ interface IRDataset {
 }
 
 class Robust04 : IRDataset {
+    override fun getIndexParams(): IndexParams {
+        val path = when(IRDataset.host) {
+            "gob" -> "/media/jfoley/flash/robust.irene2"
+            "oakey" -> "/mnt/scratch/jfoley/robust.irene2"
+            "sydney" -> "/mnt/nfs/work1/jfoley/indexes/robust.irene2"
+            else -> notImpl(IRDataset.host)
+        }
+        return IndexParams().apply {
+            withPath(File(path))
+            defaultField = "body"
+        }
+    }
+
     override val name: String get() = "robust"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "gob" -> "/media/jfoley/flash/robust04.galago"
@@ -81,6 +97,19 @@ class Robust04 : IRDataset {
 }
 
 open class Gov2 : IRDataset {
+    override fun getIndexParams(): IndexParams {
+        val path = when(IRDataset.host) {
+            "gob" -> "/media/jfoley/flash/gov2.irene2"
+            "oakey" -> "/mnt/scratch/jfoley/gov2.irene2"
+            "sydney" -> "/mnt/nfs/work1/jfoley/indexes/gov2.irene2"
+            else -> notImpl(IRDataset.host)
+        }
+        return IndexParams().apply {
+            withPath(File(path))
+            defaultField = "document"
+            withAnalyzer("url", WhitespaceAnalyzer())
+        }
+    }
     override val name: String get() = "gov2"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "oakey" -> "/mnt/scratch/jfoley/gov2.galago/"
@@ -102,14 +131,18 @@ class MQ2007 : Gov2() {
 
 abstract class WikiSource : IRDataset {
     override fun getIndexFile(): File = notImpl(IRDataset.host)
-    fun getIreneIndex() = IreneIndex(IndexParams().apply {
-        withAnalyzer("categories", WhitespaceAnalyzer())
-        withPath(File(when(IRDataset.host) {
-            "oakey" -> "/mnt/scratch/jfoley/dbpedia-2016-10/dbpedia.irene2/"
-            "gob" -> "/media/jfoley/flash/dbpedia-2016-10/sample/dbpedia.shard0.irene2"
+    override fun getIndexParams(): IndexParams {
+        val path = when(IRDataset.host) {
+            "gob" -> "/media/jfoley/flash/dbpedia-2016-10/dbpedia.shard0.irene2"
+            "oakey" -> "/mnt/scratch/jfoley/dbpedia-2016-10/dbpedia.irene2"
             else -> notImpl(IRDataset.host)
-        }))
-    })
+        }
+        return IndexParams().apply {
+            withPath(File(path))
+            withAnalyzer("categories", WhitespaceAnalyzer())
+            defaultField = "short_text"
+        }
+    }
 }
 
 class Clue12Rewq : WikiSource() {
@@ -160,6 +193,18 @@ private class DBPE : WikiSource() {
 }
 
 class Clue09BSpam60 : IRDataset {
+    override fun getIndexParams(): IndexParams {
+        val path = when(IRDataset.host) {
+            "oakey" -> "/mnt/scratch/jfoley/clue09.irene2"
+            "sydney" -> "/mnt/nfs/work1/jfoley/indexes/clue09.irene2"
+            else -> notImpl(IRDataset.host)
+        }
+        return IndexParams().apply {
+            withPath(File(path))
+            defaultField = "document"
+            withAnalyzer("url", WhitespaceAnalyzer())
+        }
+    }
     override val name: String get() = "clue09bspam60"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "sydney" -> "/mnt/nfs/work3/sjh/indexes/clueweb-09-b-spam60.index/"
@@ -171,6 +216,18 @@ class Clue09BSpam60 : IRDataset {
 }
 
 class WT10G : IRDataset {
+    override fun getIndexParams(): IndexParams {
+        val path = when(IRDataset.host) {
+            "oakey" -> "/mnt/scratch/jfoley/wt10g.irene2"
+            "sydney" -> "/mnt/nfs/work1/jfoley/indexes/wt10g.irene2"
+            else -> notImpl(IRDataset.host)
+        }
+        return IndexParams().apply {
+            withPath(File(path))
+            defaultField = "document"
+            withAnalyzer("url", WhitespaceAnalyzer())
+        }
+    }
     override val name: String get() = "wt10g"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "sydney" -> "/mnt/nfs/work3/sjh/indexes/wt10g.index/"

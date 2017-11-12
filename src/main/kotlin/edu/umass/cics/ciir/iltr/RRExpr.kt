@@ -213,7 +213,7 @@ sealed class RRCountExpr(env: RREnv, val field: String, val css: CountStatsStrat
 
 class RRTermExpr(env: RREnv, val term: String, field: String, stats: CountStatsStrategy): RRCountExpr(env, field, stats) {
     companion object {
-        val posCache = Caffeine.newBuilder().maximumSize(2000).build<RRTermCacheKey, IntArray>()
+        val posCache = Caffeine.newBuilder().maximumSize(1000*20).build<RRTermCacheKey, IntArray>()
     }
     constructor(env: RREnv, term: String, field: String = env.defaultField) : this(env, term, field, RREnvStats(env, term, field))
 
