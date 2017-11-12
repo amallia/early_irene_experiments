@@ -32,7 +32,7 @@ data class CountStats(var text: String, var cf: Long, var df: Long, var cl: Long
     }
 }
 
-sealed class CountStatsStrategy {
+abstract class CountStatsStrategy {
     abstract fun get(): CountStats
 }
 class LazyCountStats(val expr: QExpr, val index: IreneIndex) : CountStatsStrategy() {

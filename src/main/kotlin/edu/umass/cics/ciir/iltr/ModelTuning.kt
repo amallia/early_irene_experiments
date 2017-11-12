@@ -93,3 +93,22 @@ object BM25Tuning {
         }
     }
 }
+
+data class QLHyperParam(val mu: Double = 1500.0): HyperParam
+object TuneQL {
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val dsName = argp.get("dataset", "robust")
+        val field = argp.get("field", "document")
+
+        val mus = arrayListOf(750,1000,1250,1500).map { it.toDouble() }
+
+        kCrossFoldValidate(dsName) { env, q ->
+            val out = HashMap<QLHyperParam, RRExpr>()
+            mus.forEach { mu ->
+                out[QLHyperParam(mu)] = env.mean(q.qterms.map { RRDirichletTerm(env, it, field, mu) })
+            }
+            out
+        }
+    }
+}

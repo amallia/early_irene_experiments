@@ -18,7 +18,7 @@ import org.lemurproject.galago.utility.lists.Ranked
  * @author jfoley
  */
 
-class LTRDocByFeature(val feature: String, val doc: LTRDoc, rank: Int, score: Double) : EvalDoc, Ranked(rank, score) {
+class LTRDocByFeature(private val feature: String, val doc: LTRDoc, rank: Int, score: Double) : EvalDoc, Ranked(rank, score) {
     override fun getRank(): Int = rank
     override fun getScore(): Double = score
     override fun getName(): String = doc.name
@@ -26,7 +26,7 @@ class LTRDocByFeature(val feature: String, val doc: LTRDoc, rank: Int, score: Do
     constructor(feature: String, doc: LTRDoc) : this(feature, doc, -1, doc.features[feature]!!)
 }
 
-data class LTRDocField(val name: String, val text: String, val tokenizer: GenericTokenizer = WhitespaceTokenizer()) {
+data class LTRDocField(val name: String, val text: String, private val tokenizer: GenericTokenizer = WhitespaceTokenizer()) {
     val terms: List<String> by lazy { tokenizer.tokenize(text, name) }
     val freqs: BagOfWords by lazy { BagOfWords(terms) }
     fun toEntry() = Pair(name, this)
@@ -37,9 +37,6 @@ data class LTRDocField(val name: String, val text: String, val tokenizer: Generi
 }
 
 data class LTRDoc(val name: String, val features: HashMap<String, Double>, val rank: Int, val fields: HashMap<String,LTRDocField>, var defaultField: String = "document") {
-    @Deprecated("Always specify field!")
-    val freqs: BagOfWords get() = fields[defaultField]!!.freqs
-
     fun field(field: String): LTRDocField = fields[field] ?: error("No such field: $field in $this.")
     fun terms(field: String) = field(field).terms
     fun freqs(field: String) = field(field).freqs
@@ -195,6 +192,7 @@ fun main(args: Array<String>) {
                         Pair("bm25", env.bm25(q.qterms)),
                         Pair("LM-dir", QueryLikelihood(q.qterms).toRRExpr(env)),
                         Pair("LM-abs", env.mean(q.qterms.map { RRAbsoluteDiscounting(env, it) })),
+                        Pair("docinfo", RRDocInfoQuotient(env)),
                         //Pair("sdm", SequentialDependenceModel(q.qterms).toRRExpr(env)),
                         Pair("avgwl", RRAvgWordLength(env)),
                         Pair("docl", RRDocLength(env)),

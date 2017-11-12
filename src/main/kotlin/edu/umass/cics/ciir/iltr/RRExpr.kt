@@ -1,6 +1,8 @@
 package edu.umass.cics.ciir.iltr
 
+import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.scoring.PositionsIter
 import edu.umass.cics.ciir.sprf.GExpr
 import edu.umass.cics.ciir.sprf.setf
 import org.lemurproject.galago.core.index.stats.FieldStatistics
@@ -48,7 +50,7 @@ class RREnv(val retr: LocalRetrieval) {
     fun const(x: Double) = RRConst(this, x)
 
     fun fromQExpr(q: QExpr): RRExpr = when(q) {
-        is TextExpr -> TODO()
+        is TextExpr -> RRTermExpr(this, q.text, q.field!!)
         is LuceneExpr -> error("Can't support LuceneExpr.")
         is SynonymExpr -> TODO()
         is AndExpr -> TODO()
@@ -62,14 +64,8 @@ class RREnv(val retr: LocalRetrieval) {
         is OrderedWindowExpr -> TODO()
         is UnorderedWindowExpr -> TODO()
         is WeightExpr -> RRWeighted(this, q.weight, fromQExpr(q.child))
-        is DirQLExpr -> {
-            val child = q.child
-            if (child is TextExpr) {
-                val mu = q.mu ?: this.mu
-                RRDirichletTerm(this, child.text, child.field ?: defaultField, mu)
-            } else error("RRExpr can't handle non-phrases right now.")
-        }
-        is BM25Expr -> TODO()
+        is DirQLExpr -> RRDirichletScorer(this, fromQExpr(q.child) as RRCountExpr, q.mu ?: mu)
+        is BM25Expr -> RRBM25Scorer(this, fromQExpr(q.child) as RRCountExpr, q.b ?: bm25b, q.k ?: bm25k)
         is CountToScoreExpr -> TODO()
         is BoolToScoreExpr -> TODO()
         is CountToBoolExpr -> TODO()
@@ -144,27 +140,25 @@ class RRMult(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
 }
 
 sealed class RRLeafExpr(env: RREnv) : RRExpr(env)
-class RRDirichletTerm(env: RREnv, val term: String, val field: String = env.defaultField, var mu: Double = env.mu) : RRLeafExpr(env) {
-    private val stats = env.getStats(term)
-    private val bg = mu * stats.nonzeroCountProbability()
-
+fun RRDirichletTerm(env: RREnv, term: String, field: String = env.defaultField, mu: Double = env.mu) = RRDirichletScorer(env, RRTermExpr(env, term, field), mu)
+class RRDirichletScorer(env: RREnv, val term: RRCountExpr, var mu: Double = env.mu) : RRLeafExpr(env) {
+    private val bg = mu * term.stats.nonzeroCountProbability()
     override fun eval(doc: LTRDoc): Double {
-        val field = doc.field(field)
-        val count = field.count(term).toDouble()
-        val length = field.length + mu
+        val count = term.count(doc).toDouble()
+        val length = term.length(doc) + mu
         return Math.log((count + bg) / length)
     }
-
-    override fun toString(): String = "RRDirichletTerm($term)"
+    override fun toString(): String = "RRDirichletScorer($term)"
 }
-class RRAbsoluteDiscounting(env: RREnv, val term: String, val field: String = env.defaultField, var delta: Double = env.absoluteDiscountingDelta) : RRLeafExpr(env) {
-    val bg = env.getStats(term).nonzeroCountProbability()
+fun RRAbsoluteDiscounting(env: RREnv, term: String,  field: String = env.defaultField, delta: Double = env.absoluteDiscountingDelta) = RRAbsoluteDiscountingScorer(env, RRTermExpr(env, term, field), delta)
+class RRAbsoluteDiscountingScorer(env: RREnv, val term: RRCountExpr, var delta: Double = env.absoluteDiscountingDelta) : RRLeafExpr(env) {
+    val bg = term.stats.nonzeroCountProbability()
     override fun eval(doc: LTRDoc): Double {
-        val field = doc.field(field)
+        val field = doc.field(term.field)
         val length = field.length.toDouble()
         val uniq = field.uniqTerms.toDouble()
         val sigma = delta * (uniq / length)
-        val count = maxOf(0.0, field.count(term).toDouble() - delta)
+        val count = maxOf(0.0, term.count(doc).toDouble() - delta)
         return Math.log((count / length) + sigma * bg)
     }
 }
@@ -177,16 +171,48 @@ class RRFeature(env: RREnv, val name: String): RRLeafExpr(env) {
 class RRConst(env: RREnv, val value: Double) : RRLeafExpr(env) {
     override fun eval(doc: LTRDoc): Double = value
 }
+data class RRTermCacheKey(val term: String, val field: String, val doc: String)
 
-class RRBM25Term(env: RREnv, val term: String, val field: String = env.defaultField, val b: Double = env.bm25b, val k: Double = env.bm25k) : RRLeafExpr(env) {
-    private val stats = env.getStats(term)
-    private val avgDL = stats.avgDL();
-    private val idf = Math.log(stats.dc / (stats.df + 0.5))
+class RREnvStats(env: RREnv, val term: String, val field: String) : CountStatsStrategy() {
+    val stats = env.getStats(term, field)
+    override fun get(): CountStats = stats
+}
+sealed class RRCountExpr(env: RREnv, val field: String, val css: CountStatsStrategy) : RRExpr(env) {
+    val stats: CountStats get() = css.get()
+    override fun eval(doc: LTRDoc): Double = error("RRCountExpr has no inherent score.")
+    abstract fun count(doc: LTRDoc) : Int
+    abstract fun positions(doc: LTRDoc): PositionsIter
+    fun length(doc: LTRDoc) = doc.field(field).length
+    fun field(doc: LTRDoc) = doc.field(field)
+}
+
+class RRTermExpr(env: RREnv, val term: String, field: String, stats: CountStatsStrategy): RRCountExpr(env, field, stats) {
+    companion object {
+        val posCache = Caffeine.newBuilder().maximumSize(2000).build<RRTermCacheKey, IntArray>()
+    }
+    constructor(env: RREnv, term: String, field: String = env.defaultField) : this(env, term, field, RREnvStats(env, term, field))
+
+    override fun count(doc: LTRDoc) = doc.field(field).count(term)
+    override fun positions(doc: LTRDoc): PositionsIter {
+        val positions = posCache.get(RRTermCacheKey(term, field, doc.name)) { (mt, mf, _) ->
+            val vec = doc.field(mf).terms
+            vec.mapIndexedNotNull { i, t_i ->
+                if (t_i == mt) i else null
+            }.toIntArray()
+        } ?: intArrayOf()
+        return PositionsIter(positions)
+    }
+}
+
+fun RRBM25Term(env: RREnv, term: String, field: String = env.defaultField, b: Double = env.bm25b, k: Double = env.bm25k) = RRBM25Scorer(env, RRTermExpr(env, term, field), b, k)
+
+class RRBM25Scorer(env: RREnv, val term: RRCountExpr, val b: Double = env.bm25b, val k: Double = env.bm25k) : RRLeafExpr(env) {
+    private val avgDL = term.stats.avgDL();
+    private val idf = Math.log(term.stats.dc / (term.stats.df + 0.5))
 
     override fun eval(doc: LTRDoc): Double {
-        val field = doc.field(field)
-        val count = field.count(term).toDouble()
-        val length = field.length
+        val count = term.count(doc).toDouble()
+        val length = term.length(doc).toDouble()
         val num = count * (k+1.0)
         val denom = count + (k * (1.0 - b + (b * length / avgDL)))
         return idf * num / denom
