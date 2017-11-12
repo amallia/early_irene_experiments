@@ -41,9 +41,8 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is ConstBoolExpr -> if(q.x) ConstTrueNode(ctx.numDocs()) else ConstEvalNode(0)
 }
 
-fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
+fun approxStats(q: QExpr, method: String): CountStatsStrategy {
     if (q is OrderedWindowExpr || q is UnorderedWindowExpr) {
-        val method = ctx.env.estimateStats ?: return LazyCountStats(q.copy(), ctx.index)
         val cstats = q.children.map { c ->
             if (c is TextExpr) {
                 c.stats!!
@@ -56,6 +55,15 @@ fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
             "prob" -> ProbEstimatedCountStats(q.copy(), cstats)
             else -> TODO("estimateStats strategy = $method")
         }
+    } else {
+        TODO("approxStats($q)")
+    }
+}
+
+fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
+    if (q is OrderedWindowExpr || q is UnorderedWindowExpr) {
+        val method = ctx.env.estimateStats ?: return LazyCountStats(q.copy(), ctx.index)
+        return approxStats(q, method)
     } else {
         TODO("computeCountStats($q)")
     }

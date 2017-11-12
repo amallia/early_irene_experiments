@@ -3,10 +3,13 @@ package edu.umass.cics.ciir.iltr
 import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.irene.scoring.PositionsIter
+import edu.umass.cics.ciir.irene.scoring.approxStats
+import edu.umass.cics.ciir.irene.scoring.countOrderedWindows
+import edu.umass.cics.ciir.irene.scoring.countUnorderedWindows
 import edu.umass.cics.ciir.sprf.GExpr
-import edu.umass.cics.ciir.sprf.setf
 import org.lemurproject.galago.core.index.stats.FieldStatistics
 import org.lemurproject.galago.core.retrieval.LocalRetrieval
+import org.lemurproject.galago.utility.Parameters
 
 /**
  * @author jfoley
@@ -19,23 +22,23 @@ class RREnv(val retr: LocalRetrieval) {
     var absoluteDiscountingDelta = 0.7
     val lengths = retr.getCollectionStatistics(GExpr("lengths"))!!
     val lengthsInfo = HashMap<String, FieldStatistics>()
+    var estimateStats: String? = "min"
     private fun getFieldStats(field: String): FieldStatistics {
         return lengthsInfo.computeIfAbsent(field, {retr.getCollectionStatistics(GExpr("lengths", field))})
     }
 
-    fun getStats(term: String, field: String?=null): CountStats {
-        val fieldName = field ?: defaultField
-        val t = TextExpr(term, fieldName)
-        val node = GExpr("counts", t.text).apply { setf("field", fieldName) }
-        val stats = retr.getNodeStatistics(node)
-        val fstats = getFieldStats(fieldName)
-
-        return CountStats(t.toString(),
+    fun computeStats(q: QExpr): CountStats {
+        val field = q.getSingleField(defaultField)
+        val stats = retr.getNodeStatistics(retr.transformQuery(q.toGalago(), Parameters.create()))
+        val fstats = getFieldStats(field)
+        return CountStats(q.toString(),
                 cf=stats.nodeFrequency,
                 df=stats.nodeDocumentCount,
                 dc=fstats.documentCount,
                 cl=fstats.collectionLength)
+
     }
+    fun getStats(term: String, field: String?=null): CountStats =  computeStats(TextExpr(term, field ?: defaultField))
 
     fun mean(exprs: List<RRExpr>) = RRMean(this, exprs)
     fun mean(vararg exprs: RRExpr) = RRMean(this, exprs.toList())
@@ -49,8 +52,20 @@ class RREnv(val retr: LocalRetrieval) {
     fun mult(vararg exprs: RRExpr) = RRMult(this, exprs.toList())
     fun const(x: Double) = RRConst(this, x)
 
+    fun statsComputation(q: QExpr): CountStatsStrategy {
+        if (q is OrderedWindowExpr || q is UnorderedWindowExpr) {
+            if (estimateStats == null || estimateStats == "exact") {
+                return RREnvLazyStats(this, q.copy())
+            } else {
+                return approxStats(q, estimateStats!!)
+            }
+        } else {
+            TODO("statsComputation($q)")
+        }
+    }
+
     fun fromQExpr(q: QExpr): RRExpr = when(q) {
-        is TextExpr -> RRTermExpr(this, q.text, q.field!!)
+        is TextExpr -> RRTermExpr(this, q.text, q.field ?: defaultField)
         is LuceneExpr -> error("Can't support LuceneExpr.")
         is SynonymExpr -> TODO()
         is AndExpr -> TODO()
@@ -61,8 +76,14 @@ class RREnv(val retr: LocalRetrieval) {
         })
         is MultExpr -> RRMult(this, q.children.map { fromQExpr(it) })
         is MaxExpr -> RRMax(this, q.children.map { fromQExpr(it) })
-        is OrderedWindowExpr -> TODO()
-        is UnorderedWindowExpr -> TODO()
+        is OrderedWindowExpr -> RROrderedWindow(this,
+                q.children.map { fromQExpr(it) as RRCountExpr},
+                q.step,
+                statsComputation(q))
+        is UnorderedWindowExpr -> RRUnorderedWindow(this,
+                q.children.map { fromQExpr(it) as RRCountExpr},
+                q.width,
+                statsComputation(q))
         is WeightExpr -> RRWeighted(this, q.weight, fromQExpr(q.child))
         is DirQLExpr -> RRDirichletScorer(this, fromQExpr(q.child) as RRCountExpr, q.mu ?: mu)
         is BM25Expr -> RRBM25Scorer(this, fromQExpr(q.child) as RRCountExpr, q.b ?: bm25b, q.k ?: bm25k)
@@ -177,6 +198,10 @@ class RREnvStats(env: RREnv, val term: String, val field: String) : CountStatsSt
     val stats = env.getStats(term, field)
     override fun get(): CountStats = stats
 }
+class RREnvLazyStats(env: RREnv, val q: QExpr) : CountStatsStrategy() {
+    val stats: CountStats by lazy { env.computeStats(q) }
+    override fun get(): CountStats = stats
+}
 sealed class RRCountExpr(env: RREnv, val field: String, val css: CountStatsStrategy) : RRExpr(env) {
     val stats: CountStats get() = css.get()
     override fun eval(doc: LTRDoc): Double = error("RRCountExpr has no inherent score.")
@@ -192,6 +217,7 @@ class RRTermExpr(env: RREnv, val term: String, field: String, stats: CountStatsS
     }
     constructor(env: RREnv, term: String, field: String = env.defaultField) : this(env, term, field, RREnvStats(env, term, field))
 
+    override fun toString() = "$term.$field $stats"
     override fun count(doc: LTRDoc) = doc.field(field).count(term)
     override fun positions(doc: LTRDoc): PositionsIter {
         val positions = posCache.get(RRTermCacheKey(term, field, doc.name)) { (mt, mf, _) ->
@@ -290,4 +316,27 @@ class RRLogLogisticTFScore(env: RREnv, val term: String, val field: String = env
         val t = tf * Math.log(1.0 + c * lengthRatio)
         return Math.log((t + lambda_w) / lambda_w)
     }
+}
+
+class RROrderedWindow(env: RREnv, val terms: List<RRCountExpr>, val step: Int = 1, stats: CountStatsStrategy) : RRCountExpr(env, terms.map { it.field }.first(), stats) {
+    init {
+        assert(terms.map { it.field }.toSet().size == 1) { "Should only be a single field! ${terms}" }
+    }
+    override fun count(doc: LTRDoc): Int {
+        val min = terms.lazyIntMin { it.count(doc) }!!
+        if (min == 0) return 0
+        return countOrderedWindows(terms.map { it.positions(doc) }, step)
+    }
+    override fun positions(doc: LTRDoc): PositionsIter = error("Not implemented for now.")
+}
+class RRUnorderedWindow(env: RREnv, val terms: List<RRCountExpr>, val window: Int = 8, stats: CountStatsStrategy) : RRCountExpr(env, terms.map { it.field }.first(), stats) {
+    init {
+        assert(terms.map { it.field }.toSet().size == 1) { "Should only be a single field! ${terms}" }
+    }
+    override fun count(doc: LTRDoc): Int {
+        val min = terms.lazyIntMin { it.count(doc) }!!
+        if (min == 0) return 0
+        return countUnorderedWindows(terms.map { it.positions(doc) }, window)
+    }
+    override fun positions(doc: LTRDoc): PositionsIter = error("Not implemented for now.")
 }

@@ -1,9 +1,6 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.irene.GenericTokenizer
-import edu.umass.cics.ciir.irene.IreneQueryLanguage
-import edu.umass.cics.ciir.irene.QueryLikelihood
-import edu.umass.cics.ciir.irene.WhitespaceTokenizer
+import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.*
 import gnu.trove.map.hash.TObjectDoubleHashMap
 import gnu.trove.map.hash.TObjectIntHashMap
@@ -193,7 +190,8 @@ fun main(args: Array<String>) {
                         Pair("LM-dir", QueryLikelihood(q.qterms).toRRExpr(env)),
                         Pair("LM-abs", env.mean(q.qterms.map { RRAbsoluteDiscounting(env, it) })),
                         Pair("docinfo", RRDocInfoQuotient(env)),
-                        //Pair("sdm", SequentialDependenceModel(q.qterms).toRRExpr(env)),
+                        Pair("sdm", SequentialDependenceModel(q.qterms).toRRExpr(env)),
+                        Pair("sdm-stop", SequentialDependenceModel(q.qterms, stopwords=inqueryStop).toRRExpr(env)),
                         Pair("avgwl", RRAvgWordLength(env)),
                         Pair("docl", RRDocLength(env)),
                         Pair("meantp", env.mean(q.qterms.map { RRTermPosition(env, it) })),

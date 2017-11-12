@@ -1,6 +1,8 @@
 package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.iltr.LTRDoc
+import edu.umass.cics.ciir.iltr.RREnv
+import edu.umass.cics.ciir.iltr.toRRExpr
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.GDoc
 import edu.umass.cics.ciir.sprf.GExpr
@@ -51,6 +53,7 @@ class CommonTestIndexes : Closeable {
 
     lateinit var irene: IreneIndex
     lateinit var galago: LocalRetrieval
+    lateinit var env: RREnv
     init {
         val params = IndexParams().apply {
             inMemory()
@@ -89,6 +92,8 @@ class CommonTestIndexes : Closeable {
             writer.commit()
             irene = writer.open()
             galago = LocalRetrieval(gMemIndex)
+            env = RREnv(galago)
+            env.estimateStats = "exact"
         }
     }
 
@@ -287,6 +292,37 @@ class ScoringTest {
                 addChild(GExpr.Text(t3))
             }
             cmpResults("sdm($t1, $t2, NULL)", gq, iq, index)
+        }
+    }
+
+    @Test
+    fun testEquivRRSDM() {
+        val index = resource.index!!
+
+        index.forEachTermPair { t1, t2 ->
+            val t3 = "NEVER_GONNA_HAPPEN"
+            val iq = SequentialDependenceModel(listOf(t1, t2, t3))
+            // score everything no matter what:
+            val gres = index.galago.transformAndExecuteQuery(iq.toGalago(), pmake {
+                set("annotate", true)
+                set("requested", index.ND)
+                set("working", index.names)
+            })
+            val gTruth = gres.scoredDocuments.associate { Pair(it.name, it) }
+
+            val rrExpr = iq.toRRExpr(index.env)
+            val rrScores = index.ltrIndex.associate { Pair(it.name, rrExpr.eval(it)) }
+
+            Assert.assertEquals(rrScores.size, gTruth.size)
+            index.names.forEach { name ->
+                val sameDoc = gTruth[name]!!
+                val expected = sameDoc.score
+                val actual = rrScores[name]!!
+                dblEquals(expected, actual) {
+                    println("$name")
+                    println(sameDoc.annotation)
+                }
+            }
         }
     }
 }

@@ -39,6 +39,16 @@ class LazyCountStats(val expr: QExpr, val index: IreneIndex) : CountStatsStrateg
     private val stats: CountStats by lazy { index.getStats(expr)!! }
     override fun get(): CountStats = stats
 }
+inline fun <T> List<T>.lazyIntMin(func: (T)->Int): Int? {
+    var curMin: Int? = null
+    for (x in this) {
+        val cur = func(x)
+        if (curMin == null || (curMin > cur)) {
+            curMin = cur
+        }
+    }
+    return curMin
+}
 inline fun <T> List<T>.lazyMinAs(func: (T)->Long): Long? {
     var curMin: Long? = null
     for (x in this) {

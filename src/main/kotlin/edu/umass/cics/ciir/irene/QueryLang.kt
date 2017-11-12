@@ -118,6 +118,24 @@ sealed class QExpr {
         children.forEach { it.visit(each) }
     }
 
+    fun getFields(): Set<String> {
+        val out = HashSet<String>()
+        visit { c ->
+            if (c is TextExpr) {
+                c.field?.let { out.add(it) }
+            }
+        }
+        return out
+    }
+    fun getSingleField(default: String): String {
+        val fields = getFields()
+        return when(fields.size) {
+            0 -> default
+            1 -> fields.first()
+            else -> error("Can't determine single field for $this")
+        }
+    }
+
     // Get a weighted version of this node if weight is non-null.
     fun weighted(x: Double?) = if(x != null) WeightExpr(this, x) else this
 }
