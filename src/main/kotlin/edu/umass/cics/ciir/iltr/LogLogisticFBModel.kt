@@ -8,11 +8,8 @@ import edu.umass.cics.ciir.chai.push
 import edu.umass.cics.ciir.dbpedia.normalize
 import edu.umass.cics.ciir.irene.AndExpr
 import edu.umass.cics.ciir.irene.TextExpr
-import edu.umass.cics.ciir.irene.toGalago
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.GExpr
 import edu.umass.cics.ciir.sprf.getEvaluators
-import edu.umass.cics.ciir.sprf.pmake
 import org.lemurproject.galago.utility.Parameters
 import java.util.*
 import kotlin.collections.HashMap
@@ -32,16 +29,14 @@ fun computePMI(env: RREnv, w1: String, w2: String): Double {
 
     val denom = env.getStats(w1).binaryProbability() * env.getStats(w2).binaryProbability()
 
-    val isectQ = GExpr("bool-to-count").apply {
-        addChild(AndExpr(listOf(TextExpr(w1, w2))).toGalago())
-    }
-
+    val isectQ = AndExpr(listOf(TextExpr(w1, w2)))
     if (msg.ready()) {
         println("\t\t\tcomputePMI $w1 $w2")
     }
 
-    val isectStats = env.retr.getNodeStatistics(env.retr.transformQuery(isectQ, pmake {}))
-    val p = isectStats.nodeDocumentCount.toDouble() / env.lengths.documentCount.toDouble()
+    val isectStats = env.computeStats(isectQ)
+
+    val p = isectStats.binaryProbability()
 
     return p * Math.log(p / denom)
 }
@@ -73,7 +68,7 @@ fun main(args: Array<String>) {
     val pmiCache = Caffeine.newBuilder().maximumSize(100_000).build<Pair<String,String>, Double>()
 
     dataset.getIndex().use { retr ->
-        val env = RREnv(retr)
+        val env = RRGalagoEnv(retr)
         val computePMI: (Pair<String,String>)->Double = { (w1, w2) ->
             computePMI(env, w1, w2)
         }

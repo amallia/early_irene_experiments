@@ -7,12 +7,6 @@ import edu.umass.cics.ciir.sprf.getEvaluators
 import edu.umass.cics.ciir.sprf.inqueryStop
 import org.lemurproject.galago.utility.Parameters
 
-inline fun <T> List<T>.forEachSeqPair(fn: (T,T)->Unit) {
-    (0 until this.size-1).forEach { i ->
-        fn(this[i], this[i+1])
-    }
-}
-
 fun <T> Map<T, Double>.normalize(): Map<T, Double> {
     val norm = this.values.sum()
     return this.mapValues { (_,v) -> v/norm }
@@ -57,7 +51,7 @@ fun main(args: Array<String>) {
 
     val model = argp.get("model", "avgl_fsdm")
     val avgDLMu = argp.get("avgDLMu", false)
-    val defaultMu = argp.get("mu", 7000.0)
+    val defaultMu = argp.get("defaultDirichletMu", 7000.0)
     val depth = argp.get("depth", 100)
     val stopwords: Set<String> = if (argp.get("stopSDM", true)) { inqueryStop } else { emptySet() }
 

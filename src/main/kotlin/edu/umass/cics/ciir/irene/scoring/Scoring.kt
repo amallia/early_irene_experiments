@@ -334,9 +334,9 @@ private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: 
         val c = child.count(doc)
         val length = child.length(doc)
         if (c > 0) {
-            return Explanation.match(score(doc), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. ${child.getCountStats()}", listOf(child.explain(doc)))
+            return Explanation.match(score(doc), "$c/$length with defaultDirichletMu=$mu, bg=$background dirichlet smoothing. ${child.getCountStats()}", listOf(child.explain(doc)))
         } else {
-            return Explanation.noMatch("score=${score(doc)} or $c/$length with mu=$mu, bg=$background dirichlet smoothing ${child.getCountStats()} ${child.getCountStats().nonzeroCountProbability()}.", listOf(child.explain(doc)))
+            return Explanation.noMatch("score=${score(doc)} or $c/$length with defaultDirichletMu=$mu, bg=$background dirichlet smoothing ${child.getCountStats()} ${child.getCountStats().nonzeroCountProbability()}.", listOf(child.explain(doc)))
         }
     }
 }

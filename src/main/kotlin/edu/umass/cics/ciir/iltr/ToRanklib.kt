@@ -23,7 +23,16 @@ class FeatureStats {
 
     fun normalize(y: Double): Double {
         if (count == 0) return y
+        if (min == max) return y
         return (y - min) / (max - min)
+    }
+}
+
+fun shouldNormalize(f: String): Boolean {
+    val nonFieldName = f.substringAfter(":", f)
+    return when (nonFieldName) {
+        "qlen", "qstop", "docinfo", "avgwl", "docl", "jaccard-stop", "length" -> false
+        else -> true
     }
 }
 
@@ -31,19 +40,28 @@ class FeatureStats {
  * @author jfoley
  */
 fun main(args: Array<String>) {
-    val input = "robust.features.jsonl.gz"
-    val output = "robust.features.ranklib"
+    val argp = Parameters.parseArgs(args);
+    val dataset = argp.get("dataset", "wt10g")
+    val input = "l2rf/$dataset.features.jsonl.gz"
+    val output = "l2rf/$dataset.features.ranklib"
 
     val fstats = HashMap<Pair<String, String>, FeatureStats>()
     StreamCreator.openInputStream(input).reader().useLines { lines ->
+        var index = 0
         lines.forEach { line ->
-            val instance = Parameters.parseStringOrDie(line)
-            val qid = instance.getStr("qid")
-            val features = instance.getMap("features")
-            features.keys.forEach { fname ->
-                fstats
-                        .computeIfAbsent(Pair(qid, fname), { FeatureStats() })
-                        .push(features.getDouble(fname))
+            try {
+                val instance = Parameters.parseStringOrDie(line)
+                index++
+                val qid = instance.getStr("qid")
+                val features = instance.getMap("features")
+                features.keys.forEach { fname ->
+                    fstats
+                            .computeIfAbsent(Pair(qid, fname), { FeatureStats() })
+                            .push(features.getDouble(fname))
+                }
+            } catch (e: Exception) {
+                println("$index: $input: ")
+                e.printStackTrace()
             }
         }
     }
@@ -59,7 +77,7 @@ fun main(args: Array<String>) {
         out.println(Parameters.wrap(fmap).toPrettyString())
     }
 
-    StreamCreator.openOutputStream("$output").printer().use { out ->
+    StreamCreator.openOutputStream(output).printer().use { out ->
         StreamCreator.openInputStream(input).reader().useLines { lines ->
             lines.forEach { line ->
                 val instance = Parameters.parseStringOrDie(line)
@@ -70,7 +88,13 @@ fun main(args: Array<String>) {
 
                 val pt = features.keys.associate { fname ->
                     val fid = fmap[fname]!!
-                    val fval = fstats[Pair(qid, fname)]!!.normalize(features.getDouble(fname))
+                    val rawVal = features.get(name) as Double?;
+                    val fval = if (shouldNormalize(fname)) {
+                        if (rawVal == null) 0.0 else {
+                            val stats = fstats[Pair(qid, name)]
+                            stats!!.normalize(rawVal)
+                        }
+                    } else rawVal ?: 0.0
                     Pair(fid, fval)
                 }.toSortedMap().entries
                         .joinToString(

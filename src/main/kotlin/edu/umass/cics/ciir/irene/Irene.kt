@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.irene
 
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
+import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.irene.scoring.IreneQueryModel
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper
@@ -87,15 +88,43 @@ class IreneIndexer(val params: IndexParams) : Closeable {
     fun open() = IreneIndex(dest, params)
 }
 
-class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
+interface IIndex : Closeable {
+    val tokenizer: GenericTokenizer
+    val defaultField: String
+    val totalDocuments: Int
+    fun getRREnv(): RREnv
+    fun getStats(expr: QExpr): CountStats?
+    fun getStats(text: String, field: String = defaultField): CountStats? = getStats(Term(field, text))
+    fun getStats(term: Term): CountStats?
+    fun tokenize(text: String, field: String=defaultField) = tokenizer.tokenize(text, field)
+    fun toTextExprs(text: String, field: String = defaultField): List<TextExpr> = tokenize(text, field).map { TextExpr(it, field) }
+    fun search(q: QExpr, n: Int): TopDocs
+}
+class EmptyIndex(override val tokenizer: GenericTokenizer = WhitespaceTokenizer()) : IIndex {
+    override val defaultField: String = "missing"
+    override val totalDocuments: Int = 0
+    override fun getStats(expr: QExpr): CountStats = CountStats("EmptyIndex($expr)")
+    override fun getStats(term: Term): CountStats = CountStats("EmptyIndex($term)")
+    override fun close() { }
+    override fun search(q: QExpr, n: Int): TopDocs = TopDocs(0L, emptyArray(), -Float.MAX_VALUE)
+    override fun getRREnv(): RREnv = error("No RREnv for EmptyIndex.")
+}
+
+class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
     constructor(params: IndexParams) : this(params.directory!!, params)
     val jobPool = ForkJoinPool.commonPool()
-    val defaultField = params.defaultField
     val idFieldName = params.idFieldName
     val reader = DirectoryReader.open(io.open().use())
     val searcher = IndexSearcher(reader, jobPool)
     val analyzer = params.analyzer
-    val env = IreneQueryLanguage()
+    val env = IreneQueryLanguage(this).apply {
+        defaultField = params.defaultField
+    }
+    override val tokenizer: LuceneTokenizer = LuceneTokenizer(analyzer)
+    override val defaultField: String get() = env.defaultField
+    override val totalDocuments: Int get() = reader.numDocs()
+    override fun getRREnv(): RREnv = env
+
     private val termStatsCache: Cache<Term, CountStats> = Caffeine.newBuilder().maximumSize(100_000).build()
     private val exprStatsCache = Caffeine.newBuilder().maximumSize(100_000).build<QExpr, ForkJoinTask<CountStats>>()
 
@@ -124,7 +153,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
     fun terms(doc: Int, field: String): List<String> {
         val text = getField(doc, field)?.stringValue()
         if (text == null) return emptyList()
-        return analyzer.tokenize(field, text)
+        return tokenize(text, field)
     }
 
     fun getAverageDL(field: String): Double {
@@ -134,28 +163,25 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : Closeable {
 
     fun fieldStats(field: String): CountStats? = CalculateStatistics.fieldStats(searcher, field)
 
-    fun getStats(text: String, field: String = defaultField): CountStats? = getStats(Term(field, text))
-    fun getStats(term: Term): CountStats? {
+    override fun getStats(term: Term): CountStats? {
         return termStatsCache.get(term, {CalculateStatistics.lookupTermStatistics(searcher, it)}) ?: CalculateStatistics.fieldStats(searcher, term.field())
     }
-    fun getStats(expr: QExpr): CountStats? = getExprStats(expr)?.join()
+    override fun getStats(expr: QExpr): CountStats? = getExprStats(expr)?.join()
 
     private fun prepare(expr: QExpr): IreneQueryModel = IreneQueryModel(this, this.env, expr)
 
-    fun getExprStats(expr: QExpr): ForkJoinTask<CountStats>? {
+    private fun getExprStats(expr: QExpr): ForkJoinTask<CountStats>? {
         return exprStatsCache.get(expr, { missing ->
             val func: ()->CountStats = {CalculateStatistics.computeQueryStats(searcher, prepare(missing))}
             jobPool.submit(func)
         })
     }
 
-    fun search(q: QExpr, n: Int): TopDocs {
+    override fun search(q: QExpr, n: Int): TopDocs {
         return searcher.search(prepare(q), n)!!
     }
 
-    fun tokenize(text: String, field: String=defaultField) = this.analyzer.tokenize(field, text)
     fun explain(q: QExpr, doc: Int): Explanation = searcher.explain(prepare(q), doc)
-    val totalDocuments: Int = reader.numDocs()
 }
 
 

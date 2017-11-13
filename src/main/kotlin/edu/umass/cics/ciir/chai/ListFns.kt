@@ -26,3 +26,16 @@ inline fun <T> List<T>.meanByDouble(mapper: (T)->Double): Double {
     if (this.size == 1) return mapper(this[0])
     return this.sumByDouble { mapper(it) } / this.size.toDouble()
 }
+
+inline fun <T> List<T>.forEachSeqPair(fn: (T,T)->Unit) {
+    (0 until this.size-1).forEach { i ->
+        fn(this[i], this[i+1])
+    }
+}
+inline fun <T> List<T>.forAllPairs(fn: (T,T)->Unit) {
+    (0 until this.size-1).forEach { i ->
+        (i until this.size).forEach { j ->
+            fn(this[i], this[j])
+        }
+    }
+}

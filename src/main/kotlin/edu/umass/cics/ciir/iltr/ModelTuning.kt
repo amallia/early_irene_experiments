@@ -31,7 +31,7 @@ inline fun <P : HyperParam> kCrossFoldValidate(dsName: String, showTest: Boolean
     }
 
     dataset.getIndex().use { index ->
-        val env = RREnv(index)
+        val env = RRGalagoEnv(index)
         forEachQuery(dsName) { q ->
             println("${q.qid} ${q.qterms}")
             val queryJudgments = qrels[q.qid]!!

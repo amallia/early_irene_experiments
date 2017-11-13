@@ -3,99 +3,8 @@ package edu.umass.cics.ciir.iltr
 import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.irene.scoring.PositionsIter
-import edu.umass.cics.ciir.irene.scoring.approxStats
 import edu.umass.cics.ciir.irene.scoring.countOrderedWindows
 import edu.umass.cics.ciir.irene.scoring.countUnorderedWindows
-import edu.umass.cics.ciir.sprf.GExpr
-import org.lemurproject.galago.core.index.stats.FieldStatistics
-import org.lemurproject.galago.core.retrieval.LocalRetrieval
-import org.lemurproject.galago.utility.Parameters
-
-/**
- * @author jfoley
- */
-class RREnv(val retr: LocalRetrieval) {
-    var defaultField = "document"
-    var mu = 1500.0
-    var bm25b = 0.75
-    var bm25k = 1.2
-    var absoluteDiscountingDelta = 0.7
-    val lengths = retr.getCollectionStatistics(GExpr("lengths"))!!
-    val lengthsInfo = HashMap<String, FieldStatistics>()
-    var estimateStats: String? = "min"
-    private fun getFieldStats(field: String): FieldStatistics {
-        return lengthsInfo.computeIfAbsent(field, {retr.getCollectionStatistics(GExpr("lengths", field))})
-    }
-
-    fun computeStats(q: QExpr): CountStats {
-        val field = q.getSingleField(defaultField)
-        val stats = retr.getNodeStatistics(retr.transformQuery(q.toGalago(), Parameters.create()))
-        val fstats = getFieldStats(field)
-        return CountStats(q.toString(),
-                cf=stats.nodeFrequency,
-                df=stats.nodeDocumentCount,
-                dc=fstats.documentCount,
-                cl=fstats.collectionLength)
-
-    }
-    fun getStats(term: String, field: String?=null): CountStats =  computeStats(TextExpr(term, field ?: defaultField))
-
-    fun mean(exprs: List<RRExpr>) = RRMean(this, exprs)
-    fun mean(vararg exprs: RRExpr) = RRMean(this, exprs.toList())
-    fun sum(exprs: List<RRExpr>) = RRSum(this, exprs)
-    fun sum(vararg exprs: RRExpr) = RRSum(this, exprs.toList())
-    fun term(term: String) = RRDirichletTerm(this, term)
-    fun feature(name: String) = RRFeature(this, name)
-
-    fun ql(terms: List<String>) = mean(terms.map { RRDirichletTerm(this, it) })
-    fun bm25(terms: List<String>) = sum(terms.map { RRBM25Term(this, it) })
-    fun mult(vararg exprs: RRExpr) = RRMult(this, exprs.toList())
-    fun const(x: Double) = RRConst(this, x)
-
-    fun statsComputation(q: QExpr): CountStatsStrategy {
-        if (q is OrderedWindowExpr || q is UnorderedWindowExpr) {
-            if (estimateStats == null || estimateStats == "exact") {
-                return RREnvLazyStats(this, q.copy())
-            } else {
-                return approxStats(q, estimateStats!!)
-            }
-        } else {
-            TODO("statsComputation($q)")
-        }
-    }
-
-    fun fromQExpr(q: QExpr): RRExpr = when(q) {
-        is TextExpr -> RRTermExpr(this, q.text, q.field ?: defaultField)
-        is LuceneExpr -> error("Can't support LuceneExpr.")
-        is SynonymExpr -> TODO()
-        is AndExpr -> TODO()
-        is OrExpr -> TODO()
-        // make sum of weighted:
-        is CombineExpr -> sum(q.children.zip(q.weights).map { (child, weight) ->
-            fromQExpr(child).weighted(weight)
-        })
-        is MultExpr -> RRMult(this, q.children.map { fromQExpr(it) })
-        is MaxExpr -> RRMax(this, q.children.map { fromQExpr(it) })
-        is OrderedWindowExpr -> RROrderedWindow(this,
-                q.children.map { fromQExpr(it) as RRCountExpr},
-                q.step,
-                statsComputation(q))
-        is UnorderedWindowExpr -> RRUnorderedWindow(this,
-                q.children.map { fromQExpr(it) as RRCountExpr},
-                q.width,
-                statsComputation(q))
-        is WeightExpr -> RRWeighted(this, q.weight, fromQExpr(q.child))
-        is DirQLExpr -> RRDirichletScorer(this, fromQExpr(q.child) as RRCountExpr, q.mu ?: mu)
-        is BM25Expr -> RRBM25Scorer(this, fromQExpr(q.child) as RRCountExpr, q.b ?: bm25b, q.k ?: bm25k)
-        is CountToScoreExpr -> TODO()
-        is BoolToScoreExpr -> TODO()
-        is CountToBoolExpr -> TODO()
-        is RequireExpr -> TODO()
-        is ConstScoreExpr -> RRConst(this, q.x)
-        is ConstCountExpr -> RRConst(this, q.x.toDouble())
-        is ConstBoolExpr -> RRConst(this, if (q.x) 1.0 else 0.0)
-    }
-}
 
 fun QExpr.toRRExpr(env: RREnv): RRExpr {
     val q = simplify(this)
@@ -161,8 +70,8 @@ class RRMult(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
 }
 
 sealed class RRLeafExpr(env: RREnv) : RRExpr(env)
-fun RRDirichletTerm(env: RREnv, term: String, field: String = env.defaultField, mu: Double = env.mu) = RRDirichletScorer(env, RRTermExpr(env, term, field), mu)
-class RRDirichletScorer(env: RREnv, val term: RRCountExpr, var mu: Double = env.mu) : RRLeafExpr(env) {
+fun RRDirichletTerm(env: RREnv, term: String, field: String = env.defaultField, mu: Double = env.defaultDirichletMu) = RRDirichletScorer(env, RRTermExpr(env, term, field), mu)
+class RRDirichletScorer(env: RREnv, val term: RRCountExpr, var mu: Double = env.defaultDirichletMu) : RRLeafExpr(env) {
     private val bg = mu * term.stats.nonzeroCountProbability()
     override fun eval(doc: LTRDoc): Double {
         val count = term.count(doc).toDouble()
@@ -171,7 +80,7 @@ class RRDirichletScorer(env: RREnv, val term: RRCountExpr, var mu: Double = env.
     }
     override fun toString(): String = "RRDirichletScorer($term)"
 }
-fun RRAbsoluteDiscounting(env: RREnv, term: String,  field: String = env.defaultField, delta: Double = env.absoluteDiscountingDelta) = RRAbsoluteDiscountingScorer(env, RRTermExpr(env, term, field), delta)
+fun RRAbsoluteDiscounting(env: RREnv, term: String, field: String = env.defaultField, delta: Double = env.absoluteDiscountingDelta) = RRAbsoluteDiscountingScorer(env, RRTermExpr(env, term, field), delta)
 class RRAbsoluteDiscountingScorer(env: RREnv, val term: RRCountExpr, var delta: Double = env.absoluteDiscountingDelta) : RRLeafExpr(env) {
     val bg = term.stats.nonzeroCountProbability()
     override fun eval(doc: LTRDoc): Double {
@@ -230,9 +139,9 @@ class RRTermExpr(env: RREnv, val term: String, field: String, stats: CountStatsS
     }
 }
 
-fun RRBM25Term(env: RREnv, term: String, field: String = env.defaultField, b: Double = env.bm25b, k: Double = env.bm25k) = RRBM25Scorer(env, RRTermExpr(env, term, field), b, k)
+fun RRBM25Term(env: RREnv, term: String, field: String = env.defaultField, b: Double = env.defaultBM25b, k: Double = env.defaultBM25k) = RRBM25Scorer(env, RRTermExpr(env, term, field), b, k)
 
-class RRBM25Scorer(env: RREnv, val term: RRCountExpr, val b: Double = env.bm25b, val k: Double = env.bm25k) : RRLeafExpr(env) {
+class RRBM25Scorer(env: RREnv, val term: RRCountExpr, val b: Double = env.defaultBM25b, val k: Double = env.defaultBM25k) : RRLeafExpr(env) {
     private val avgDL = term.stats.avgDL();
     private val idf = Math.log(term.stats.dc / (term.stats.df + 0.5))
 

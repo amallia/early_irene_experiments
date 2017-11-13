@@ -1,9 +1,9 @@
 package edu.umass.cics.ciir.irene
 
-import edu.umass.cics.ciir.dbpedia.forEachSeqPair
+import edu.umass.cics.ciir.chai.forAllPairs
+import edu.umass.cics.ciir.chai.forEachSeqPair
+import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.sprf.pmake
-import org.apache.lucene.analysis.Analyzer
-import org.apache.lucene.analysis.core.WhitespaceAnalyzer
 import org.apache.lucene.index.Term
 import org.apache.lucene.queryparser.classic.QueryParser
 import org.lemurproject.galago.utility.Parameters
@@ -15,16 +15,14 @@ typealias LuceneQuery = org.apache.lucene.search.Query
  *
  * @author jfoley.
  */
-class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
-    var defaultField = "body"
-    var defaultScorer = "dirichlet"
-    var luceneQueryParser = QueryParser(defaultField, analyzer)
-    var defaultDirichletMu: Double = 1500.0
-    var defaultBM25b: Double = 0.75
-    var defaultBM25k: Double = 1.2
-    var estimateStats: String? = null
+class IreneQueryLanguage(val index: IIndex = EmptyIndex()) : RREnv() {
+    override fun computeStats(q: QExpr): CountStats = index.getStats(q)!!
+    override fun getStats(term: String, field: String?): CountStats = index.getStats(term, field ?: defaultField)!!
 
-    fun toTextExprs(text: String, field: String = defaultField): List<TextExpr> = analyzer.tokenize(field, text).map { TextExpr(it, field) }
+    var defaultScorer = "dirichlet"
+    val luceneQueryParser: QueryParser
+        get() = QueryParser(defaultField, (index as IreneIndex).analyzer)
+    override var estimateStats: String? = null
 
     fun prepare(index: IreneIndex, q: QExpr): QExpr {
         val pq = simplify(q)
@@ -57,8 +55,6 @@ class IreneQueryLanguage(val analyzer: Analyzer = WhitespaceAnalyzer()) {
         result = 31 * result + defaultBM25k.hashCode()
         return result
     }
-
-
 }
 
 fun simplify(q: QExpr): QExpr {
@@ -107,6 +103,42 @@ fun SequentialDependenceModel(terms: List<String>, field: String?=null, stopword
 
     return SumExpr(exprs)
 }
+
+fun FullDependenceModel(terms: List<String>, field: String?=null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, fullProx: Double? = null, fullProxWidth:Int=12, makeScorer: (QExpr)->QExpr = {DirQLExpr(it)}): QExpr {
+    if (terms.isEmpty()) throw IllegalStateException("Empty FDM")
+    if (terms.size == 1) {
+        return makeScorer(TextExpr(terms[0], field))
+    }
+
+    val nonStop = terms.filterNot { stopwords.contains(it) }
+    val bestTerms = (if (nonStop.isNotEmpty()) { nonStop } else terms)
+    val unigrams: List<QExpr> = bestTerms
+            .map { makeScorer(TextExpr(it, field)) }
+
+    val bigrams = ArrayList<QExpr>()
+    val ubigrams = ArrayList<QExpr>()
+    terms.forAllPairs { lhs, rhs ->
+        val ts = listOf(lhs, rhs).map { TextExpr(it, field) }
+        bigrams.add(makeScorer(OrderedWindowExpr(ts, odStep)))
+    }
+    bestTerms.forAllPairs { lhs, rhs ->
+        val ts = listOf(lhs, rhs).map { TextExpr(it, field) }
+        ubigrams.add(makeScorer(UnorderedWindowExpr(ts, uwWidth)))
+    }
+
+    val exprs = arrayListOf(
+            MeanExpr(unigrams).weighted(uniW),
+            MeanExpr(bigrams).weighted(odW),
+            MeanExpr(ubigrams).weighted(uwW))
+
+    if (fullProx != null) {
+        val fullProxTerms = if (bestTerms.size >= 2) bestTerms else terms
+        exprs.add(makeScorer(UnorderedWindowExpr(fullProxTerms.map { TextExpr(it, field) }, fullProxWidth)).weighted(fullProx))
+    }
+
+    return SumExpr(exprs)
+}
+
 
 sealed class QExpr {
     abstract val children: List<QExpr>
@@ -262,7 +294,7 @@ fun toJSON(q: QExpr): Parameters = when(q) {
     }
     is DirQLExpr -> pmake {
         set("op", "dirichlet")
-        putIfNotNull("mu", q.mu)
+        putIfNotNull("defaultDirichletMu", q.mu)
         set("child", toJSON(q.child))
     }
     is BM25Expr -> pmake {

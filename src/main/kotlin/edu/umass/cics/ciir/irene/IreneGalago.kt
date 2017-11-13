@@ -88,7 +88,7 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
         is DirQLExpr -> GExpr("dirichlet").apply {
             addChild(createLengths(q.child))
             addChild(toGalagoRecursive(q.child))
-            setf("mu", q.mu)
+            setf("defaultDirichletMu", q.mu)
         }
         is BM25Expr -> GExpr("bm25").apply {
             // LENGTHS MUST BE FIRST.

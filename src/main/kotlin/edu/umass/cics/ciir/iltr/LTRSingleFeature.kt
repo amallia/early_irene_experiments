@@ -2,7 +2,6 @@ package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.*
-import gnu.trove.map.hash.TObjectDoubleHashMap
 import gnu.trove.map.hash.TObjectIntHashMap
 import org.lemurproject.galago.core.eval.EvalDoc
 import org.lemurproject.galago.core.eval.QueryJudgments
@@ -23,18 +22,43 @@ class LTRDocByFeature(private val feature: String, val doc: LTRDoc, rank: Int, s
     constructor(feature: String, doc: LTRDoc) : this(feature, doc, -1, doc.features[feature]!!)
 }
 
-data class LTRDocField(val name: String, val text: String, private val tokenizer: GenericTokenizer = WhitespaceTokenizer()) {
-    val terms: List<String> by lazy { tokenizer.tokenize(text, name) }
-    val freqs: BagOfWords by lazy { BagOfWords(terms) }
-    fun toEntry() = Pair(name, this)
-    val length: Int get() = terms.size
-    val uniqTerms: Int get() = freqs.counts.size()
-    fun count(term: String): Int = freqs.count(term)
-    val termSet: Set<String> get() = freqs.counts.keySet()
+
+interface ILTRDocField {
+    val name: String
+    val text: String
+    val tokenizer: GenericTokenizer
+    val terms: List<String>
+    val freqs: BagOfWords
+    val length: Int
+    val uniqTerms: Int
+    val termSet: Set<String>
+    fun toEntry(): Pair<String, ILTRDocField> = Pair(name, this)
+    fun count(term: String): Int
 }
 
-data class LTRDoc(val name: String, val features: HashMap<String, Double>, val rank: Int, val fields: HashMap<String,LTRDocField>, var defaultField: String = "document") {
-    fun field(field: String): LTRDocField = fields[field] ?: error("No such field: $field in $this.")
+data class LTREmptyDocField(override val name: String) : ILTRDocField {
+    override val text: String = ""
+    override val tokenizer: GenericTokenizer = WhitespaceTokenizer()
+    override val terms: List<String> = emptyList()
+    override val freqs: BagOfWords = BagOfWords(emptyList())
+    override val length: Int = 1
+    override val uniqTerms: Int = 0
+    override val termSet: Set<String> = emptySet()
+    override fun count(term: String): Int = 0
+}
+
+data class LTRDocField(override val name: String, override val text: String, override val tokenizer: GenericTokenizer = WhitespaceTokenizer()) : ILTRDocField {
+    override val terms: List<String> by lazy { tokenizer.tokenize(text, name) }
+    override val freqs: BagOfWords by lazy { BagOfWords(terms) }
+    override val length: Int get() = terms.size
+    override val uniqTerms: Int get() = freqs.counts.size()
+    override fun count(term: String): Int = freqs.count(term)
+    override val termSet: Set<String> get() = freqs.counts.keySet()
+}
+
+
+data class LTRDoc(val name: String, val features: HashMap<String, Double>, val rank: Int, val fields: HashMap<String,ILTRDocField>, var defaultField: String = "document") {
+    fun field(field: String): ILTRDocField = fields[field] ?: error("No such field: $field in $this.")
     fun terms(field: String) = field(field).terms
     fun freqs(field: String) = field(field).freqs
 
@@ -94,29 +118,10 @@ fun forEachQuery(dsName: String, doFn: (LTRQuery) -> Unit) {
     }
 }
 
-data class WeightedTerm(val score: Double, val term: String) : Comparable<WeightedTerm> {
-    // Natural order: biggest first.
-    override fun compareTo(other: WeightedTerm): Int {
-        val cmp = -java.lang.Double.compare(score, other.score)
-        if (cmp != 0) return cmp
-        return term.compareTo(other.term)
-    }
-}
 
 fun List<WeightedTerm>.normalized(): List<WeightedTerm> {
     val total = this.sumByDouble { it.score }
     return this.map { WeightedTerm(it.score / total, it.term) }
-}
-
-data class RelevanceModel(val weights: TObjectDoubleHashMap<String>) {
-    fun toTerms(): List<WeightedTerm> {
-        val output = ArrayList<WeightedTerm>(weights.size())
-        weights.forEachEntry {term, weight ->
-            output.add(WeightedTerm(weight, term))
-        }
-        return output
-    }
-    fun toTerms(k: Int): List<WeightedTerm> = toTerms().sorted().take(k).normalized()
 }
 
 class BagOfWords(terms: List<String>) {
@@ -141,26 +146,6 @@ class BagOfWords(terms: List<String>) {
 
 }
 
-fun computeRelevanceModel(docs: List<LTRDoc>, feature: String, depth: Int, flat: Boolean = false, stopwords: Set<String> = inqueryStop, field: String = "document"): RelevanceModel {
-    val fbdocs = docs.sortedByDescending { it.features[feature]!! }.take(depth)
-
-    val rmModel = TObjectDoubleHashMap<String>()
-    fbdocs.forEach { doc ->
-        val local = doc.field(field).freqs.counts
-        val length = doc.field(field).freqs.length
-
-        val prior = if (flat) 1.0 else doc.features[feature]!!
-        local.forEachEntry {term, count ->
-            if (stopwords.contains(term)) return@forEachEntry true
-            val prob = prior * count.toDouble() / length
-            rmModel.adjustOrPutValue(term, prob, prob)
-            true
-        }
-    }
-
-    return RelevanceModel(rmModel)
-}
-
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val dsName = argp.get("dataset", "robust")
@@ -176,10 +161,10 @@ fun main(args: Array<String>) {
 
     StreamCreator.openOutputStream("$dsName.features.jsonl.gz").printer().use { out ->
         dataset.getIndex().use { retr ->
-            val env = RREnv(retr)
+            val env = RRGalagoEnv(retr)
 
-            dataset.getBM25B()?.let { env.bm25b = it }
-            dataset.getBM25K()?.let { env.bm25k = it }
+            dataset.getBM25B()?.let { env.defaultBM25b = it }
+            dataset.getBM25K()?.let { env.defaultBM25k = it }
 
             forEachQuery(dsName) { q ->
                 val queryJudgments = qrels[q.qid]
@@ -200,10 +185,10 @@ fun main(args: Array<String>) {
                 )
 
                 arrayListOf<Int>(5, 10, 25).forEach { fbDocs ->
-                    val rm = computeRelevanceModel(q.docs, "title-ql-prior", fbDocs)
+                    val rm = env.computeRelevanceModel(q.docs, "title-ql-prior", fbDocs)
                     val wt = rm.toTerms(fbTerms)
-                    val rme_exprs = wt.map { env.term(it.term).weighted(it.score) }
-                    feature_exprs.put("rm3-k$fbDocs", env.feature("title-ql").mixed(rmLambda, env.sum(rme_exprs)))
+                    val rmeExpr = rm.toQExpr(fbTerms).toRRExpr(env)
+                    feature_exprs.put("rm3-k$fbDocs", env.feature("title-ql").mixed(rmLambda, rmeExpr))
                     feature_exprs.put("jaccard-rm3-k$fbDocs", RRJaccardSimilarity(env, wt.map { it.term }.toSet()))
                 }
 

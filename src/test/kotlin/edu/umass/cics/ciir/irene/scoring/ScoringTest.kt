@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.iltr.LTRDoc
 import edu.umass.cics.ciir.iltr.RREnv
+import edu.umass.cics.ciir.iltr.RRGalagoEnv
 import edu.umass.cics.ciir.iltr.toRRExpr
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.GDoc
@@ -92,7 +93,7 @@ class CommonTestIndexes : Closeable {
             writer.commit()
             irene = writer.open()
             galago = LocalRetrieval(gMemIndex)
-            env = RREnv(galago)
+            env = RRGalagoEnv(galago)
             env.estimateStats = "exact"
         }
     }
