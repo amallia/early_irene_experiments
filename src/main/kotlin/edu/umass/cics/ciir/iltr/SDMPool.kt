@@ -43,7 +43,7 @@ fun main(args: Array<String>) {
                     Pair(sdoc.doc, fields)
                 }
                 val scores = results.scoreDocs.map { it.score.toDouble() }.toDoubleArray()
-                val logSumExp = MathUtils.logSumExp(scores)
+                val logSumExp = if (scores.isNotEmpty()) MathUtils.logSumExp(scores) else 0.0
 
                 val docPs = results.scoreDocs.mapIndexed { i,sdoc ->
                     val fields = rawDocs[sdoc.doc]!!
@@ -70,13 +70,15 @@ fun main(args: Array<String>) {
                     SimpleEvalDoc(name, i+1, sdoc.score.toDouble())
                 })
 
-                evals.forEach { measure, evalfn ->
-                    try {
-                        val score = evalfn.evaluate(evalResults, queryJudgments)
-                        ms.push("SDM $measure", score)
-                        qjson.put(measure, score)
-                    } catch (npe: NullPointerException) {
-                        System.err.println("NULL in eval...")
+                if (evalResults.isNotEmpty()) {
+                    evals.forEach { measure, evalfn ->
+                        try {
+                            val score = evalfn.evaluate(evalResults, queryJudgments)
+                            ms.push("SDM $measure", score)
+                            qjson.put(measure, score)
+                        } catch (npe: NullPointerException) {
+                            System.err.println("NULL in eval...")
+                        }
                     }
                 }
 
