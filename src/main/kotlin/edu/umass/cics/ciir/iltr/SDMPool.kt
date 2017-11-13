@@ -23,11 +23,11 @@ fun main(args: Array<String>) {
 
     File("$dsName.irene-sdm.qlpool.jsonl.gz").smartPrint { output ->
         dataset.getIreneIndex().use { index ->
-            dataset.getTitleQueries().forEach { qid, qtext ->
+            dataset.getTitleQueries().entries.parallelStream().map { (qid, qtext) ->
                 val queryJudgments = qrels[qid]
                 val qterms = index.tokenize(qtext)
 
-                val SDM = SequentialDependenceModel(qterms, stopwords=inqueryStop)
+                val SDM = SequentialDependenceModel(qterms, stopwords = inqueryStop)
                 println("$qid SDM($qterms)")
 
                 val results = index.search(SDM, depth)
@@ -45,14 +45,14 @@ fun main(args: Array<String>) {
                 val scores = results.scoreDocs.map { it.score.toDouble() }.toDoubleArray()
                 val logSumExp = if (scores.isNotEmpty()) MathUtils.logSumExp(scores) else 0.0
 
-                val docPs = results.scoreDocs.mapIndexed { i,sdoc ->
+                val docPs = results.scoreDocs.mapIndexed { i, sdoc ->
                     val fields = rawDocs[sdoc.doc]!!
                     val docName = fields.getString(index.idFieldName)!!
                     pmake {
                         set("id", docName)
                         set("title-ql", sdoc.score)
                         set("title-ql-prior", Math.exp(sdoc.score - logSumExp))
-                        set("rank", i+1)
+                        set("rank", i + 1)
                         set("fields", fields)
                     }
                 }
@@ -67,7 +67,7 @@ fun main(args: Array<String>) {
 
                 val evalResults = QueryResults(results.scoreDocs.mapIndexed { i, sdoc ->
                     val name = rawDocs[sdoc.doc]!!.getString(index.idFieldName)!!
-                    SimpleEvalDoc(name, i+1, sdoc.score.toDouble())
+                    SimpleEvalDoc(name, i + 1, sdoc.score.toDouble())
                 })
 
                 if (evalResults.isNotEmpty()) {
@@ -81,7 +81,8 @@ fun main(args: Array<String>) {
                         }
                     }
                 }
-
+                qjson
+            }.sequential().forEach { qjson ->
                 output.println(qjson);
             }
         } // retr
