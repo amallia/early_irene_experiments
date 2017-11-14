@@ -3,6 +3,7 @@ package edu.umass.cics.ciir.chai
 import edu.umass.cics.ciir.sprf.printer
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.File
+import java.io.InputStream
 import java.io.PrintWriter
 
 /**
@@ -41,3 +42,9 @@ fun File.smartDoLines(doProgress: Boolean=false, handler: (String)->Unit) {
     }
 }
 fun File.smartPrint(block: (PrintWriter)->Unit) = StreamCreator.openOutputStream(this).printer().use(block)
+
+fun openResource(path: String): InputStream {
+    val target = if (path[0] != '/') { "/$path" } else { path }
+    return String::class.java.getResourceAsStream(target)
+}
+fun resourceLines(path: String, block: (String)->Unit) = openResource(path).reader().useLines{lines -> lines.forEach(block) }

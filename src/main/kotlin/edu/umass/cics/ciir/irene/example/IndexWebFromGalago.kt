@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.irene.example
 
 import edu.umass.cics.ciir.chai.ShardWriters
+import edu.umass.cics.ciir.chai.mean
 import edu.umass.cics.ciir.chai.smartDoLines
 import edu.umass.cics.ciir.chai.smartPrint
 import edu.umass.cics.ciir.irene.IndexParams
@@ -14,12 +15,8 @@ import org.apache.lucene.document.StringField
 import org.apache.lucene.document.TextField
 import org.apache.lucene.index.IndexableField
 import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
-import org.jsoup.nodes.Node
-import org.jsoup.nodes.TextNode
 import org.jsoup.safety.Cleaner
 import org.jsoup.safety.Whitelist
-import org.jsoup.select.NodeVisitor
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.File
@@ -267,7 +264,7 @@ fun safeDiv(x: Int, y: Int): Double = if (x == 0 || y == 0) 0.0 else x.toDouble(
 val MyWhitelist = Cleaner(Whitelist.relaxed().apply {
     removeAttributes("a", "href")
 })
-fun computeHTMLStaticFeatures(logger: Logger, raw_text: String?, parsed_html: JsoupDoc? = null): Parameters {
+fun computeHTMLStaticFeatures(logger: Logger, raw_text: String?, url: String, parsed_html: JsoupDoc? = null): Parameters {
     val analyzer = IreneEnglishAnalyzer()
     val html = parsed_html ?: try {
         Jsoup.parse(raw_text ?: error("Must provide parsed_html or raw_text."))!!
@@ -286,10 +283,39 @@ fun computeHTMLStaticFeatures(logger: Logger, raw_text: String?, parsed_html: Js
         emptyList<String>()
     }
 
+    val titleTerms = analyzer.tokenize("title", html.select("title").text())
+
+    val anchorTerms = analyzer.tokenize("body", html.select("a").text())
+    val tableTerms = analyzer.tokenize("body", html.select("table").text())
+
     val features = pmake {
         set("jsoup_error", false)
         putIfNotNull("byte_length", raw_text?.length)
-        set("fracVisTerms", safeDiv(visTerms.size, allTerms.size))
+        set("numTerms", allTerms.size)
+        set("numVisTerms", visTerms.size)
+        set("numTitleTerms", titleTerms.size)
+        set("fracVisibleText", safeDiv(visTerms.size, allTerms.size))
+        set("fracAnchorText", safeDiv(anchorTerms.size, allTerms.size))
+        set("fracTableText", safeDiv(tableTerms.size, allTerms.size))
+        set("avgTermLength", visTerms.map { it.length }.mean())
+        set("avgAnchorTermLength", anchorTerms.map { it.length }.mean())
+        set("urlDepth", url.count { it == '/' })
+        set("urlSize", url.length)
+    }
+
+    listOf(
+            Pair("inquery", inqueryStop),
+            Pair("web100", web100Stop),
+            Pair("web1k", web1kStop)).forEach { (name, list) ->
+        val found = hashSetOf<String>()
+        val stop = allTerms.sumBy {
+            if (list.contains(it)) {
+                found.add(it)
+                1
+            } else 0
+        }
+        features.set("$name.fracStops", safeDiv(stop, allTerms.size))
+        features.set("$name.stopCover", safeDiv(found.size, list.size))
     }
 
 
@@ -299,18 +325,29 @@ fun computeHTMLStaticFeatures(logger: Logger, raw_text: String?, parsed_html: Js
 object ExtractHTMLFeatures {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)!!
+        val urls = File(argp.get("urls", "html_raw/wt10g.urls.tsv.gz"))
+
         val input = File(argp.get("input", "html_raw/wt10g.sample.jsonl.gz"))
         val output = File(argp.get("output", "html_raw/wt10g.features.jsonl.gz"))
         val logger = FileLogger(argp.get("logger", "${output.absolutePath}.log"))!!
+
+        val urlById = HashMap<String, String>()
+        urls.smartDoLines { line ->
+            val cols = line.split("\t")
+            val id = cols[0]
+            val url = cols[2]
+            urlById[id] = url
+        }
 
         output.smartPrint { writer ->
             input.smartDoLines(true) { line ->
                 val lineP = Parameters.parseStringOrDie(line)
                 val id = lineP.getStr("id")
                 val content = lineP.getStr("content")
+                val url = urlById[id] ?: ""
                 //println("$id ${content.length}")
                 try {
-                    val featureP = computeHTMLStaticFeatures(logger, content)
+                    val featureP = computeHTMLStaticFeatures(logger, raw_text=content, url=url)
                     val outP = pmake { set("id", id); set("features", featureP) }
                     writer.println(outP)
                     println(outP)
