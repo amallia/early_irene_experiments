@@ -350,11 +350,11 @@ object ExtractHTMLFeatures {
                     val featureP = computeHTMLStaticFeatures(logger, raw_text=content, url=url)
                     val outP = pmake { set("id", id); set("features", featureP) }
                     writer.println(outP)
-                    println(outP)
+                    //println(outP)
                 } catch (e: Exception) {
                     logger.log(Level.WARNING, "exception in $id", e)
                     println("exception in $id")
-                    throw e
+                    //throw e
                 }
             }
         }
