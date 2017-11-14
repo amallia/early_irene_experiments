@@ -4,7 +4,9 @@ import edu.umass.cics.ciir.chai.ShardWriters
 import edu.umass.cics.ciir.chai.smartDoLines
 import edu.umass.cics.ciir.chai.smartPrint
 import edu.umass.cics.ciir.irene.IndexParams
+import edu.umass.cics.ciir.irene.IreneEnglishAnalyzer
 import edu.umass.cics.ciir.irene.IreneIndexer
+import edu.umass.cics.ciir.irene.tokenize
 import edu.umass.cics.ciir.sprf.*
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
 import org.apache.lucene.document.Field
@@ -12,6 +14,12 @@ import org.apache.lucene.document.StringField
 import org.apache.lucene.document.TextField
 import org.apache.lucene.index.IndexableField
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
+import org.jsoup.nodes.Node
+import org.jsoup.nodes.TextNode
+import org.jsoup.safety.Cleaner
+import org.jsoup.safety.Whitelist
+import org.jsoup.select.NodeVisitor
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.File
@@ -254,7 +262,13 @@ object ExtractLinksReduce {
     }
 }
 
+fun safeDiv(x: Int, y: Int): Double = if (x == 0 || y == 0) 0.0 else x.toDouble() / y.toDouble()
+
+val MyWhitelist = Cleaner(Whitelist.relaxed().apply {
+    removeAttributes("a", "href")
+})
 fun computeHTMLStaticFeatures(logger: Logger, raw_text: String?, parsed_html: JsoupDoc? = null): Parameters {
+    val analyzer = IreneEnglishAnalyzer()
     val html = parsed_html ?: try {
         Jsoup.parse(raw_text ?: error("Must provide parsed_html or raw_text."))!!
     } catch (e: Throwable) {
@@ -263,10 +277,21 @@ fun computeHTMLStaticFeatures(logger: Logger, raw_text: String?, parsed_html: Js
             set("jsoup_error", true)
         }
     }
+
+    val allTerms = analyzer.tokenize("body", html.text())
+
+    val visTerms = try {
+        analyzer.tokenize("body", MyWhitelist.clean(html).body().text())
+    } catch (err: Exception) {
+        emptyList<String>()
+    }
+
     val features = pmake {
         set("jsoup_error", false)
         putIfNotNull("byte_length", raw_text?.length)
+        set("fracVisTerms", safeDiv(visTerms.size, allTerms.size))
     }
+
 
     return features
 }
@@ -284,9 +309,23 @@ object ExtractHTMLFeatures {
                 val id = lineP.getStr("id")
                 val content = lineP.getStr("content")
                 //println("$id ${content.length}")
-                val featureP = computeHTMLStaticFeatures(logger, content)
-                writer.println(pmake { set("id", id); set("features", featureP) })
+                try {
+                    val featureP = computeHTMLStaticFeatures(logger, content)
+                    val outP = pmake { set("id", id); set("features", featureP) }
+                    writer.println(outP)
+                    println(outP)
+                } catch (e: Exception) {
+                    logger.log(Level.WARNING, "exception in $id", e)
+                    println("exception in $id")
+                    throw e
+                }
             }
         }
+    }
+}
+
+object JsoupBug {
+    @JvmStatic fun main(args: Array<String>) {
+        Jsoup.clean("<a href>clean bomb</a>", Whitelist.simpleText())
     }
 }
