@@ -266,5 +266,9 @@ object DataPaths {
             val nq = collection.title_qs.size
             println("${collection.name} Queries: submitted: $nq == with-qrels: $nj")
         }
+
+        val qids = (Gov2.title_qs.keys + Gov2.getQueryJudgments().keys).toSortedSet().joinToString(separator = " ")
+
+        println(qids)
     }
 }

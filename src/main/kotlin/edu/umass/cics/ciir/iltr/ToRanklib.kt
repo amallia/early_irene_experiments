@@ -21,6 +21,8 @@ class FeatureStats {
         }
     }
 
+    override fun toString(): String = "$count $min..$max"
+
     fun normalize(y: Double): Double {
         if (count == 0) return y
         if (min == max) return y
@@ -61,7 +63,7 @@ fun main(args: Array<String>) {
                 }
             } catch (e: Exception) {
                 println("$index: $input: ")
-                e.printStackTrace()
+                throw e
             }
         }
     }
@@ -86,13 +88,13 @@ fun main(args: Array<String>) {
                 val label = instance.getInt("label")
                 val name = instance.getString("name")
 
-                val pt = features.keys.associate { fname ->
+                val pt = fmap.keys.associate { fname ->
                     val fid = fmap[fname]!!
-                    val rawVal = features.get(name) as Double?;
-                    val fval = if (shouldNormalize(fname)) {
+                    val rawVal = (features[fname] as Number?)?.toDouble();
+                    val stats = fstats[Pair(qid, name)]
+                    val fval = if (stats != null && shouldNormalize(fname)) {
                         if (rawVal == null) 0.0 else {
-                            val stats = fstats[Pair(qid, name)]
-                            stats!!.normalize(rawVal)
+                            stats.normalize(rawVal)
                         }
                     } else rawVal ?: 0.0
                     Pair(fid, fval)

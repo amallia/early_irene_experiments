@@ -164,6 +164,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
     fun fieldStats(field: String): CountStats? = CalculateStatistics.fieldStats(searcher, field)
 
     override fun getStats(term: Term): CountStats? {
+        //println("getStats($term)")
         return termStatsCache.get(term, {CalculateStatistics.lookupTermStatistics(searcher, it)}) ?: CalculateStatistics.fieldStats(searcher, term.field())
     }
     override fun getStats(expr: QExpr): CountStats? = getExprStats(expr)?.join()

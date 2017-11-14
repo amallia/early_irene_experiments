@@ -7,6 +7,7 @@ import edu.umass.cics.ciir.irene.GenericTokenizer
 import edu.umass.cics.ciir.irene.QueryLikelihood
 import edu.umass.cics.ciir.irene.SequentialDependenceModel
 import edu.umass.cics.ciir.sprf.*
+import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -61,26 +62,31 @@ fun LTRDocOfWeb(tokenizer: GenericTokenizer, p: Parameters): LTRDoc {
     return LTRDoc(name, features, rank, fields)
 }
 
-
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dsName = argp.get("dataset", "wt10g")
+    val dsName = argp.get("dataset", "clue09")
     val dataset = DataPaths.get(dsName)
     val evals = getEvaluators(listOf("ap", "ndcg"))
     val ms = NamedMeasures()
     val qrels = dataset.getQueryJudgments()
     val fbTerms = 100
+    val qid = argp.get("qid")?.toString()
+    val qidBit = if (qid == null) "" else ".$qid"
 
-    File("l2rf/$dsName.features.jsonl.gz").smartPrint { out ->
+    File("l2rf/$dsName$qidBit.features.jsonl.gz").smartPrint { out ->
         dataset.getIreneIndex().use { index ->
             val env = index.getRREnv()
             forEachSDMPoolQuery(index.tokenizer, dsName) { q ->
-                val queryJudgments = qrels[q.qid]
+                if (qid != null && qid != q.qid) {
+                    // skip all but qid if specified.
+                    return@forEachSDMPoolQuery
+                }
+                val queryJudgments = qrels[q.qid] ?: QueryJudgments(q.qid, emptyMap())
                 val feature_exprs = HashMap<String, RRExpr>()
 
                 arrayListOf("title", "body", "document").forEach { fieldName ->
                     val qterms = index.tokenize(q.qtext, fieldName)
-                    println("$fieldName: $qterms")
+                    println("${q.qid} $fieldName: $qterms")
                     q.docs.forEach { doc ->
                         doc.features["$fieldName:qlen"] = qterms.size.toDouble()
                         doc.features["$fieldName:qstop"] = qterms.count { inqueryStop.contains(it) }.toDouble()

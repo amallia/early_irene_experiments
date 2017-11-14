@@ -115,6 +115,6 @@ data class RelevanceModel(val weights: TObjectDoubleHashMap<String>, val sourceF
         return output
     }
     fun toTerms(k: Int): List<WeightedTerm> = toTerms().sorted().take(k).normalized()
-    fun toQExpr(k: Int, scorer: (TextExpr)->QExpr = {DirQLExpr(it)}, targetField: String? = null) = SumExpr(toTerms().map { scorer(TextExpr(it.term, targetField ?: sourceField)).weighted(it.score) })
+    fun toQExpr(k: Int, scorer: (TextExpr)->QExpr = {DirQLExpr(it)}, targetField: String? = null) = SumExpr(toTerms(k).map { scorer(TextExpr(it.term, targetField ?: sourceField)).weighted(it.score) })
 }
 
