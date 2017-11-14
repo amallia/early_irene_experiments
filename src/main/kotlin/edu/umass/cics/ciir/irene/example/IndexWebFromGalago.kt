@@ -343,7 +343,7 @@ object ExtractHTMLFeatures {
         }
 
         output.smartPrint { writer ->
-            input.smartDoLines(true) { line ->
+            input.smartDoLines(true, total=ids.size.toLong()) { line ->
                 val lineP = Parameters.parseStringOrDie(line)
                 val id = lineP.getStr("id")
                 val content = lineP.getStr("content")

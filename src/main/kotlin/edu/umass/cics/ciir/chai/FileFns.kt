@@ -25,7 +25,7 @@ fun File.ensureParentDirectories(): Boolean {
 fun File.smartReader() = StreamCreator.openInputStream(this).bufferedReader()
 fun File.smartPrinter() = StreamCreator.openOutputStream(this).printer()
 fun <T> File.smartLines(block: (Sequence<String>)->T): T = smartReader().useLines(block)
-fun File.smartDoLines(doProgress: Boolean=false, handler: (String)->Unit) {
+fun File.smartDoLines(doProgress: Boolean=false, total: Long? = null, handler: (String)->Unit) {
     val msg = Debouncer()
     var done = 0L
     smartReader().useLines { lines ->
@@ -33,7 +33,7 @@ fun File.smartDoLines(doProgress: Boolean=false, handler: (String)->Unit) {
             handler(line)
             done++
             if (doProgress && msg.ready()) {
-                println(msg.estimate(done, done))
+                println(msg.estimate(done, total ?: done))
             }
         }
     }
