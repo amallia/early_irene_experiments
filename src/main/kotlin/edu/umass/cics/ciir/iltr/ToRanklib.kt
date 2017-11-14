@@ -1,9 +1,13 @@
 package edu.umass.cics.ciir.iltr
 
+import edu.umass.cics.ciir.chai.smartDoLines
+import edu.umass.cics.ciir.chai.smartPrint
 import edu.umass.cics.ciir.sprf.getStr
+import edu.umass.cics.ciir.sprf.incr
 import edu.umass.cics.ciir.sprf.printer
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
+import java.io.File
 
 class FeatureStats {
     var min = Double.MAX_VALUE
@@ -44,27 +48,30 @@ fun shouldNormalize(f: String): Boolean {
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args);
     val dataset = argp.get("dataset", "wt10g")
+    val limitFalse = argp.get("limitFalse", -1)
     val input = "l2rf/$dataset.features.jsonl.gz"
-    val output = "l2rf/$dataset.features.ranklib"
+    val output = if (limitFalse < 0) {
+        "l2rf/$dataset.features.ranklib"
+    } else {
+        "l2rf/$dataset.n$limitFalse.features.ranklib"
+    }
 
     val fstats = HashMap<Pair<String, String>, FeatureStats>()
-    StreamCreator.openInputStream(input).reader().useLines { lines ->
-        var index = 0
-        lines.forEach { line ->
-            try {
-                val instance = Parameters.parseStringOrDie(line)
-                index++
-                val qid = instance.getStr("qid")
-                val features = instance.getMap("features")
-                features.keys.forEach { fname ->
-                    fstats
-                            .computeIfAbsent(Pair(qid, fname), { FeatureStats() })
-                            .push(features.getDouble(fname))
-                }
-            } catch (e: Exception) {
-                println("$index: $input: ")
-                throw e
+    var index = 0
+    File(input).smartDoLines { line ->
+        try {
+            val instance = Parameters.parseStringOrDie(line)
+            index++
+            val qid = instance.getStr("qid")
+            val features = instance.getMap("features")
+            features.keys.forEach { fname ->
+                fstats
+                        .computeIfAbsent(Pair(qid, fname), { FeatureStats() })
+                        .push(features.getDouble(fname))
             }
+        } catch (e: Exception) {
+            println("$index: $input: ")
+            throw e
         }
     }
 
@@ -79,35 +86,42 @@ fun main(args: Array<String>) {
         out.println(Parameters.wrap(fmap).toPrettyString())
     }
 
-    StreamCreator.openOutputStream(output).printer().use { out ->
-        StreamCreator.openInputStream(input).reader().useLines { lines ->
-            lines.forEach { line ->
-                val instance = Parameters.parseStringOrDie(line)
-                val qid = instance.getString("qid")
-                val features = instance.getMap("features")
-                val label = instance.getInt("label")
-                val name = instance.getString("name")
+    val negPerQuery = HashMap<String, Int>()
 
-                val pt = fmap.keys.associate { fname ->
-                    val fid = fmap[fname]!!
-                    val rawVal = (features[fname] as Number?)?.toDouble();
-                    val stats = fstats[Pair(qid, name)]
-                    val fval = if (stats != null && shouldNormalize(fname)) {
-                        if (rawVal == null) 0.0 else {
-                            stats.normalize(rawVal)
-                        }
-                    } else rawVal ?: 0.0
-                    Pair(fid, fval)
-                }.toSortedMap().entries
-                        .joinToString(
-                                separator = " ",
-                                prefix = "$label qid:$qid ",
-                                postfix = " #$name"
-                        ) { (fid, fval) -> "$fid:$fval" }
-                out.println(pt)
-                if (label > 0) {
-                    println(pt)
+    File(output).smartPrint { out ->
+        File(input).smartDoLines { line ->
+            val instance = Parameters.parseStringOrDie(line)
+            val qid = instance.getStr("qid")
+            val features = instance.getMap("features")
+            val label = instance.getInt("label")
+            val name = instance.getStr("name")
+
+            if (limitFalse >= 0 && label == 0) {
+                val count = negPerQuery.incr(qid, 1)
+                if (count > limitFalse) {
+                    return@smartDoLines
                 }
+            }
+
+            val pt = fmap.keys.associate { fname ->
+                val fid = fmap[fname]!!
+                val rawVal = (features[fname] as Number?)?.toDouble();
+                val stats = fstats[Pair(qid, name)]
+                val fval = if (stats != null && shouldNormalize(fname)) {
+                    if (rawVal == null) 0.0 else {
+                        stats.normalize(rawVal)
+                    }
+                } else rawVal ?: 0.0
+                Pair(fid, fval)
+            }.toSortedMap().entries
+                    .joinToString(
+                            separator = " ",
+                            prefix = "$label qid:$qid ",
+                            postfix = " #$name"
+                    ) { (fid, fval) -> "$fid:$fval" }
+            out.println(pt)
+            if (label > 0) {
+                println(pt)
             }
         }
     }
