@@ -325,6 +325,7 @@ fun computeHTMLStaticFeatures(logger: Logger, raw_text: String?, url: String, pa
 object ExtractHTMLFeatures {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)!!
+        val ids = File(argp.get("needed", "wt10g.needed.ids")).readLines().toHashSet()
         val urls = File(argp.get("urls", "html_raw/wt10g.urls.tsv.gz"))
 
         val input = File(argp.get("input", "html_raw/wt10g.sample.jsonl.gz"))
@@ -335,8 +336,10 @@ object ExtractHTMLFeatures {
         urls.smartDoLines { line ->
             val cols = line.split("\t")
             val id = cols[0]
-            val url = cols[2]
-            urlById[id] = url
+            if (ids.contains(id)) {
+                val url = cols[2]
+                urlById[id] = url
+            }
         }
 
         output.smartPrint { writer ->
