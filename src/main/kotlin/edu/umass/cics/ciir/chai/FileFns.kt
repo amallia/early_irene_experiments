@@ -36,5 +36,8 @@ fun File.smartDoLines(doProgress: Boolean=false, handler: (String)->Unit) {
             }
         }
     }
+    if (doProgress) {
+        println(msg.estimate(done, done))
+    }
 }
 fun File.smartPrint(block: (PrintWriter)->Unit) = StreamCreator.openOutputStream(this).printer().use(block)

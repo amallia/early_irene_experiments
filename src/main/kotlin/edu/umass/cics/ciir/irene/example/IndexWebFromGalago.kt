@@ -5,10 +5,7 @@ import edu.umass.cics.ciir.chai.smartDoLines
 import edu.umass.cics.ciir.chai.smartPrint
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndexer
-import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.forAllGDocs
-import edu.umass.cics.ciir.sprf.pmake
-import edu.umass.cics.ciir.sprf.printer
+import edu.umass.cics.ciir.sprf.*
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
 import org.apache.lucene.document.Field
 import org.apache.lucene.document.StringField
@@ -18,10 +15,14 @@ import org.jsoup.Jsoup
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.File
+import java.util.concurrent.ForkJoinPool
+import java.util.concurrent.TimeUnit
 import java.util.logging.FileHandler
 import java.util.logging.Level
 import java.util.logging.Logger
 import java.util.logging.SimpleFormatter
+
+typealias JsoupDoc = org.jsoup.nodes.Document
 
 /**
  * @author jfoley
@@ -36,6 +37,40 @@ fun FileLogger(path: String) = Logger.getAnonymousLogger().apply {
 
 val PunctuationRegex = "\\p{Punct}".toRegex()
 
+fun processDoc(gdoc: GDoc, writer: IreneIndexer, logger: Logger) {
+    val id = gdoc.name!!
+    val meta = gdoc.metadata ?: emptyMap()
+    val url = meta["url"]
+    val text = gdoc.text
+    val html = try {
+        Jsoup.parse(text)
+    } catch (e: Throwable) {
+        logger.log(Level.WARNING, "Jsoup Exception", e)
+        return
+    }
+
+    val doc = arrayListOf<IndexableField>()
+    doc.add(StringField("id", id, Field.Store.YES))
+    if (!url.isNullOrBlank()) {
+        doc.add(StringField("stored-url", url, Field.Store.YES))
+        val tokenized = url!!.split(PunctuationRegex).joinToString(" ")
+        doc.add(TextField("url", tokenized, Field.Store.YES))
+    }
+
+    val title = html.title()
+    if (!title.isNullOrBlank()) {
+        doc.add(TextField("title", title, Field.Store.YES))
+    }
+    val body = html.body()?.text()
+    if (!body.isNullOrBlank()) {
+        doc.add(TextField("body", body, Field.Store.YES))
+    }
+    doc.add(TextField("document", html.text(), Field.Store.YES))
+
+    writer.push(doc)
+    //println("$id $title $url")
+}
+
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val dsName = argp.get("dataset", "gov2")
@@ -47,45 +82,21 @@ fun main(args: Array<String>) {
         withPath(indexF)
         withAnalyzer("url", WhitespaceAnalyzer())
     }
-    val logger = FileLogger(argp.get("logger", "${indexF.absolutePath}.log"))
+    val logger = FileLogger(argp.get("logger", "${indexF.absolutePath}.log"))!!
+
+    val pool = ForkJoinPool.commonPool()!!
 
     IreneIndexer(params).use { writer ->
         dataset.getIndex().use { retr ->
             retr.forAllGDocs { gdoc ->
-                val id = gdoc.name!!
-                val meta = gdoc.metadata ?: emptyMap()
-                val url = meta["url"]
-                val text = gdoc.text
-                val html = try {
-                    Jsoup.parse(text)
-                } catch (e: Throwable) {
-                    logger.log(Level.WARNING, "Jsoup Exception", e)
-                    return@forAllGDocs
-                }
+                // Thread parsing!
+                pool.submit { processDoc(gdoc, writer, logger) }
+            } // all docs
 
-                val doc = arrayListOf<IndexableField>()
-                doc.add(StringField("id", id, Field.Store.YES))
-                if (!url.isNullOrBlank()) {
-                    doc.add(StringField("stored-url", url, Field.Store.YES))
-                    val tokenized = url!!.split(PunctuationRegex).joinToString(" ")
-                    doc.add(TextField("url", tokenized, Field.Store.YES))
-                }
-
-                val title = html.title()
-                if (!title.isNullOrBlank()) {
-                    doc.add(TextField("title", title, Field.Store.YES))
-                }
-                val body = html.body()?.text()
-                if (!body.isNullOrBlank()) {
-                    doc.add(TextField("body", body, Field.Store.YES))
-                }
-                doc.add(TextField("document", html.text(), Field.Store.YES))
-
-                writer.push(doc)
-                //println("$id $title $url")
-            }
-        }
-    }
+            // wait for job to finish.
+            while(!pool.awaitQuiescence(1, TimeUnit.SECONDS)) { }
+        } // close index
+    } // close writer
 }
 
 
@@ -238,6 +249,43 @@ object ExtractLinksReduce {
                 if (repr.neighbors.isNotEmpty() || repr.text.isNotEmpty()) {
                     docs.println(repr.toJSON())
                 }
+            }
+        }
+    }
+}
+
+fun computeHTMLStaticFeatures(logger: Logger, raw_text: String?, parsed_html: JsoupDoc? = null): Parameters {
+    val html = parsed_html ?: try {
+        Jsoup.parse(raw_text ?: error("Must provide parsed_html or raw_text."))!!
+    } catch (e: Throwable) {
+        logger.log(Level.WARNING, "Jsoup Exception", e)
+        return pmake {
+            set("jsoup_error", true)
+        }
+    }
+    val features = pmake {
+        set("jsoup_error", false)
+        putIfNotNull("byte_length", raw_text?.length)
+    }
+
+    return features
+}
+
+object ExtractHTMLFeatures {
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)!!
+        val input = File(argp.get("input", "html_raw/wt10g.sample.jsonl.gz"))
+        val output = File(argp.get("output", "html_raw/wt10g.features.jsonl.gz"))
+        val logger = FileLogger(argp.get("logger", "${output.absolutePath}.log"))!!
+
+        output.smartPrint { writer ->
+            input.smartDoLines(true) { line ->
+                val lineP = Parameters.parseStringOrDie(line)
+                val id = lineP.getStr("id")
+                val content = lineP.getStr("content")
+                //println("$id ${content.length}")
+                val featureP = computeHTMLStaticFeatures(logger, content)
+                writer.println(pmake { set("id", id); set("features", featureP) })
             }
         }
     }
