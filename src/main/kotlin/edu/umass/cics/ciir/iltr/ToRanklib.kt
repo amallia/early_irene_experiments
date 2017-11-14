@@ -93,7 +93,8 @@ fun main(args: Array<String>) {
             val instance = Parameters.parseStringOrDie(line)
             val qid = instance.getStr("qid")
             val features = instance.getMap("features")
-            val label = instance.getInt("label")
+            // Clue09 has negative labels, this annoys RankLib.
+            val label = maxOf(0, instance.getInt("label"))
             val name = instance.getStr("name")
 
             if (limitFalse >= 0 && label == 0) {
