@@ -50,10 +50,31 @@ fun main(args: Array<String>) {
     val dataset = argp.get("dataset", "wt10g")
     val limitFalse = argp.get("limitFalse", -1)
     val input = "l2rf/$dataset.features.jsonl.gz"
+    val docInput = File("html_raw/$dataset.features.jsonl.gz")
     val output = if (limitFalse < 0) {
         "l2rf/$dataset.features.ranklib"
     } else {
         "l2rf/$dataset.n$limitFalse.features.ranklib"
+    }
+
+    val docFeatures = HashMap<String, Map<String, Double>>()
+    if (docInput.exists()) {
+        docInput.smartDoLines { line ->
+            val p = Parameters.parseStringOrDie(line)
+            val docId = p.getStr("id")
+            val features = p.getMap("features")
+            val docFVec = HashMap<String, Double>()
+            docFeatures.put(docId, docFVec)
+            features.keys.forEach { key ->
+                val value = features[key]
+                when (value) {
+                    null -> docFVec[key] = 0.0
+                    is Number -> docFVec[key] = value.toDouble()
+                    is Boolean -> docFVec[key] = if (value) 1.0 else 0.0
+                    else -> error("Unhandled value $value")
+                }
+            }
+        }
     }
 
     val fstats = HashMap<Pair<String, String>, FeatureStats>()
@@ -64,10 +85,16 @@ fun main(args: Array<String>) {
             index++
             val qid = instance.getStr("qid")
             val features = instance.getMap("features")
+            val name = instance.getStr("name")
             features.keys.forEach { fname ->
                 fstats
                         .computeIfAbsent(Pair(qid, fname), { FeatureStats() })
                         .push(features.getDouble(fname))
+            }
+            docFeatures[name]?.forEach { fname, value ->
+                fstats
+                        .computeIfAbsent(Pair(qid, fname), { FeatureStats() })
+                        .push(value)
             }
         } catch (e: Exception) {
             println("$index: $input: ")
@@ -103,10 +130,10 @@ fun main(args: Array<String>) {
                     return@smartDoLines
                 }
             }
+            val docFVec = docFeatures[name] ?: emptyMap()
 
-            val pt = fmap.keys.associate { fname ->
-                val fid = fmap[fname]!!
-                val rawVal = (features[fname] as Number?)?.toDouble();
+            val pt = fmap.entries.associate { (fname, fid) ->
+                val rawVal = (features[fname] as Number?)?.toDouble() ?: docFVec[fname]
                 val stats = fstats[Pair(qid, name)]
                 val fval = if (stats != null && shouldNormalize(fname)) {
                     if (rawVal == null) 0.0 else {
