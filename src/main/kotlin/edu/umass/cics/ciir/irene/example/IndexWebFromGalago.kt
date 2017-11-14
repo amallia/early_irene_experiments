@@ -1,9 +1,6 @@
 package edu.umass.cics.ciir.irene.example
 
-import edu.umass.cics.ciir.chai.ShardWriters
-import edu.umass.cics.ciir.chai.mean
-import edu.umass.cics.ciir.chai.smartDoLines
-import edu.umass.cics.ciir.chai.smartPrint
+import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneEnglishAnalyzer
 import edu.umass.cics.ciir.irene.IreneIndexer
@@ -301,6 +298,7 @@ fun computeHTMLStaticFeatures(logger: Logger, raw_text: String?, url: String, pa
         set("avgAnchorTermLength", anchorTerms.map { it.length }.mean())
         set("urlDepth", url.count { it == '/' })
         set("urlSize", url.length)
+        set("entropy", allTerms.computeEntropy())
     }
 
     listOf(

@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.chai
 
+import edu.umass.cics.ciir.sprf.incr
 import java.util.*
 
 /**
@@ -39,3 +40,14 @@ inline fun <T> List<T>.forAllPairs(fn: (T,T)->Unit) {
         }
     }
 }
+fun <T> List<T>.computeEntropy(): Double {
+    val counts = HashMap<T, Int>(this.size/2)
+    val length = this.size.toDouble()
+    forEach { w -> counts.incr(w, 1) }
+    val sum = counts.values.sumByDouble { tf ->
+        val p = tf / length
+        p * Math.log(p)
+    }
+    return -sum
+}
+
