@@ -170,7 +170,12 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
         //println("getStats($term)")
         return termStatsCache.get(term, {CalculateStatistics.lookupTermStatistics(searcher, it)}) ?: fieldStats(term.field())
     }
-    override fun getStats(expr: QExpr): CountStats? = getExprStats(expr)?.join()
+    override fun getStats(expr: QExpr): CountStats? {
+        if (expr is TextExpr) {
+            return expr.stats ?: getStats(expr.text, expr.statsField())
+        }
+        return getExprStats(expr)?.join()
+    }
 
     private fun prepare(expr: QExpr): IreneQueryModel = IreneQueryModel(this, this.env, expr)
 

@@ -7,7 +7,7 @@ import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
 import java.io.File
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * @author jfoley
@@ -76,6 +76,7 @@ fun main(args: Array<String>) {
     File("l2rf/$dsName$qidBit.features.jsonl.gz").smartPrint { out ->
         dataset.getIreneIndex().use { index ->
             val env = index.getRREnv()
+            env.estimateStats = "min"
             forEachSDMPoolQuery(index.tokenizer, dsName) { q ->
                 if (qid != null && qid != q.qid) {
                     // skip all but qid if specified.
@@ -99,7 +100,9 @@ fun main(args: Array<String>) {
                             Pair("LM-abs", UnigramRetrievalModel(qterms, {AbsoluteDiscountingQLExpr(it)}, fieldName, statsField)),
                             Pair("fdm-stop", FullDependenceModel(qterms, field = fieldName, statsField=statsField, stopwords = inqueryStop)),
                             Pair("sdm-stop", SequentialDependenceModel(qterms, field = fieldName, statsField=statsField, stopwords = inqueryStop))
-                    ).mapValues { (_,q) -> q.toRRExpr(env) })
+                    )
+                            .mapValues { (_,q) -> q.toRRExpr(env) }
+                            .mapKeys { (k, _) -> "$fieldName:$k" })
 
                     feature_exprs.putAll(hashMapOf<String, RRExpr>(
                             Pair("docinfo", RRDocInfoQuotient(env, fieldName)),
@@ -121,19 +124,19 @@ fun main(args: Array<String>) {
                 }
 
 
-                val skippedFeatures = AtomicInteger(0)
+                val skippedFeatures = ConcurrentHashMap<String, Int>()
                 q.docs.parallelStream().forEach { doc ->
                     feature_exprs.forEach { fname, fexpr ->
                         val value = fexpr.eval(doc)
                         if (value.isInfinite() || value.isNaN()) {
-                            skippedFeatures.incrementAndGet()
+                            skippedFeatures.incr(fname, 1)
                         } else {
                             doc.features.put(fname, value)
                         }
                     }
                 }
-                if (skippedFeatures.get() > 0) {
-                    println("Skipped NaN or Infinite features: ${skippedFeatures.get()}")
+                if (skippedFeatures.isNotEmpty()) {
+                    println("Skipped NaN or Infinite features: ${skippedFeatures}")
                 }
 
                 arrayListOf<String>("title:rm1-k10", "body:rm1-k10", "title:sdm-stop", "body:sdm-stop").forEach { method ->

@@ -19,7 +19,7 @@ class LTRDocByFeature(private val feature: String, val doc: LTRDoc, rank: Int, s
     override fun getScore(): Double = score
     override fun getName(): String = doc.name
     override fun clone(score: Double): LTRDocByFeature = LTRDocByFeature(feature, doc, rank, score)
-    constructor(feature: String, doc: LTRDoc) : this(feature, doc, -1, doc.features[feature]!!)
+    constructor(feature: String, doc: LTRDoc) : this(feature, doc, -1, doc.features[feature] ?: error("Feature $feature not available!"))
 }
 
 

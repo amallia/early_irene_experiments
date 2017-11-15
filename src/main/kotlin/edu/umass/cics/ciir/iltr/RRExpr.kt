@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.iltr
 
 import com.github.benmanes.caffeine.cache.Caffeine
+import edu.umass.cics.ciir.chai.mean
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.irene.scoring.PositionsIter
 import edu.umass.cics.ciir.irene.scoring.countOrderedWindows
@@ -83,11 +84,16 @@ class RRAbsoluteDiscountingScorer(env: RREnv, val term: RRCountExpr, var delta: 
     val bg = term.stats.nonzeroCountProbability()
     override fun eval(doc: LTRDoc): Double {
         val field = doc.field(term.field)
-        val length = field.length.toDouble()
-        val uniq = field.uniqTerms.toDouble()
-        val sigma = delta * (uniq / length)
+        val length = Math.max(1.0, field.length.toDouble())
+        val uniq = Math.max(1.0, field.uniqTerms.toDouble())
+        val sigma = delta * uniq / length
         val count = maxOf(0.0, term.count(doc).toDouble() - delta)
-        return Math.log((count / length) + sigma * bg)
+        val raw = (count / length) + sigma * bg
+        val score = Math.log(raw)
+        if (java.lang.Double.isInfinite(score)) {
+            println("TRAP")
+        }
+        return score;
     }
 }
 
@@ -145,16 +151,7 @@ class RRBM25Scorer(env: RREnv, val term: RRCountExpr, val b: Double = env.defaul
 }
 
 class RRAvgWordLength(env: RREnv, val field: String = env.defaultField) : RRLeafExpr(env) {
-    override fun eval(doc: LTRDoc): Double {
-        var sum = 0.0
-        var n = 0
-        doc.freqs(field).counts.forEachEntry { term, count ->
-            sum += (term.length * count).toDouble()
-            n += count
-            true
-        }
-        return sum / n
-    }
+    override fun eval(doc: LTRDoc): Double = doc.terms(field).map { it.length }.mean()
 }
 
 /**

@@ -58,7 +58,7 @@ abstract class RREnv {
         is WeightExpr -> RRWeighted(this, q.weight, fromQExpr(q.child))
         is DirQLExpr -> RRDirichletScorer(this, fromQExpr(q.child) as RRCountExpr, q.mu!!)
         is BM25Expr -> RRBM25Scorer(this, fromQExpr(q.child) as RRCountExpr, q.b!!, q.k!!)
-        is AbsoluteDiscountingQLExpr -> RRAbsoluteDiscountingScorer(this, fromQExpr(q.child) as RRCountExpr, q.delta!!)
+        is AbsoluteDiscountingQLExpr -> RRAbsoluteDiscountingScorer(this, fromQExpr(q.child) as RRCountExpr, q.delta!!).checkNaNs()
         is CountToScoreExpr -> TODO()
         is BoolToScoreExpr -> TODO()
         is CountToBoolExpr -> TODO()
