@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.iltr.pagerank
 
+import edu.umass.cics.ciir.chai.Debouncer
 import edu.umass.cics.ciir.chai.ShardWriters
 import edu.umass.cics.ciir.chai.smartReader
 import edu.umass.cics.ciir.irene.example.galagoScrubUrl
@@ -47,6 +48,7 @@ class SortedKVIter(val reader: BufferedReader) : Closeable {
         }
     }
 
+    fun next() { pull() }
     fun advanceTo(id: String): Boolean {
         while (nextId < id) {
             pull()
@@ -61,6 +63,9 @@ object JoinURLToPageRank {
         val URLMapping = File(base, "ClueWeb12_All_edocid2url.txt.bz2")
         val PageRank = File(base, "pagerank.docNameOrder.bz2")
         val shards = 50
+        val total = 700_000_000L;
+        var completed = 0L
+        val msg = Debouncer()
 
         ShardWriters(File(base, "url2pr"), shards, "domainToPageRank.tsv.gz").use { domainWriters ->
             ShardWriters(File(base, "url2pr"), shards, "urlToPageRank.tsv.gz").use { urlWriters ->
@@ -72,6 +77,11 @@ object JoinURLToPageRank {
                             urlWriters.hashed(cleanURL).println("$cleanURL\t$score")
                             val domain = URI(cleanURL).host ?: continue
                             domainWriters.hashed(domain).println("$domain\t$score")
+                        }
+                        urls.next()
+                        completed++
+                        if (msg.ready()) {
+                            println(msg.estimate(completed, total))
                         }
                     }
                 }
