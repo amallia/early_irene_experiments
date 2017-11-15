@@ -38,11 +38,11 @@ class SortedKVIter(val reader: BufferedReader) : Closeable {
     }
     private fun pull() {
         if (done) return
+        val last = nextId
         while(true) {
             if (msg.ready()) {
                 println("pull @$nextId ${msg.estimate(completed, total)}")
             }
-            val last = nextId
             val next = reader.readLine()?.split(SpacesRegex)
             if (next == null) {
                 done = true
