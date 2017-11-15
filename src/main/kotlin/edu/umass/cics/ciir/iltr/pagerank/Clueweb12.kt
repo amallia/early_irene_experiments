@@ -23,10 +23,6 @@ fun <A :Closeable, B: Closeable> Pair<A,B>.use(block: (A,B)->Unit) {
     }
 }
 
-val total = 733_019_372L;
-var completed = 0L
-val msg = Debouncer()
-
 class SortedKVIter(val reader: BufferedReader) : Closeable {
     constructor(path: File) : this(path.smartReader())
     override fun close() = reader.close()
@@ -38,33 +34,21 @@ class SortedKVIter(val reader: BufferedReader) : Closeable {
     }
     private fun pull() {
         if (done) return
-        val last = nextId
-        while(true) {
-            if (msg.ready()) {
-                println("pull @$nextId ${msg.estimate(completed, total)}")
-            }
-            val next = reader.readLine()?.split(SpacesRegex)
-            if (next == null) {
-                done = true
-                return
-            }
-            if (next.size != 2) {
-                error("Bad entry: $next")
-            }
-            nextId = next[0]
-            nextVal = next[1]
-
-            if (last > nextId) {
-                break
-            }
+        val next = reader.readLine()?.split(SpacesRegex)
+        if (next == null) {
+            done = true
+            return
         }
+        if (next.size != 2) {
+            error("Bad entry: $next")
+        }
+        nextId = next[0]
+        nextVal = next[1]
+
     }
 
     fun next() { pull() }
     fun advanceTo(id: String): Boolean {
-        if (msg.ready()) {
-            println("advanceTo $id @ $nextId ${msg.estimate(completed, total)}")
-        }
         while (!done && nextId < id) {
             pull()
         }
@@ -79,6 +63,9 @@ object JoinURLToPageRank {
         val PageRank = File(base, "pagerank.docNameOrder.bz2")
         val shards = 50
 
+        val total = 733_019_372L;
+        var completed = 0L
+        val msg = Debouncer()
 
         ShardWriters(File(base, "url2pr"), shards, "domainToPageRank.tsv.gz").use { domainWriters ->
             ShardWriters(File(base, "url2pr"), shards, "urlToPageRank.tsv.gz").use { urlWriters ->
@@ -92,6 +79,9 @@ object JoinURLToPageRank {
                             val score = scores.nextVal
                             val cleanURL = galagoScrubUrl(urls.nextVal) ?: continue
                             completed++
+                            if (msg.ready()) {
+                                println(msg.estimate(completed, total))
+                            }
                             urlWriters.hashed(cleanURL).println("$cleanURL\t$score")
                             try {
                                 val domain = URI(cleanURL).host ?: continue
@@ -101,9 +91,6 @@ object JoinURLToPageRank {
                             }
                         }
                         urls.next()
-                        if (msg.ready()) {
-                            println(msg.estimate(completed, total))
-                        }
                     }
 
                     print("Ending: urls@${urls.nextId} scores@${scores.nextId}")
