@@ -23,38 +23,6 @@ class IreneQueryLanguage(val index: IIndex = EmptyIndex()) : RREnv() {
     val luceneQueryParser: QueryParser
         get() = QueryParser(defaultField, (index as IreneIndex).analyzer)
     override var estimateStats: String? = null
-
-    fun prepare(index: IreneIndex, q: QExpr): QExpr {
-        val pq = simplify(q)
-        applyEnvironment(this, pq)
-        analyzeDataNeededRecursive(pq)
-        applyIndex(index, pq)
-        return pq
-    }
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (javaClass != other?.javaClass) return false
-
-        other as IreneQueryLanguage
-
-        if (defaultField != other.defaultField) return false
-        if (defaultScorer != other.defaultScorer) return false
-        if (defaultDirichletMu != other.defaultDirichletMu) return false
-        if (defaultBM25b != other.defaultBM25b) return false
-        if (defaultBM25k != other.defaultBM25k) return false
-
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = defaultField.hashCode()
-        result = 31 * result + defaultScorer.hashCode()
-        result = 31 * result + defaultDirichletMu.hashCode()
-        result = 31 * result + defaultBM25b.hashCode()
-        result = 31 * result + defaultBM25k.hashCode()
-        return result
-    }
 }
 
 fun simplify(q: QExpr): QExpr {
@@ -65,8 +33,8 @@ fun simplify(q: QExpr): QExpr {
 }
 
 // Easy "model"-based constructor.
-fun QueryLikelihood(terms: List<String>, field: String?=null, mu: Double?=null): QExpr {
-    return MeanExpr(terms.map { DirQLExpr(TextExpr(it, field), mu) })
+fun QueryLikelihood(terms: List<String>, field: String?=null, mu: Double?=null, statsField: String?=null): QExpr {
+    return MeanExpr(terms.map { DirQLExpr(TextExpr(it, field, statsField), mu) })
 }
 
 fun SequentialDependenceModel(terms: List<String>, field: String?=null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, fullProx: Double? = null, fullProxWidth:Int=12, makeScorer: (QExpr)->QExpr = {DirQLExpr(it)}): QExpr {
@@ -150,17 +118,17 @@ sealed class QExpr {
         children.forEach { it.visit(each) }
     }
 
-    fun getFields(): Set<String> {
+    fun getStatsFields(): Set<String> {
         val out = HashSet<String>()
         visit { c ->
             if (c is TextExpr) {
-                c.field?.let { out.add(it) }
+                out.add(c.statsField())
             }
         }
         return out
     }
-    fun getSingleField(default: String): String {
-        val fields = getFields()
+    fun getSingleStatsField(default: String): String {
+        val fields = getStatsFields()
         return when(fields.size) {
             0 -> default
             1 -> fields.first()
@@ -194,9 +162,20 @@ data class RequireExpr(var cond: QExpr, var value: QExpr): QExpr() {
     override fun copy()  = RequireExpr(cond.copy(), value.copy())
     override val children: List<QExpr> get() = arrayListOf(cond, value)
 }
-data class TextExpr(var text: String, var field: String? = null, var stats: CountStats? = null, var needed: DataNeeded = DataNeeded.DOCS) : LeafExpr() {
-    override fun copy() = TextExpr(text, field, stats, needed)
+data class TextExpr(var text: String, private var field: String? = null, private var statsField: String? = null, var stats: CountStats? = null, var needed: DataNeeded = DataNeeded.DOCS) : LeafExpr() {
+    override fun copy() = TextExpr(text, field, statsField, stats, needed)
     constructor(term: Term) : this(term.text(), term.field())
+
+    fun applyEnvironment(env: RREnv) {
+        if (field == null) {
+            field = env.defaultField
+        }
+        if (statsField == null) {
+            statsField = env.defaultField
+        }
+    }
+    fun countsField(): String = field ?: error("No primary field for $this")
+    fun statsField(): String = statsField ?: field ?: error("No stats field for $this")
 }
 data class SynonymExpr(override val children: List<QExpr>): OpExpr() {
     override fun copy() = SynonymExpr(copyChildren())
@@ -260,7 +239,8 @@ fun toJSON(q: QExpr): Parameters = when(q) {
     is TextExpr -> pmake {
         set("op", "text")
         set("text", q.text)
-        putIfNotNull("field", q.field)
+        putIfNotNull("field", q.countsField())
+        putIfNotNull("statsField", q.statsField())
     }
     is LuceneExpr -> pmake {
         set("op", "lucene")
@@ -408,13 +388,11 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
     q.children.forEach { analyzeDataNeededRecursive(it, childNeeds) }
 }
 
-fun applyEnvironment(env: IreneQueryLanguage, root: QExpr) {
+fun applyEnvironment(env: RREnv, root: QExpr) {
     root.visit { q ->
         when(q) {
-            is TextExpr -> if(q.field == null) {
-                q.field = env.defaultField
-            } else { }
-            is LuceneExpr -> q.parse(env)
+            is TextExpr -> q.applyEnvironment(env)
+            is LuceneExpr -> q.parse(env as? IreneQueryLanguage ?: error("LuceneExpr in environment without LuceneParser."))
             is DirQLExpr -> if (q.mu == null) {
                 q.mu = env.defaultDirichletMu
             }
@@ -427,14 +405,14 @@ fun applyEnvironment(env: IreneQueryLanguage, root: QExpr) {
     }
 }
 
-fun applyIndex(index: IreneIndex, root: QExpr) {
+fun computeQExprStats(index: RREnv, root: QExpr) {
     root.visit { q ->
         if (q is TextExpr) {
-            val field = q.field ?: error("Need a field for $q")
-            q.stats = index.getStats(Term(field, q.text))
+            val field = q.statsField()
+            q.stats = index.getStats(q.text, field)
             // Warning, q is missing.
             if (q.stats == null) {
-                error("Query uses field ``$field'' which does not exist in index, via $q")
+                error("Query uses field ``$field'' for stats which does not exist in index, via $q")
             }
         } else if (q is UnorderedWindowExpr) {
 

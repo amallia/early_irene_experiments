@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.irene
 
+import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.sprf.GExpr
 import edu.umass.cics.ciir.sprf.setf
 import org.apache.lucene.search.TopDocs
@@ -20,32 +21,13 @@ fun TopDocs.toQueryResults(index: IreneIndex) = QueryResults(this.scoreDocs.mapI
 
 fun GExpr.transform(ret: Retrieval): GExpr = ret.transformQuery(this, Parameters.create())!!
 
-fun QExpr.toGalago(): GExpr {
-    val q = simplify(this)
-    analyzeDataNeededRecursive(q)
-    return toGalagoRecursive(q)
-}
-
-private fun determineField(child: QExpr, out: MutableSet<String>) {
-    child.visit { q ->
-        if (q is TextExpr) {
-            val field = q.field
-            if (field != null) {
-                out.add(field)
-            }
-        }
-    }
-}
-
+fun QExpr.toGalago(env: RREnv): GExpr = toGalagoRecursive(env.prepare(this))
 private fun createLengths(child: QExpr): GExpr {
-    val fields = HashSet<String>()
-    determineField(child, fields)
-    if (fields.size == 0) {
-        return GExpr("lengths")
-    } else if (fields.size == 1) {
-        return GExpr("lengths").apply { setf("field", fields.first()) }
-    } else {
-        error("Cannot create Galago #lengths for child: $child. Has many fields: $fields")
+    val fields = child.getStatsFields()
+    when(fields.size) {
+        0 -> return GExpr("lengths")
+        1 -> return GExpr("lengths").apply { setf("field", fields.first()) }
+        else -> error("Cannot create Galago #lengths for child: $child.\nHas many fields: $fields")
     }
 }
 
@@ -60,7 +42,7 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
                 DataNeeded.SCORES -> TODO()
             }
             GExpr(operator, q.text).apply {
-                setf("field", q.field)
+                setf("field", q.countsField())
             }
         }
         is SynonymExpr -> GExpr("syn", children(q))

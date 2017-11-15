@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.irene
 
+import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.irene.scoring.IreneQueryModel
 import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.index.Term
@@ -32,11 +33,15 @@ data class CountStats(var text: String, var cf: Long, var df: Long, var cl: Long
     }
 }
 
-abstract class CountStatsStrategy {
+sealed class CountStatsStrategy {
     abstract fun get(): CountStats
 }
-class LazyCountStats(val expr: QExpr, val index: IreneIndex) : CountStatsStrategy() {
-    private val stats: CountStats by lazy { index.getStats(expr)!! }
+class LazyCountStats(val expr: QExpr, val env: RREnv) : CountStatsStrategy() {
+    private val stats: CountStats by lazy { env.computeStats(expr) }
+    override fun get(): CountStats = stats
+}
+class ExactEnvStats(env: RREnv, val term: String, val field: String) : CountStatsStrategy() {
+    val stats = env.getStats(term,  field)
     override fun get(): CountStats = stats
 }
 inline fun <T> List<T>.lazyIntMin(func: (T)->Int): Int? {
@@ -133,7 +138,7 @@ object CalculateStatistics {
     }
 
     fun computeQueryStats(searcher: IndexSearcher, query: IreneQueryModel): CountStats {
-        val fields = query.findFieldsNeeded()
+        val fields = query.exec.getStatsFields()
 
         val fieldBasedStats = CountStats("expr:${query.exec}")
         fields.forEach { field ->

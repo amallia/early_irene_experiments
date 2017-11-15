@@ -18,7 +18,7 @@ abstract class RREnv {
     fun statsComputation(q: QExpr): CountStatsStrategy {
         if (q is OrderedWindowExpr || q is UnorderedWindowExpr) {
             if (estimateStats == null || estimateStats == "exact") {
-                return RREnvLazyStats(this, q.copy())
+                return LazyCountStats(q.copy(), this)
             } else {
                 return approxStats(q, estimateStats!!)
             }
@@ -26,8 +26,17 @@ abstract class RREnv {
             TODO("statsComputation($q)")
         }
     }
+
+    fun prepare(q: QExpr): QExpr {
+        val pq = simplify(q)
+        applyEnvironment(this, pq)
+        analyzeDataNeededRecursive(pq)
+        computeQExprStats(this, pq)
+        return pq
+    }
+
     fun fromQExpr(q: QExpr): RRExpr = when(q) {
-        is TextExpr -> RRTermExpr(this, q.text, q.field ?: defaultField)
+        is TextExpr -> RRTermExpr(this, q.text, q.countsField())
         is LuceneExpr -> error("Can't support LuceneExpr.")
         is SynonymExpr -> TODO()
         is AndExpr -> TODO()

@@ -13,7 +13,7 @@ import java.io.File
  */
 
 fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
-    is TextExpr -> ctx.create(Term(q.field, q.text), q.needed, q.stats ?: error("Missed applyIndex pass."))
+    is TextExpr -> ctx.create(Term(q.countsField(), q.text), q.needed, q.stats ?: error("Missed computeQExprStats pass."))
     is LuceneExpr -> TODO()
     is SynonymExpr -> TODO()
     is AndExpr -> BooleanAndEval(q.children.map { exprToEval(it, ctx) })
@@ -62,7 +62,7 @@ fun approxStats(q: QExpr, method: String): CountStatsStrategy {
 
 fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
     if (q is OrderedWindowExpr || q is UnorderedWindowExpr) {
-        val method = ctx.env.estimateStats ?: return LazyCountStats(q.copy(), ctx.index)
+        val method = ctx.env.estimateStats ?: return LazyCountStats(q.copy(), ctx.env)
         return approxStats(q, method)
     } else {
         TODO("computeCountStats($q)")

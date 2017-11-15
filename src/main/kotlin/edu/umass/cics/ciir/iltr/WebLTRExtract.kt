@@ -48,11 +48,9 @@ fun LTRDocOfWeb(tokenizer: GenericTokenizer, p: Parameters): LTRDoc {
         }
     }
 
-    for (f in MandatoryFields) {
-        if (!fields.containsKey(f)) {
-            fields[f] = LTREmptyDocField(f)
-        }
-    }
+    MandatoryFields
+            .filterNot { fields.containsKey(it) }
+            .forEach { fields[it] = LTREmptyDocField(it) }
 
     val name = p.getStr("id")
     val rank = p.getInt("rank")
@@ -60,6 +58,10 @@ fun LTRDocOfWeb(tokenizer: GenericTokenizer, p: Parameters): LTRDoc {
     features["title-ql"] = p.getDouble("title-ql")
 
     return LTRDoc(name, features, rank, fields)
+}
+
+fun wikiNeighborFeatures() {
+
 }
 
 fun main(args: Array<String>) {

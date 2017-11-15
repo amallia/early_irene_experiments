@@ -129,7 +129,11 @@ class MQ2007 : Gov2() {
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "million_query_track/gov2/mq.gov2.judged.qrel")
 }
 
-abstract class WikiSource : IRDataset {
+open class WikiSource : IRDataset {
+    override val name: String = "wiki"
+    override fun getTitleQueryFile(): File = error("No queries.")
+    override fun getDescQueryFile(): File = error("No queries.")
+    override fun getQueryJudgmentsFile(): File = error("No queries.")
     override fun getIndexFile(): File = notImpl(IRDataset.host)
     override fun getIndexParams(): IndexParams {
         val path = when(IRDataset.host) {

@@ -7,7 +7,6 @@ import org.junit.Test
  * @author jfoley.
  */
 class IreneQueryLanguageTest {
-    val test = IreneQueryLanguage()
     @Test
     fun weightCombineTest() {
         val before = WeightExpr(WeightExpr(TextExpr("test"), 0.5), 2.0)

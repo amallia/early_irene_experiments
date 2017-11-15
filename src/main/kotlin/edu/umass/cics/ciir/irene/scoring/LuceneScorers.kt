@@ -14,7 +14,6 @@ import org.apache.lucene.search.*
 
 data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
     val env = iqm.env
-    val index = iqm.index
     val searcher = iqm.index.searcher
     val lengths = HashMap<String, NumericDocValues>()
 
@@ -51,7 +50,7 @@ private class IQModelWeight(val q: QExpr, val iqm: IreneQueryModel) : Weight(iqm
 
     override fun scorer(context: LeafReaderContext?): Scorer {
         val ctx = IQContext(iqm, context!!)
-        return IreneQueryScorer(exprToEval(q, ctx), ctx)
+        return IreneQueryScorer(exprToEval(q, ctx))
     }
 }
 
@@ -70,20 +69,11 @@ class QueryEvalNodeIter(val node: QueryEvalNode) : DocIdSetIterator() {
         node.syncTo(doc)
         return node.count(doc)
     }
-    fun matches(doc: Int): Boolean {
-        node.syncTo(doc)
-        return node.matches(doc)
-    }
-    fun explain(doc: Int): Explanation {
-        node.syncTo(doc)
-        return node.explain(doc)
-    }
-    fun estimateDF(): Long = node.estimateDF()
     override fun cost(): Long = node.estimateDF()
 }
 
-class IreneQueryScorer(val eval: QueryEvalNode, val ctx: IQContext) : Scorer(null) {
-    val iter = QueryEvalNodeIter(eval)
+class IreneQueryScorer(val eval: QueryEvalNode) : Scorer(null) {
+    private val iter = QueryEvalNodeIter(eval)
     override fun docID(): Int = eval.docID()
     override fun iterator(): DocIdSetIterator = iter
     override fun score(): Float {
@@ -97,33 +87,23 @@ class IreneQueryScorer(val eval: QueryEvalNode, val ctx: IQContext) : Scorer(nul
     override fun freq(): Int = eval.count(eval.docID())
 }
 
-class IreneQueryModel(val index: IreneIndex, val env: IreneQueryLanguage, val q: QExpr) : LuceneQuery() {
-    val exec = env.prepare(index, q)
+class IreneQueryModel(val index: IreneIndex, val env: IreneQueryLanguage, q: QExpr) : LuceneQuery() {
+    val exec = env.prepare(q)
 
     override fun createWeight(searcher: IndexSearcher?, needsScores: Boolean, boost: Float): Weight {
         return IQModelWeight(exec, this)
     }
     override fun hashCode(): Int {
-        return q.hashCode() + env.hashCode();
+        return exec.hashCode()
     }
     override fun equals(other: Any?): Boolean {
         if (other is IreneQueryModel) {
-            return q.equals(other.q) && env.equals(other.env)
+            return exec.equals(other.exec)
         }
         return false
     }
     override fun toString(field: String?): String {
-        return q.toString()
-    }
-
-    fun findFieldsNeeded(): Set<String> {
-        val out = HashSet<String>()
-        exec.visit {
-            if (it is TextExpr) {
-                out.add(it.field!!)
-            }
-        }
-        return out
+        return exec.toString()
     }
 }
 

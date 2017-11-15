@@ -157,7 +157,7 @@ class ScoringTest {
         val bgStats = index.galago.getCollectionStatistics(GExpr("lengths"))
         index.forEachTermPair { t1, t2 ->
             val odi = OrderedWindowExpr(listOf(TextExpr(t1),TextExpr(t2)))
-            val odg = odi.toGalago()
+            val odg = odi.toGalago(index.env)
             //val odg = galagoOd1(listOf(t1, t2));
             val istats = index.irene.getStats(odi)!!
             val gstats = index.galago.getNodeStatistics(index.galago.transformQuery(odg, Parameters.create()));
@@ -192,7 +192,7 @@ class ScoringTest {
         index.forEachTermPair { t1, t2 ->
             listOf(3,6,9).forEach { width ->
                 val udi = UnorderedWindowExpr(listOf(TextExpr(t1),TextExpr(t2)), width)
-                val udg = udi.toGalago()
+                val udg = udi.toGalago(index.env)
                 val istats = index.irene.getStats(udi)!!
                 val gstats = index.galago.getNodeStatistics(index.galago.transformQuery(udg, Parameters.create()));
 
@@ -211,7 +211,7 @@ class ScoringTest {
 
         index.forEachTermPair { t1, t2 ->
             val odi = DirQLExpr(OrderedWindowExpr(listOf(TextExpr(t1), TextExpr(t2))))
-            val odg = odi.toGalago()
+            val odg = odi.toGalago(index.env)
             cmpResults("dirichlet.od($t1,$t2)", odg, odi, index)
         }
     }
@@ -259,7 +259,7 @@ class ScoringTest {
 
         index.forEachTermPair { t1, t2 ->
             val iq = QueryLikelihood(listOf(t1, t2))
-            val gq = iq.toGalago()
+            val gq = iq.toGalago(index.env)
             cmpResults("$t1, $t2", gq, iq, index)
         }
     }
@@ -271,7 +271,7 @@ class ScoringTest {
         index.forEachTermPair { t1, t2 ->
             val t3 = "NEVER_GONNA_HAPPEN"
             val iq = QueryLikelihood(listOf(t1, t2, t3))
-            val gq = iq.toGalago()
+            val gq = iq.toGalago(index.env)
             cmpResults("$t1, $t2, NULL", gq, iq, index)
         }
     }
@@ -283,7 +283,7 @@ class ScoringTest {
         index.forEachTermPair { t1, t2 ->
             val t3 = "NEVER_GONNA_HAPPEN"
             val iq = SequentialDependenceModel(listOf(t1, t2, t3))
-            val gq2 = iq.toGalago()
+            val gq2 = iq.toGalago(index.env)
             cmpResults("sdm($t1, $t2, NULL)", gq2, iq, index)
 
             // if this ever breaks, check to make sure defaults are in sync with Galago.
@@ -304,7 +304,7 @@ class ScoringTest {
             val t3 = "NEVER_GONNA_HAPPEN"
             val iq = SequentialDependenceModel(listOf(t1, t2, t3))
             // score everything no matter what:
-            val gres = index.galago.transformAndExecuteQuery(iq.toGalago(), pmake {
+            val gres = index.galago.transformAndExecuteQuery(iq.toGalago(index.env), pmake {
                 set("annotate", true)
                 set("requested", index.ND)
                 set("working", index.names)

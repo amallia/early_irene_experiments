@@ -7,9 +7,7 @@ import edu.umass.cics.ciir.irene.scoring.countOrderedWindows
 import edu.umass.cics.ciir.irene.scoring.countUnorderedWindows
 
 fun QExpr.toRRExpr(env: RREnv): RRExpr {
-    val q = simplify(this)
-    analyzeDataNeededRecursive(q)
-    return env.fromQExpr(q)
+    return env.fromQExpr(env.prepare(this))
 }
 
 sealed class RRExpr(val env: RREnv) {
@@ -103,14 +101,6 @@ class RRConst(env: RREnv, val value: Double) : RRLeafExpr(env) {
 }
 data class RRTermCacheKey(val term: String, val field: String, val doc: String)
 
-class RREnvStats(env: RREnv, val term: String, val field: String) : CountStatsStrategy() {
-    val stats = env.getStats(term, field)
-    override fun get(): CountStats = stats
-}
-class RREnvLazyStats(env: RREnv, val q: QExpr) : CountStatsStrategy() {
-    val stats: CountStats by lazy { env.computeStats(q) }
-    override fun get(): CountStats = stats
-}
 sealed class RRCountExpr(env: RREnv, val field: String, val css: CountStatsStrategy) : RRExpr(env) {
     val stats: CountStats get() = css.get()
     override fun eval(doc: LTRDoc): Double = error("RRCountExpr has no inherent score.")
@@ -124,7 +114,7 @@ class RRTermExpr(env: RREnv, val term: String, field: String, stats: CountStatsS
     companion object {
         val posCache = Caffeine.newBuilder().maximumSize(1000*20).build<RRTermCacheKey, IntArray>()
     }
-    constructor(env: RREnv, term: String, field: String = env.defaultField) : this(env, term, field, RREnvStats(env, term, field))
+    constructor(env: RREnv, term: String, field: String = env.defaultField) : this(env, term, field, ExactEnvStats(env, term, field))
 
     override fun toString() = "$term.$field $stats"
     override fun count(doc: LTRDoc) = doc.field(field).count(term)
