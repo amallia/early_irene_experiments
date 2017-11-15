@@ -23,6 +23,10 @@ fun <A :Closeable, B: Closeable> Pair<A,B>.use(block: (A,B)->Unit) = {
     }
 }
 
+val total = 700_000_000L;
+var completed = 0L
+val msg = Debouncer()
+
 class SortedKVIter(val reader: BufferedReader) : Closeable {
     constructor(path: File) : this(path.smartReader())
     override fun close() = reader.close()
@@ -51,6 +55,9 @@ class SortedKVIter(val reader: BufferedReader) : Closeable {
     fun next() { pull() }
     fun advanceTo(id: String): Boolean {
         while (nextId < id) {
+            if (msg.ready()) {
+                println(msg.estimate(completed, total))
+            }
             pull()
         }
         return nextId == id
@@ -63,9 +70,6 @@ object JoinURLToPageRank {
         val URLMapping = File(base, "ClueWeb12_All_edocid2url.txt.bz2")
         val PageRank = File(base, "pagerank.docNameOrder.bz2")
         val shards = 50
-        val total = 700_000_000L;
-        var completed = 0L
-        val msg = Debouncer()
 
         ShardWriters(File(base, "url2pr"), shards, "domainToPageRank.tsv.gz").use { domainWriters ->
             ShardWriters(File(base, "url2pr"), shards, "urlToPageRank.tsv.gz").use { urlWriters ->
