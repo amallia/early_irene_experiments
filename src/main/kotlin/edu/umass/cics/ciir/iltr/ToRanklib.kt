@@ -38,6 +38,7 @@ fun shouldNormalize(f: String): Boolean {
     val nonFieldName = f.substringAfter(":", f)
     return when (nonFieldName) {
         "qlen", "qstop", "docinfo", "avgwl", "docl", "jaccard-stop", "length" -> false
+        "numTerms", "jsoup_error", "byte_length", "numVisTerms", "numTitleTerms", "fracVisibleText", "fracAnchorText", "fracTableText", "avgTermLength", "avgAnchorTermLength", "urlDepth", "urlSize", "entropy" -> false
         else -> true
     }
 }
