@@ -15,7 +15,7 @@ import java.net.URI
  */
 val SpacesRegex = "\\s+".toRegex()
 
-fun <A :Closeable, B: Closeable> Pair<A,B>.use(block: (A,B)->Unit) = {
+fun <A :Closeable, B: Closeable> Pair<A,B>.use(block: (A,B)->Unit) {
     this.first.use { a ->
         this.second.use { b ->
             block(a, b)
