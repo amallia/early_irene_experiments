@@ -137,12 +137,12 @@ object CalculateStatistics {
         return CountStats("field:$field", null, cstats)
     }
 
-    fun computeQueryStats(searcher: IndexSearcher, query: IreneQueryModel): CountStats {
+    inline fun computeQueryStats(searcher: IndexSearcher, query: IreneQueryModel, cachedFieldStats: (String)->(CountStats?)): CountStats {
         val fields = query.exec.getStatsFields()
 
         val fieldBasedStats = CountStats("expr:${query.exec}")
         fields.forEach { field ->
-            val fstats = fieldStats(searcher, field) ?: error("Field: ``$field'' does not exist in index.")
+            val fstats = cachedFieldStats(searcher, field) ?: error("Field: ``$field'' does not exist in index.")
             fieldBasedStats.dc = maxOf(fstats.dc, fieldBasedStats.dc)
             fieldBasedStats.cl += fstats.cl
         }

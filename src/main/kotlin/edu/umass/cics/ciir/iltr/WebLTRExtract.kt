@@ -2,10 +2,7 @@ package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.chai.smartDoLines
 import edu.umass.cics.ciir.chai.smartPrint
-import edu.umass.cics.ciir.irene.FullDependenceModel
-import edu.umass.cics.ciir.irene.GenericTokenizer
-import edu.umass.cics.ciir.irene.QueryLikelihood
-import edu.umass.cics.ciir.irene.SequentialDependenceModel
+import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
@@ -66,7 +63,7 @@ fun wikiNeighborFeatures() {
 
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dsName = argp.get("dataset", "clue09")
+    val dsName = argp.get("dataset", "gov2")
     val dataset = DataPaths.get(dsName)
     val evals = getEvaluators(listOf("ap", "ndcg"))
     val ms = NamedMeasures()
@@ -74,6 +71,7 @@ fun main(args: Array<String>) {
     val fbTerms = 100
     val qid = argp.get("qid")?.toString()
     val qidBit = if (qid == null) "" else ".$qid"
+    val statsField = argp.get("statsField", "document")
 
     File("l2rf/$dsName$qidBit.features.jsonl.gz").smartPrint { out ->
         dataset.getIreneIndex().use { index ->
@@ -93,13 +91,18 @@ fun main(args: Array<String>) {
                         doc.features["$fieldName:qlen"] = qterms.size.toDouble()
                         doc.features["$fieldName:qstop"] = qterms.count { inqueryStop.contains(it) }.toDouble()
                     }
+
+                    // Retrieval models.
+                    feature_exprs.putAll(hashMapOf<String, QExpr>(
+                            Pair("bm25", UnigramRetrievalModel(qterms, {BM25Expr(it)}, fieldName, statsField)),
+                            Pair("LM-dir", QueryLikelihood(qterms, fieldName, statsField)),
+                            Pair("LM-abs", UnigramRetrievalModel(qterms, {AbsoluteDiscountingQLExpr(it)}, fieldName, statsField)),
+                            Pair("fdm-stop", FullDependenceModel(qterms, field = fieldName, statsField=statsField, stopwords = inqueryStop)),
+                            Pair("sdm-stop", SequentialDependenceModel(qterms, field = fieldName, statsField=statsField, stopwords = inqueryStop))
+                    ).mapValues { (_,q) -> q.toRRExpr(env) })
+
                     feature_exprs.putAll(hashMapOf<String, RRExpr>(
-                            Pair("bm25", env.bm25(qterms, fieldName)),
-                            Pair("LM-dir", QueryLikelihood(qterms, fieldName).toRRExpr(env)),
-                            Pair("LM-abs", env.mean(qterms.map { RRAbsoluteDiscounting(env, it, fieldName) })),
                             Pair("docinfo", RRDocInfoQuotient(env, fieldName)),
-                            Pair("fdm-stop", FullDependenceModel(qterms, field = fieldName, stopwords = inqueryStop).toRRExpr(env)),
-                            Pair("sdm-stop", SequentialDependenceModel(qterms, field = fieldName, stopwords = inqueryStop).toRRExpr(env)),
                             Pair("avgwl", RRAvgWordLength(env, field = fieldName)),
                             Pair("meantp", env.mean(qterms.map { RRTermPosition(env, it, fieldName) })),
                             Pair("jaccard-stop", RRJaccardSimilarity(env, inqueryStop, field = fieldName)),
@@ -111,7 +114,7 @@ fun main(args: Array<String>) {
                     val rm = env.computeRelevanceModel(q.docs, "title-ql-prior", fbDocs)
                     arrayListOf("title", "body", "document").forEach { fieldName ->
                         val wt = rm.toTerms(fbTerms)
-                        val rmeExpr = rm.toQExpr(fbTerms, targetField = fieldName).toRRExpr(env)
+                        val rmeExpr = rm.toQExpr(fbTerms, targetField = fieldName, statsField=statsField).toRRExpr(env)
                         feature_exprs.put("$fieldName:rm1-k$fbDocs", rmeExpr)
                         feature_exprs.put("$fieldName:jaccard-rm3-k$fbDocs", RRJaccardSimilarity(env, wt.map { it.term }.toSet(), field = fieldName))
                     }

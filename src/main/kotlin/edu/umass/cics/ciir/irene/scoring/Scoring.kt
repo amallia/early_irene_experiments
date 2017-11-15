@@ -39,6 +39,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is ConstScoreExpr -> ConstEvalNode(q.x.toFloat())
     is ConstCountExpr -> ConstEvalNode(q.x)
     is ConstBoolExpr -> if(q.x) ConstTrueNode(ctx.numDocs()) else ConstEvalNode(0)
+    is AbsoluteDiscountingQLExpr -> error("No efficient way to implement AbsoluteDiscountingQLExpr in Irene backend.")
 }
 
 fun approxStats(q: QExpr, method: String): CountStatsStrategy {

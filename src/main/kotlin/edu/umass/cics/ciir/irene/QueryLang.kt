@@ -3,10 +3,8 @@ package edu.umass.cics.ciir.irene
 import edu.umass.cics.ciir.chai.forAllPairs
 import edu.umass.cics.ciir.chai.forEachSeqPair
 import edu.umass.cics.ciir.iltr.RREnv
-import edu.umass.cics.ciir.sprf.pmake
 import org.apache.lucene.index.Term
 import org.apache.lucene.queryparser.classic.QueryParser
-import org.lemurproject.galago.utility.Parameters
 import java.util.*
 
 typealias LuceneQuery = org.apache.lucene.search.Query
@@ -18,8 +16,6 @@ typealias LuceneQuery = org.apache.lucene.search.Query
 class IreneQueryLanguage(val index: IIndex = EmptyIndex()) : RREnv() {
     override fun computeStats(q: QExpr): CountStats = index.getStats(q)!!
     override fun getStats(term: String, field: String?): CountStats = index.getStats(term, field ?: defaultField)!!
-
-    var defaultScorer = "dirichlet"
     val luceneQueryParser: QueryParser
         get() = QueryParser(defaultField, (index as IreneIndex).analyzer)
     override var estimateStats: String? = null
@@ -33,29 +29,32 @@ fun simplify(q: QExpr): QExpr {
 }
 
 // Easy "model"-based constructor.
-fun QueryLikelihood(terms: List<String>, field: String?=null, mu: Double?=null, statsField: String?=null): QExpr {
-    return MeanExpr(terms.map { DirQLExpr(TextExpr(it, field, statsField), mu) })
+fun QueryLikelihood(terms: List<String>, field: String?=null, statsField: String?=null, mu: Double? = null): QExpr {
+    return UnigramRetrievalModel(terms, {DirQLExpr(it, mu)}, field, statsField)
+}
+fun UnigramRetrievalModel(terms: List<String>, scorer: (TextExpr)->QExpr, field: String?=null, statsField: String?=null): QExpr {
+    return MeanExpr(terms.map { scorer(TextExpr(it, field, statsField)) })
 }
 
-fun SequentialDependenceModel(terms: List<String>, field: String?=null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, fullProx: Double? = null, fullProxWidth:Int=12, makeScorer: (QExpr)->QExpr = {DirQLExpr(it)}): QExpr {
+fun SequentialDependenceModel(terms: List<String>, field: String?=null, statsField: String?=null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, fullProx: Double? = null, fullProxWidth:Int=12, makeScorer: (QExpr)->QExpr = {DirQLExpr(it)}): QExpr {
     if (terms.isEmpty()) throw IllegalStateException("Empty SDM")
     if (terms.size == 1) {
-        return makeScorer(TextExpr(terms[0], field))
+        return makeScorer(TextExpr(terms[0], field, statsField))
     }
 
     val nonStop = terms.filterNot { stopwords.contains(it) }
     val bestTerms = (if (nonStop.isNotEmpty()) { nonStop } else terms)
     val unigrams: List<QExpr> = bestTerms
-            .map { makeScorer(TextExpr(it, field)) }
+            .map { makeScorer(TextExpr(it, field, statsField)) }
 
     val bigrams = ArrayList<QExpr>()
     val ubigrams = ArrayList<QExpr>()
     terms.forEachSeqPair { lhs, rhs ->
-        val ts = listOf(lhs, rhs).map { TextExpr(it, field) }
+        val ts = listOf(lhs, rhs).map { TextExpr(it, field, statsField) }
         bigrams.add(makeScorer(OrderedWindowExpr(ts, odStep)))
     }
     bestTerms.forEachSeqPair { lhs, rhs ->
-        val ts = listOf(lhs, rhs).map { TextExpr(it, field) }
+        val ts = listOf(lhs, rhs).map { TextExpr(it, field, statsField) }
         ubigrams.add(makeScorer(UnorderedWindowExpr(ts, uwWidth)))
     }
 
@@ -66,31 +65,31 @@ fun SequentialDependenceModel(terms: List<String>, field: String?=null, stopword
 
     if (fullProx != null) {
         val fullProxTerms = if (bestTerms.size >= 2) bestTerms else terms
-        exprs.add(makeScorer(UnorderedWindowExpr(fullProxTerms.map { TextExpr(it, field) }, fullProxWidth)).weighted(fullProx))
+        exprs.add(makeScorer(UnorderedWindowExpr(fullProxTerms.map { TextExpr(it, field, statsField) }, fullProxWidth)).weighted(fullProx))
     }
 
     return SumExpr(exprs)
 }
 
-fun FullDependenceModel(terms: List<String>, field: String?=null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, fullProx: Double? = null, fullProxWidth:Int=12, makeScorer: (QExpr)->QExpr = {DirQLExpr(it)}): QExpr {
+fun FullDependenceModel(terms: List<String>, field: String?=null, statsField: String? = null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, fullProx: Double? = null, fullProxWidth:Int=12, makeScorer: (QExpr)->QExpr = {DirQLExpr(it)}): QExpr {
     if (terms.isEmpty()) throw IllegalStateException("Empty FDM")
     if (terms.size == 1) {
-        return makeScorer(TextExpr(terms[0], field))
+        return makeScorer(TextExpr(terms[0], field, statsField))
     }
 
     val nonStop = terms.filterNot { stopwords.contains(it) }
     val bestTerms = (if (nonStop.isNotEmpty()) { nonStop } else terms)
     val unigrams: List<QExpr> = bestTerms
-            .map { makeScorer(TextExpr(it, field)) }
+            .map { makeScorer(TextExpr(it, field, statsField)) }
 
     val bigrams = ArrayList<QExpr>()
     val ubigrams = ArrayList<QExpr>()
     terms.forAllPairs { lhs, rhs ->
-        val ts = listOf(lhs, rhs).map { TextExpr(it, field) }
+        val ts = listOf(lhs, rhs).map { TextExpr(it, field, statsField) }
         bigrams.add(makeScorer(OrderedWindowExpr(ts, odStep)))
     }
     bestTerms.forAllPairs { lhs, rhs ->
-        val ts = listOf(lhs, rhs).map { TextExpr(it, field) }
+        val ts = listOf(lhs, rhs).map { TextExpr(it, field, statsField) }
         ubigrams.add(makeScorer(UnorderedWindowExpr(ts, uwWidth)))
     }
 
@@ -101,7 +100,7 @@ fun FullDependenceModel(terms: List<String>, field: String?=null, stopwords: Set
 
     if (fullProx != null) {
         val fullProxTerms = if (bestTerms.size >= 2) bestTerms else terms
-        exprs.add(makeScorer(UnorderedWindowExpr(fullProxTerms.map { TextExpr(it, field) }, fullProxWidth)).weighted(fullProx))
+        exprs.add(makeScorer(UnorderedWindowExpr(fullProxTerms.map { TextExpr(it, field, statsField) }, fullProxWidth)).weighted(fullProx))
     }
 
     return SumExpr(exprs)
@@ -222,6 +221,9 @@ data class WeightExpr(override var child: QExpr, var weight: Double = 1.0) : Sin
 data class DirQLExpr(override var child: QExpr, var mu: Double? = null): SingleChildExpr() {
     override fun copy() = DirQLExpr(child.copy(), mu)
 }
+data class AbsoluteDiscountingQLExpr(override var child: QExpr, var delta: Double? = null): SingleChildExpr() {
+    override fun copy() = AbsoluteDiscountingQLExpr(child.copy(), delta)
+}
 data class BM25Expr(override var child: QExpr, var b: Double? = null, var k: Double? = null): SingleChildExpr() {
     override fun copy() = BM25Expr(child.copy(), b, k)
 }
@@ -233,74 +235,6 @@ data class BoolToScoreExpr(override var child: QExpr, var trueScore: Double=1.0,
 }
 data class CountToBoolExpr(override var child: QExpr, var gt: Int = 0): SingleChildExpr() {
     override fun copy() = CountToBoolExpr(child.copy(), gt)
-}
-
-fun toJSON(q: QExpr): Parameters = when(q) {
-    is TextExpr -> pmake {
-        set("op", "text")
-        set("text", q.text)
-        putIfNotNull("field", q.countsField())
-        putIfNotNull("statsField", q.statsField())
-    }
-    is LuceneExpr -> pmake {
-        set("op", "lucene")
-        set("rawQuery", q.rawQuery)
-    }
-    is RequireExpr -> pmake {
-        set("op", "require")
-        set("cond", toJSON(q.cond))
-        set("value", toJSON(q.value))
-    }
-    is CombineExpr -> pmake {
-        set("op", "combine")
-        set("weights", q.weights)
-        set("children", q.children.map { toJSON(it) })
-    }
-    is OpExpr -> pmake {
-        set("op", when(q) {
-            is SynonymExpr -> "syn"
-            is AndExpr -> "band"
-            is OrExpr -> "bor"
-            is MultExpr -> "wsum"
-            is MaxExpr -> "max"
-            else -> error("Handle this elsewhere!")
-        })
-        set("children", q.children.map { toJSON(it) })
-    }
-    is WeightExpr -> pmake {
-        set("op", "weight")
-        set("w", q.weight)
-        set("child", toJSON(q.child))
-    }
-    is DirQLExpr -> pmake {
-        set("op", "dirichlet")
-        putIfNotNull("defaultDirichletMu", q.mu)
-        set("child", toJSON(q.child))
-    }
-    is BM25Expr -> pmake {
-        set("op", "bm25")
-        putIfNotNull("b", q.b)
-        putIfNotNull("k", q.k)
-        set("child", toJSON(q.child))
-    }
-    is CountToScoreExpr -> pmake {
-        set("op", "count->score")
-        set("child", toJSON(q.child))
-    }
-    is BoolToScoreExpr -> pmake {
-        set("op", "bool->score")
-        set("child", toJSON(q.child))
-        set("true", q.trueScore)
-        set("false", q.falseScore)
-    }
-    is CountToBoolExpr -> pmake {
-        set("op", "count->bool")
-        set("child", toJSON(q.child))
-        set("gt", q.gt)
-    }
-    is ConstScoreExpr -> pmake { set("constant", q.x) }
-    is ConstCountExpr -> pmake { set("constant", q.x) }
-    is ConstBoolExpr -> pmake { set("constant", q.x) }
 }
 
 fun combineWeights(q: QExpr): Boolean {
@@ -372,7 +306,7 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
             }
             DataNeeded.POSITIONS
         }
-        is BM25Expr, is DirQLExpr ->  DataNeeded.COUNTS
+        is AbsoluteDiscountingQLExpr, is BM25Expr, is DirQLExpr ->  DataNeeded.COUNTS
         is CountToScoreExpr ->  DataNeeded.COUNTS
         is BoolToScoreExpr -> DataNeeded.DOCS
         is CountToBoolExpr -> DataNeeded.COUNTS
@@ -395,6 +329,9 @@ fun applyEnvironment(env: RREnv, root: QExpr) {
             is LuceneExpr -> q.parse(env as? IreneQueryLanguage ?: error("LuceneExpr in environment without LuceneParser."))
             is DirQLExpr -> if (q.mu == null) {
                 q.mu = env.defaultDirichletMu
+            }
+            is AbsoluteDiscountingQLExpr -> if (q.delta == null) {
+                q.delta = env.absoluteDiscountingDelta
             }
             is BM25Expr -> {
                 if (q.b == null) q.b = env.defaultBM25b
@@ -420,19 +357,5 @@ fun computeQExprStats(index: RREnv, root: QExpr) {
 
         }
     }
-}
-
-fun main(args: Array<String>) {
-    val complicated = RequireExpr(
-            CountToBoolExpr(TextExpr("funds")),
-            SumExpr(listOf(
-                    DirQLExpr(TextExpr("president")),
-                    DirQLExpr(TextExpr("query"))
-            )))
-    println(complicated)
-    println(toJSON(complicated).toPrettyString())
-    applyEnvironment(IreneQueryLanguage(), complicated)
-    println(toJSON(complicated).toPrettyString())
-    println(complicated)
 }
 

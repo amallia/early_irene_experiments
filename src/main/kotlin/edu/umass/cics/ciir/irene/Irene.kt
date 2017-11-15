@@ -18,6 +18,7 @@ import org.apache.lucene.search.*
 import java.io.Closeable
 import java.io.File
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.ForkJoinTask
 import java.util.concurrent.atomic.AtomicLong
@@ -127,6 +128,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
 
     private val termStatsCache: Cache<Term, CountStats> = Caffeine.newBuilder().maximumSize(100_000).build()
     private val exprStatsCache = Caffeine.newBuilder().maximumSize(100_000).build<QExpr, ForkJoinTask<CountStats>>()
+    private val fieldStatsCache = ConcurrentHashMap<String, CountStats?>()
 
     override fun close() {
         reader.close()
@@ -145,7 +147,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
 
         return lucene_try {
             val results = searcher.search(q, 10)?.scoreDocs
-            if (results == null || results.size == 0) return -1
+            if (results == null || results.isEmpty()) return -1
             // TODO complain about dupes?
             return results[0].doc
         }
@@ -156,16 +158,17 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
         return tokenize(text, field)
     }
 
-    fun getAverageDL(field: String): Double {
-        val fieldStats = searcher.collectionStatistics(field)
-        return fieldStats.sumTotalTermFreq().toDouble() / fieldStats.docCount().toDouble()
-    }
+    fun getAverageDL(field: String): Double = fieldStats(field)?.avgDL() ?: error("No such field $field.")
 
-    fun fieldStats(field: String): CountStats? = CalculateStatistics.fieldStats(searcher, field)
+    fun fieldStats(field: String): CountStats? {
+        return fieldStatsCache.computeIfAbsent(field, {
+            CalculateStatistics.fieldStats(searcher, field)
+        })
+    }
 
     override fun getStats(term: Term): CountStats? {
         //println("getStats($term)")
-        return termStatsCache.get(term, {CalculateStatistics.lookupTermStatistics(searcher, it)}) ?: CalculateStatistics.fieldStats(searcher, term.field())
+        return termStatsCache.get(term, {CalculateStatistics.lookupTermStatistics(searcher, it)}) ?: fieldStats(term.field())
     }
     override fun getStats(expr: QExpr): CountStats? = getExprStats(expr)?.join()
 
@@ -173,7 +176,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
 
     private fun getExprStats(expr: QExpr): ForkJoinTask<CountStats>? {
         return exprStatsCache.get(expr, { missing ->
-            val func: ()->CountStats = {CalculateStatistics.computeQueryStats(searcher, prepare(missing))}
+            val func: ()->CountStats = {CalculateStatistics.computeQueryStats(searcher, prepare(missing), this::fieldStats)}
             jobPool.submit(func)
         })
     }

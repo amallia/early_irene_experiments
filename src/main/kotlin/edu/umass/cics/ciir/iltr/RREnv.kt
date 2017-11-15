@@ -56,8 +56,9 @@ abstract class RREnv {
                 q.width,
                 statsComputation(q))
         is WeightExpr -> RRWeighted(this, q.weight, fromQExpr(q.child))
-        is DirQLExpr -> RRDirichletScorer(this, fromQExpr(q.child) as RRCountExpr, q.mu ?: defaultDirichletMu)
-        is BM25Expr -> RRBM25Scorer(this, fromQExpr(q.child) as RRCountExpr, q.b ?: defaultBM25b, q.k ?: defaultBM25k)
+        is DirQLExpr -> RRDirichletScorer(this, fromQExpr(q.child) as RRCountExpr, q.mu!!)
+        is BM25Expr -> RRBM25Scorer(this, fromQExpr(q.child) as RRCountExpr, q.b!!, q.k!!)
+        is AbsoluteDiscountingQLExpr -> RRAbsoluteDiscountingScorer(this, fromQExpr(q.child) as RRCountExpr, q.delta!!)
         is CountToScoreExpr -> TODO()
         is BoolToScoreExpr -> TODO()
         is CountToBoolExpr -> TODO()
@@ -116,7 +117,7 @@ data class WeightedTerm(val score: Double, val term: String, val field: String =
 }
 
 data class RelevanceModel(val weights: TObjectDoubleHashMap<String>, val sourceField: String) {
-    fun toTerms(): List<WeightedTerm> {
+    private fun toTerms(): List<WeightedTerm> {
         val output = ArrayList<WeightedTerm>(weights.size())
         weights.forEachEntry {term, weight ->
             output.add(WeightedTerm(weight, term, sourceField))
@@ -124,6 +125,6 @@ data class RelevanceModel(val weights: TObjectDoubleHashMap<String>, val sourceF
         return output
     }
     fun toTerms(k: Int): List<WeightedTerm> = toTerms().sorted().take(k).normalized()
-    fun toQExpr(k: Int, scorer: (TextExpr)->QExpr = {DirQLExpr(it)}, targetField: String? = null) = SumExpr(toTerms(k).map { scorer(TextExpr(it.term, targetField ?: sourceField)).weighted(it.score) })
+    fun toQExpr(k: Int, scorer: (TextExpr)->QExpr = {DirQLExpr(it)}, targetField: String? = null, statsField: String? = null) = SumExpr(toTerms(k).map { scorer(TextExpr(it.term, targetField ?: sourceField, statsField)).weighted(it.score) })
 }
 
