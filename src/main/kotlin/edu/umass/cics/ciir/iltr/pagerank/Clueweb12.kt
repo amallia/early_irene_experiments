@@ -40,7 +40,7 @@ class SortedKVIter(val reader: BufferedReader) : Closeable {
         if (done) return
         while(true) {
             if (msg.ready()) {
-                println("pull @$nextId=$nextVal ${msg.estimate(completed, total)}")
+                println("pull @$nextId ${msg.estimate(completed, total)}")
             }
             val last = nextId
             val next = reader.readLine()?.split(SpacesRegex)
@@ -91,6 +91,7 @@ object JoinURLToPageRank {
                         if (scores.advanceTo(urls.nextId)) {
                             val score = scores.nextVal
                             val cleanURL = galagoScrubUrl(urls.nextVal) ?: continue
+                            completed++
                             urlWriters.hashed(cleanURL).println("$cleanURL\t$score")
                             try {
                                 val domain = URI(cleanURL).host ?: continue
@@ -100,7 +101,6 @@ object JoinURLToPageRank {
                             }
                         }
                         urls.next()
-                        completed++
                         if (msg.ready()) {
                             println(msg.estimate(completed, total))
                         }
