@@ -38,16 +38,26 @@ class SortedKVIter(val reader: BufferedReader) : Closeable {
     }
     private fun pull() {
         if (done) return
-        val next = reader.readLine()?.split(SpacesRegex)
-        if (next == null) {
-            done = true
-            return
+        while(true) {
+            if (msg.ready()) {
+                println("pull @$nextId=$nextVal ${msg.estimate(completed, total)}")
+            }
+            val last = nextId
+            val next = reader.readLine()?.split(SpacesRegex)
+            if (next == null) {
+                done = true
+                return
+            }
+            if (next.size != 2) {
+                error("Bad entry: $next")
+            }
+            nextId = next[0]
+            nextVal = next[1]
+
+            if (last > nextId) {
+                break
+            }
         }
-        if (next.size != 2) {
-            error("Bad entry: $next")
-        }
-        nextId = next[0]
-        nextVal = next[1]
     }
 
     fun next() { pull() }
@@ -55,7 +65,7 @@ class SortedKVIter(val reader: BufferedReader) : Closeable {
         if (msg.ready()) {
             println("advanceTo $id @ $nextId ${msg.estimate(completed, total)}")
         }
-        while (nextId < id) {
+        while (!done && nextId < id) {
             pull()
         }
         return nextId == id
