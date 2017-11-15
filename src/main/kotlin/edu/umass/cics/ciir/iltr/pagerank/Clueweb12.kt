@@ -62,13 +62,17 @@ object JoinURLToPageRank {
         val PageRank = File(base, "pagerank.docNameOrder.bz2")
         val shards = 50
 
-        val total = 700_000_000L;
+        val total = 733_019_372L;
         var completed = 0L
         val msg = Debouncer()
 
         ShardWriters(File(base, "url2pr"), shards, "domainToPageRank.tsv.gz").use { domainWriters ->
             ShardWriters(File(base, "url2pr"), shards, "urlToPageRank.tsv.gz").use { urlWriters ->
                 Pair(SortedKVIter(URLMapping), SortedKVIter(PageRank)).use { urls, scores ->
+                    assert(!urls.done)
+                    assert(!scores.done)
+                    print("Starting: urls@${urls.nextId} scores@${scores.nextId}")
+
                     while (!urls.done && !scores.done) {
                         if (scores.advanceTo(urls.nextId)) {
                             val score = scores.nextVal
@@ -83,6 +87,9 @@ object JoinURLToPageRank {
                             println(msg.estimate(completed, total))
                         }
                     }
+
+                    print("Ending: urls@${urls.nextId} scores@${scores.nextId}")
+                    println(msg.estimate(completed, total))
                 }
             }
         }
