@@ -78,8 +78,12 @@ object JoinURLToPageRank {
                             val score = scores.nextVal
                             val cleanURL = galagoScrubUrl(urls.nextVal) ?: continue
                             urlWriters.hashed(cleanURL).println("$cleanURL\t$score")
-                            val domain = URI(cleanURL).host ?: continue
-                            domainWriters.hashed(domain).println("$domain\t$score")
+                            try {
+                                val domain = URI(cleanURL).host ?: continue
+                                domainWriters.hashed(domain).println("$domain\t$score")
+                            } catch (e: Exception) {
+                                // Can't parse the URL
+                            }
                         }
                         urls.next()
                         completed++
