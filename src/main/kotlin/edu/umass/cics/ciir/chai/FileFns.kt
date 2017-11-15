@@ -24,16 +24,22 @@ fun File.ensureParentDirectories(): Boolean {
 }
 fun File.smartReader() = StreamCreator.openInputStream(this).bufferedReader()
 fun File.smartPrinter() = StreamCreator.openOutputStream(this).printer()
-fun <T> File.smartLines(block: (Sequence<String>)->T): T = smartReader().useLines(block)
-fun File.smartDoLines(doProgress: Boolean=false, total: Long? = null, handler: (String)->Unit) {
+inline fun <T> File.smartLines(block: (Sequence<String>)->T): T = smartReader().useLines(block)
+fun File.smartDoLines(doProgress: Boolean=false, limit: Int? = null,  total: Long? = null, handler: (String)->Unit) {
     val msg = Debouncer()
     var done = 0L
-    smartReader().useLines { lines ->
-        lines.forEach { line ->
+    smartLines { lines ->
+        val lineSeq = if (limit != null) {
+            lines.take(limit)
+        } else {
+            lines
+        }
+        val count = limit?.toLong() ?: total
+        lineSeq.forEach { line ->
             handler(line)
             done++
             if (doProgress && msg.ready()) {
-                println(msg.estimate(done, total ?: done))
+                println(msg.estimate(done, count ?: done))
             }
         }
     }

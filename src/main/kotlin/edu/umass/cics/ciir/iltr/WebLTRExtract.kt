@@ -25,6 +25,9 @@ fun forEachSDMPoolQuery(tokenizer: GenericTokenizer, dsName: String, doFn: (LTRQ
     }
 }
 
+object TrimJSONLDoc  {
+}
+
 val MandatoryFields = arrayListOf<String>("title", "body", "document")
 fun LTRDocOfWeb(tokenizer: GenericTokenizer, p: Parameters): LTRDoc {
     val fjson = p.getMap("fields")
@@ -76,7 +79,7 @@ fun main(args: Array<String>) {
     File("l2rf/$dsName$qidBit.features.jsonl.gz").smartPrint { out ->
         dataset.getIreneIndex().use { index ->
             val env = index.getRREnv()
-            env.estimateStats = "min"
+            //env.estimateStats = "min"
             forEachSDMPoolQuery(index.tokenizer, dsName) { q ->
                 if (qid != null && qid != q.qid) {
                     // skip all but qid if specified.
@@ -95,14 +98,12 @@ fun main(args: Array<String>) {
 
                     // Retrieval models.
                     feature_exprs.putAll(hashMapOf<String, QExpr>(
-                            Pair("bm25", UnigramRetrievalModel(qterms, {BM25Expr(it)}, fieldName, statsField)),
-                            Pair("LM-dir", QueryLikelihood(qterms, fieldName, statsField)),
-                            Pair("LM-abs", UnigramRetrievalModel(qterms, {AbsoluteDiscountingQLExpr(it)}, fieldName, statsField)),
-                            Pair("fdm-stop", FullDependenceModel(qterms, field = fieldName, statsField=statsField, stopwords = inqueryStop)),
-                            Pair("sdm-stop", SequentialDependenceModel(qterms, field = fieldName, statsField=statsField, stopwords = inqueryStop))
-                    )
-                            .mapValues { (_,q) -> q.toRRExpr(env) }
-                            .mapKeys { (k, _) -> "$fieldName:$k" })
+                            Pair("norm:$fieldName:bm25", UnigramRetrievalModel(qterms, {BM25Expr(it)}, fieldName, statsField)),
+                            Pair("norm:$fieldName:LM-dir", QueryLikelihood(qterms, fieldName, statsField)),
+                            Pair("norm:$fieldName:LM-abs", UnigramRetrievalModel(qterms, {AbsoluteDiscountingQLExpr(it)}, fieldName, statsField)),
+                            Pair("norm:$fieldName:fdm-stop", FullDependenceModel(qterms, field = fieldName, statsField=statsField, stopwords = inqueryStop)),
+                            Pair("norm:$fieldName:sdm-stop", SequentialDependenceModel(qterms, field = fieldName, statsField=statsField, stopwords = inqueryStop))
+                    ).mapValues { (_,q) -> q.toRRExpr(env) })
 
                     feature_exprs.putAll(hashMapOf<String, RRExpr>(
                             Pair("docinfo", RRDocInfoQuotient(env, fieldName)),
@@ -118,7 +119,7 @@ fun main(args: Array<String>) {
                     arrayListOf("title", "body", "document").forEach { fieldName ->
                         val wt = rm.toTerms(fbTerms)
                         val rmeExpr = rm.toQExpr(fbTerms, targetField = fieldName, statsField=statsField).toRRExpr(env)
-                        feature_exprs.put("$fieldName:rm1-k$fbDocs", rmeExpr)
+                        feature_exprs.put("norm:$fieldName:rm1-k$fbDocs", rmeExpr)
                         feature_exprs.put("$fieldName:jaccard-rm3-k$fbDocs", RRJaccardSimilarity(env, wt.map { it.term }.toSet(), field = fieldName))
                     }
                 }
@@ -139,7 +140,7 @@ fun main(args: Array<String>) {
                     println("Skipped NaN or Infinite features: ${skippedFeatures}")
                 }
 
-                arrayListOf<String>("title:rm1-k10", "body:rm1-k10", "title:sdm-stop", "body:sdm-stop").forEach { method ->
+                arrayListOf<String>("norm:title:rm1-k10", "norm:body:rm1-k10", "norm:title:sdm-stop", "norm:body:sdm-stop").forEach { method ->
                     evals.forEach { measure, evalfn ->
                         val score = try {
                             val results = q.toQResults(method)

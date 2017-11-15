@@ -90,9 +90,6 @@ class RRAbsoluteDiscountingScorer(env: RREnv, val term: RRCountExpr, var delta: 
         val count = maxOf(0.0, term.count(doc).toDouble() - delta)
         val raw = (count / length) + sigma * bg
         val score = Math.log(raw)
-        if (java.lang.Double.isInfinite(score)) {
-            println("TRAP")
-        }
         return score;
     }
 }
@@ -160,7 +157,7 @@ class RRAvgWordLength(env: RREnv, val field: String = env.defaultField) : RRLeaf
 class RRDocInfoQuotient(env: RREnv, val field: String = env.defaultField): RRLeafExpr(env) {
     override fun eval(doc: LTRDoc): Double {
         val field = doc.field(field)
-        return field.uniqTerms.toDouble() / field.length
+        return field.uniqTerms.toDouble() / Math.max(1.0,field.length.toDouble())
     }
 }
 
