@@ -3,6 +3,7 @@ package edu.umass.cics.ciir.iltr.pagerank
 import edu.umass.cics.ciir.chai.Debouncer
 import edu.umass.cics.ciir.chai.ShardWriters
 import edu.umass.cics.ciir.chai.smartReader
+import edu.umass.cics.ciir.chai.use
 import edu.umass.cics.ciir.irene.example.galagoScrubUrl
 import java.io.BufferedReader
 import java.io.Closeable
@@ -15,13 +16,6 @@ import java.net.URI
  */
 val SpacesRegex = "\\s+".toRegex()
 
-fun <A :Closeable, B: Closeable> Pair<A,B>.use(block: (A,B)->Unit) {
-    this.first.use { a ->
-        this.second.use { b ->
-            block(a, b)
-        }
-    }
-}
 
 class SortedKVIter(val reader: BufferedReader) : Closeable {
     constructor(path: File) : this(path.smartReader())

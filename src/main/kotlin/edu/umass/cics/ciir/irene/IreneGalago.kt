@@ -7,6 +7,7 @@ import org.apache.lucene.search.TopDocs
 import org.lemurproject.galago.core.eval.QueryResults
 import org.lemurproject.galago.core.eval.SimpleEvalDoc
 import org.lemurproject.galago.core.retrieval.Retrieval
+import org.lemurproject.galago.utility.MathUtils
 import org.lemurproject.galago.utility.Parameters
 
 /**
@@ -89,3 +90,6 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
         is AbsoluteDiscountingQLExpr -> TODO()
     }
 }
+
+fun TopDocs.logSumExp(): Double = if (this.scoreDocs.isNotEmpty()) MathUtils.logSumExp(this.scoreDocs.map { it.score.toDouble() }.toDoubleArray()) else 0.0
+

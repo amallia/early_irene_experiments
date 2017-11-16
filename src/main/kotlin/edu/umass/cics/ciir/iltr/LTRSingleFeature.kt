@@ -19,7 +19,7 @@ class LTRDocByFeature(private val feature: String, val doc: LTRDoc, rank: Int, s
     override fun getScore(): Double = score
     override fun getName(): String = doc.name
     override fun clone(score: Double): LTRDocByFeature = LTRDocByFeature(feature, doc, rank, score)
-    constructor(feature: String, doc: LTRDoc) : this(feature, doc, -1, doc.features[feature] ?: error("Feature $feature not available!"))
+    constructor(feature: String, doc: LTRDoc) : this(feature, doc, -1, doc.features[feature] ?: -Double.MAX_VALUE)
 }
 
 
@@ -185,7 +185,7 @@ fun main(args: Array<String>) {
                 )
 
                 arrayListOf<Int>(5, 10, 25).forEach { fbDocs ->
-                    val rm = env.computeRelevanceModel(q.docs, "title-ql-prior", fbDocs)
+                    val rm = computeRelevanceModel(q.docs, "title-ql-prior", fbDocs, env.defaultField)
                     val wt = rm.toTerms(fbTerms)
                     val rmeExpr = rm.toQExpr(fbTerms).toRRExpr(env)
                     feature_exprs.put("rm3-k$fbDocs", env.feature("title-ql").mixed(rmLambda, rmeExpr))

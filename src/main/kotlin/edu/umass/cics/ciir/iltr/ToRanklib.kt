@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.iltr
 
+import edu.umass.cics.ciir.chai.FeatureStats
 import edu.umass.cics.ciir.chai.smartDoLines
 import edu.umass.cics.ciir.chai.smartPrint
 import edu.umass.cics.ciir.sprf.getStr
@@ -8,40 +9,8 @@ import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.File
 
-class FeatureStats {
-    var min = Double.MAX_VALUE
-    var max = -Double.MAX_VALUE
-    var sum = 0.0
-    var count = 0
-    fun push(x: Double) {
-        count++
-        sum += x
-        if (x < min) {
-            min = x;
-        }
-        if (x > max) {
-            max = x
-        }
-    }
 
-    override fun toString(): String = "$count $min..$max"
-
-    fun normalize(y: Double): Double {
-        if (count == 0) return y
-        if (min == max) return y
-        return (y - min) / (max - min)
-    }
-}
-
-fun shouldNormalize(f: String): Boolean {
-    val nonFieldName = f.substringAfter(":", f)
-    if (nonFieldName.startsWith("jaccard")) return false
-    return when (nonFieldName) {
-        "qlen", "qstop", "docinfo", "avgwl", "docl", "length", "meantp" -> false
-        "numTerms", "jsoup_error", "byte_length", "numVisTerms", "numTitleTerms", "fracVisibleText", "fracAnchorText", "fracTableText", "avgTermLength", "avgAnchorTermLength", "urlDepth", "urlSize", "entropy" -> false
-        else -> true
-    }
-}
+fun shouldNormalize(f: String): Boolean = f.startsWith("norm:")
 
 /**
  * @author jfoley
@@ -136,9 +105,6 @@ fun main(args: Array<String>) {
                 val rawVal = (features[fname] as Number?)?.toDouble() ?: docFVec[fname]
                 val stats = fstats[Pair(qid, fname)]
                 val fval = if (stats != null) {
-                    if (label > 0) {
-                        println("$fname, $stats")
-                    }
                     if (rawVal == null) 0.0 else {
                         stats.normalize(rawVal)
                     }

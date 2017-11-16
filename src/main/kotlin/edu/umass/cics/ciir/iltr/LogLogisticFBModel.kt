@@ -1,11 +1,7 @@
 package edu.umass.cics.ciir.iltr
 
 import com.github.benmanes.caffeine.cache.Caffeine
-import edu.umass.cics.ciir.chai.Debouncer
-import edu.umass.cics.ciir.chai.mean
-import edu.umass.cics.ciir.chai.meanByDouble
-import edu.umass.cics.ciir.chai.push
-import edu.umass.cics.ciir.dbpedia.normalize
+import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.irene.AndExpr
 import edu.umass.cics.ciir.irene.TextExpr
 import edu.umass.cics.ciir.sprf.DataPaths

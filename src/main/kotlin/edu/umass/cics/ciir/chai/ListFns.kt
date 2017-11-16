@@ -22,6 +22,14 @@ fun <N : Number> List<N>.mean(): Double {
     return this.sumByDouble { it.toDouble() } / this.size.toDouble()
 }
 
+fun <N : Number> List<N>.asFeatureStats(): FeatureStats {
+    val out = FeatureStats()
+    for (x in this) {
+        out.push(x.toDouble())
+    }
+    return out
+}
+
 inline fun <T> List<T>.meanByDouble(mapper: (T)->Double): Double {
     if (this.isEmpty()) return 0.0
     if (this.size == 1) return mapper(this[0])
@@ -51,3 +59,32 @@ fun <T> List<T>.computeEntropy(): Double {
     return -sum
 }
 
+fun <T> Map<T, Double>.normalize(): Map<T, Double> {
+    val norm = this.values.sum()
+    return this.mapValues { (_,v) -> v/norm }
+}
+
+class FeatureStats {
+    var min = Double.MAX_VALUE
+    var max = -Double.MAX_VALUE
+    var sum = 0.0
+    var count = 0
+    fun push(x: Double) {
+        count++
+        sum += x
+        if (x < min) {
+            min = x;
+        }
+        if (x > max) {
+            max = x
+        }
+    }
+
+    override fun toString(): String = "$count $min..$max"
+
+    fun normalize(y: Double): Double {
+        if (count == 0) return y
+        if (min == max) return y
+        return (y - min) / (max - min)
+    }
+}

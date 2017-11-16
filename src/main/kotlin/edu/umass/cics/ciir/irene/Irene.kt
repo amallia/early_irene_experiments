@@ -15,6 +15,7 @@ import org.apache.lucene.document.StringField
 import org.apache.lucene.document.TextField
 import org.apache.lucene.index.*
 import org.apache.lucene.search.*
+import org.lemurproject.galago.utility.Parameters
 import java.io.Closeable
 import java.io.File
 import java.util.*
@@ -27,6 +28,16 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * @author jfoley.
  */
+
+fun LDoc.toParameters(): Parameters {
+    val output = Parameters.create()
+    fields.forEach { field ->
+        val name = field.name()!!
+        output.putIfNotNull(name, field.stringValue())
+        output.putIfNotNull(name, field.numericValue())
+    }
+    return output
+}
 
 class IndexParams {
     var defaultField = "body"
@@ -141,6 +152,9 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
     }
     fun document(doc: Int): LDoc? {
         return lucene_try { searcher.doc(doc) }
+    }
+    fun document(doc: Int, fields: Set<String>): LDoc? {
+        return lucene_try { searcher.doc(doc, fields) }
     }
     fun documentById(id: String): Int? {
         val q = BooleanQuery.Builder().add(TermQuery(Term(idFieldName, id)), BooleanClause.Occur.MUST).build()!!

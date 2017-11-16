@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.dbpedia
 
+import edu.umass.cics.ciir.chai.normalize
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.NamedMeasures
@@ -7,10 +8,6 @@ import edu.umass.cics.ciir.sprf.getEvaluators
 import edu.umass.cics.ciir.sprf.inqueryStop
 import org.lemurproject.galago.utility.Parameters
 
-fun <T> Map<T, Double>.normalize(): Map<T, Double> {
-    val norm = this.values.sum()
-    return this.mapValues { (_,v) -> v/norm }
-}
 
 /**
  *
@@ -34,8 +31,8 @@ fun main(args: Array<String>) {
     if (argp.isList("fields") || argp.isString("fields")) {
         fields.addAll(argp.getAsList("fields", String::class.java))
     } else {
-        //fields.addAll(listOf("short_text"))
-        fields.addAll(listOf<String>("body", "anchor_text", "short_text", "links", "props", "categories_text", "redirects", "citation_titles"))
+        fields.addAll(listOf("body", "short_text"))
+        //fields.addAll(listOf<String>("body", "anchor_text", "short_text", "links", "props", "categories_text", "redirects", "citation_titles"))
     }
     val paramWeights = ArrayList<Double>()
     if (argp.isList("weights") || argp.isDouble("weights")) {
@@ -90,12 +87,13 @@ fun main(args: Array<String>) {
                 "avgl_fsdm" -> SumExpr(fields.map { field ->
                     val weights = fieldMu.normalize()
                     val mu = if (avgDLMu) fieldMu[field] else defaultMu
+                    //val weights = mapOf("body" to 0.7, "short_text" to 0.3)
 
                     // ap=0.231, ndcg=0.465, p5=0.595
                     // ap=0.234, ndcg=0.464, p5=0.595
                     // w/estimateStats = "min" // ap=0.233 ndcg=0.459, p5=0.605
                     // w/estimateStats = "prob" // ap=0.230 ndcg=0.459, p5=0.589
-                    SequentialDependenceModel(qterms, field, makeScorer={ DirQLExpr(it, mu ?: defaultMu) }, stopwords=stopwords).weighted(weights[field])
+                    SequentialDependenceModel(qterms, field, statsField="body", makeScorer={ DirQLExpr(it, mu ?: defaultMu) }, stopwords=stopwords).weighted(weights[field])
                 })
                 "sdm" -> CombineExpr(fields.map { field ->
                     val mu = if (avgDLMu) fieldMu[field] else defaultMu

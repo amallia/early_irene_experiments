@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.chai
 
 import edu.umass.cics.ciir.sprf.printer
 import org.lemurproject.galago.utility.StreamCreator
+import java.io.Closeable
 import java.io.File
 import java.io.InputStream
 import java.io.PrintWriter
@@ -54,3 +55,44 @@ fun openResource(path: String): InputStream {
     return String::class.java.getResourceAsStream(target)
 }
 fun resourceLines(path: String, block: (String)->Unit) = openResource(path).reader().useLines{lines -> lines.forEach(block) }
+
+fun <A :Closeable, B: Closeable> Pair<A,B>.use(block: (A, B)->Unit) {
+    this.first.use { a ->
+        this.second.use { b ->
+            block(a, b)
+        }
+    }
+}
+
+fun closeOrError(c: Closeable): Exception? = try {
+    c.close()
+    null;
+} catch (e: Exception) {
+    e;
+}
+
+fun closeAll(items: List<Closeable>) {
+    var closed = true
+    val errors = items.map { closeOrError(it) }
+    if (errors.isEmpty()) {
+        return
+    }
+    val err = RuntimeException()
+    errors.forEach { err.addSuppressed(it) }
+    throw err
+}
+
+inline fun <T> useAll(items: List<Closeable>, block: ()->T): T {
+    var closed = false
+    try {
+        return block()
+    } catch (e : Exception) {
+        closed = true
+        closeAll(items)
+        throw e
+    } finally {
+        if (!closed) {
+            closeAll(items)
+        }
+    }
+}

@@ -82,27 +82,28 @@ abstract class RREnv {
     fun const(x: Double) = RRConst(this, x)
 
 
-    fun computeRelevanceModel(docs: List<LTRDoc>, feature: String, fbDocs: Int, flat: Boolean = false, stopwords: Set<String> = inqueryStop, field: String = defaultField): RelevanceModel {
-        val fbdocs = docs.sortedByDescending {
-            it.features[feature] ?: error("Missing Feature! $feature in $it")
-        }.take(fbDocs)
+}
 
-        val rmModel = TObjectDoubleHashMap<String>()
-        fbdocs.forEach { doc ->
-            val local = doc.field(field).freqs.counts
-            val length = doc.field(field).freqs.length
+fun computeRelevanceModel(docs: List<LTRDoc>, feature: String, fbDocs: Int, field: String, flat: Boolean = false, stopwords: Set<String> = inqueryStop): RelevanceModel {
+    val fbdocs = docs.sortedByDescending {
+        it.features[feature] ?: error("Missing Feature! $feature in $it")
+    }.take(fbDocs)
 
-            val prior = if (flat) 1.0 else doc.features[feature]!!
-            local.forEachEntry {term, count ->
-                if (stopwords.contains(term)) return@forEachEntry true
-                val prob = prior * count.toDouble() / length
-                rmModel.adjustOrPutValue(term, prob, prob)
-                true
-            }
+    val rmModel = TObjectDoubleHashMap<String>()
+    fbdocs.forEach { doc ->
+        val local = doc.field(field).freqs.counts
+        val length = doc.field(field).freqs.length
+
+        val prior = if (flat) 1.0 else doc.features[feature]!!
+        local.forEachEntry {term, count ->
+            if (stopwords.contains(term)) return@forEachEntry true
+            val prob = prior * count.toDouble() / length
+            rmModel.adjustOrPutValue(term, prob, prob)
+            true
         }
-
-        return RelevanceModel(rmModel, field)
     }
+
+    return RelevanceModel(rmModel, field)
 }
 
 data class WeightedTerm(val score: Double, val term: String, val field: String = "") : Comparable<WeightedTerm> {
