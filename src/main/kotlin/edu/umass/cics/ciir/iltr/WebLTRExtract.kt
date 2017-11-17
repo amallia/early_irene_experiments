@@ -70,8 +70,10 @@ fun main(args: Array<String>) {
     val qid = argp.get("qid")?.toString()
     val qidBit = if (qid == null) "" else ".$qid"
     val statsField = argp.get("statsField", "document")
+    val onlyEmitJudged = argp.get("onlyJudged", false)
+    val judgedBit = if (onlyEmitJudged) ".judged" else ""
 
-    File("l2rf/$dsName$qidBit.features.jsonl.gz").smartPrint { out ->
+    File("l2rf/$dsName$judgedBit$qidBit.features.jsonl.gz").smartPrint { out ->
         Pair(WikiSource().getIreneIndex(), dataset.getIreneIndex()).use { wiki, index ->
             val env = index.getRREnv()
             env.estimateStats = "min"
@@ -115,7 +117,6 @@ fun main(args: Array<String>) {
                     )
                     LTRDoc(docFields.getStr("id"), features, i+1, fields, "body")
                 }.take(50).toList()
-
 
 
                 val sourceFields = arrayListOf("short_text", "body")
@@ -180,9 +181,14 @@ fun main(args: Array<String>) {
                     }
                 }
 
+                val docList = if (onlyEmitJudged) {
+                    q.docs.filter { queryJudgments.isJudged(it.name) }
+                } else {
+                    q.docs
+                }
 
                 val skippedFeatures = ConcurrentHashMap<String, Int>()
-                q.docs.parallelStream().forEach { doc ->
+                docList.parallelStream().forEach { doc ->
                     feature_exprs.forEach { fname, fexpr ->
                         val value = fexpr.eval(doc)
                         if (value.isInfinite() || value.isNaN()) {
@@ -196,29 +202,33 @@ fun main(args: Array<String>) {
                 if (skippedFeatures.isNotEmpty()) {
                     println("Skipped NaN or Infinite features: ${skippedFeatures}")
                 }
-                q.docs.forEach { doc ->
+                docList.forEach { doc ->
                     doc.features.putAll(query_features)
                 }
 
-                arrayListOf<String>("norm:body:wiki.short_text-rm-k10-t100", "norm:body:rm-k10-t100").forEach { method ->
-                    evals.forEach { measure, evalfn ->
-                        val score = try {
-                            val results = q.toQResults(method)
-                            if (results.isEmpty()) {
-                                0.0
-                            } else {
-                                evalfn.evaluate(results, queryJudgments)
+                if (!onlyEmitJudged) {
+                    arrayListOf<String>("norm:body:wiki.short_text-rm-k10-t100", "norm:body:rm-k10-t100").forEach { method ->
+                        evals.forEach { measure, evalfn ->
+                            val score = try {
+                                val results = q.toQResults(method)
+                                if (results.isEmpty()) {
+                                    0.0
+                                } else {
+                                    evalfn.evaluate(results, queryJudgments)
+                                }
+                            } catch (npe: NullPointerException) {
+                                System.err.println("NULL in eval...")
+                                npe.printStackTrace()
+                                -Double.MAX_VALUE
                             }
-                        } catch (npe: NullPointerException) {
-                            System.err.println("NULL in eval...")
-                            npe.printStackTrace()
-                            -Double.MAX_VALUE
+                            ms.push("$measure.$method", score)
                         }
-                        ms.push("$measure.$method", score)
                     }
                 }
 
-                q.toJSONFeatures(queryJudgments).forEach { out.println(it) }
+                docList.forEach {
+                    out.println(it.toJSONFeatures(queryJudgments, q.qid))
+                }
                 println(ms.means())
             }
         }
