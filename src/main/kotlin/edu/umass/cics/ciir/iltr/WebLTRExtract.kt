@@ -72,8 +72,9 @@ fun main(args: Array<String>) {
     val statsField = argp.get("statsField", "document")
     val onlyEmitJudged = argp.get("onlyJudged", false)
     val judgedBit = if (onlyEmitJudged) ".judged" else ""
+    val outDir = argp.get("output-dir", "l2rf/latest/")
 
-    File("l2rf/$dsName$judgedBit$qidBit.features.jsonl.gz").smartPrint { out ->
+    File("$outDir/$dsName$judgedBit$qidBit.features.jsonl.gz").smartPrint { out ->
         Pair(WikiSource().getIreneIndex(), dataset.getIreneIndex()).use { wiki, index ->
             val env = index.getRREnv()
             env.estimateStats = "min"
@@ -105,10 +106,13 @@ fun main(args: Array<String>) {
                     val normScore = wikiScoreInfo.normalize(sdoc.score.toDouble())
                     val docFields = wiki.document(sdoc.doc, WikiFields)?.toParameters() ?: return@mapIndexedNotNull null
 
+                    val body = docFields.get("body", "")
+                    val title = docFields.get("title", "")
+                    val short_text = docFields.get("short_text", "")
                     val fields = listOf(
-                            LTRDocField("body", docFields.get("body", ""), wiki.tokenizer),
-                            LTRDocField("title", docFields.get("title", ""), wiki.tokenizer),
-                            LTRDocField("short_text", docFields.get("short_text", ""), wiki.tokenizer)
+                            LTRDocField("body",  body, wiki.tokenizer),
+                            LTRDocField("title", title, wiki.tokenizer),
+                            LTRDocField("short_text", short_text, wiki.tokenizer)
                     ).associateTo(HashMap()) { it.toEntry() }
                     val features = hashMapOf(
                             "title-ql" to sdoc.score.toDouble(),
@@ -117,7 +121,6 @@ fun main(args: Array<String>) {
                     )
                     LTRDoc(docFields.getStr("id"), features, i+1, fields, "body")
                 }.take(50).toList()
-
 
                 val sourceFields = arrayListOf("short_text", "body")
                 val relevanceModelDepths = arrayListOf(5,10,25)

@@ -8,6 +8,8 @@ import java.io.PrintWriter
 
 // This file is basically poor-man's map-reduce.
 
+fun <T> ShardWritersHash(obj: T, shards: Int): Int = Math.abs(obj?.hashCode() ?: 0) % shards
+
 class ShardWriters(val outDir: File, val shards: Int = 10, name: String) : Closeable {
     init {
         println("PWD: "+ File("").absolutePath)
@@ -22,9 +24,7 @@ class ShardWriters(val outDir: File, val shards: Int = 10, name: String) : Close
     }
 
     operator fun get(i: Int): PrintWriter = outFiles[i]
-    fun <T> hashed(obj: T): PrintWriter =
-            outFiles[Math.abs(obj?.hashCode() ?: 0) % shards]
-
+    fun <T> hashed(obj: T): PrintWriter = outFiles[ShardWritersHash(obj, shards)]
     override fun close() {
         val errs = outFiles.map {
             try {

@@ -1,10 +1,8 @@
 package edu.umass.cics.ciir.iltr.pagerank
 
-import edu.umass.cics.ciir.chai.Debouncer
-import edu.umass.cics.ciir.chai.ShardWriters
-import edu.umass.cics.ciir.chai.smartReader
-import edu.umass.cics.ciir.chai.use
+import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.irene.example.galagoScrubUrl
+import org.lemurproject.galago.utility.Parameters
 import java.io.BufferedReader
 import java.io.Closeable
 import java.io.File
@@ -49,6 +47,7 @@ class SortedKVIter(val reader: BufferedReader) : Closeable {
         return nextId == id
     }
 }
+val URLToPageRankFileName = "urlToPageRank.tsv.gz"
 
 object JoinURLToPageRank {
     @JvmStatic fun main(args: Array<String>) {
@@ -62,7 +61,7 @@ object JoinURLToPageRank {
         val msg = Debouncer()
 
         ShardWriters(File(base, "url2pr"), shards, "domainToPageRank.tsv.gz").use { domainWriters ->
-            ShardWriters(File(base, "url2pr"), shards, "urlToPageRank.tsv.gz").use { urlWriters ->
+            ShardWriters(File(base, "url2pr"), shards, URLToPageRankFileName).use { urlWriters ->
                 Pair(SortedKVIter(URLMapping), SortedKVIter(PageRank)).use { urls, scores ->
                     assert(!urls.done)
                     assert(!scores.done)
@@ -96,6 +95,63 @@ object JoinURLToPageRank {
                     print("Ending: urls@${urls.nextId} scores@${scores.nextId}")
                     println(msg.estimate(completed, total))
                 }
+            }
+        }
+    }
+}
+
+object FindNeededPageRanks {
+    // Note to self, this approach is very poor since they mostly don't exist anymore! At least in exactitude. Better just create domain vectors.
+    @JvmStatic fun main(args: Array<String>) {
+        val base = File("/mnt/scratch/jfoley/clue12-data/url2pr")
+        val shards = 50
+        val argp = Parameters.parseArgs(args);
+        val dataset = argp.get("dataset", "gov2")
+        val ids = File("$dataset.needed.ids").smartReader().lineSequence().toSet()
+
+        val urlToId = HashMap<String, String>()
+        File("/mnt/scratch/jfoley/$dataset.links/urls.tsv.gz").smartDoLines(true) { line ->
+            val cols = line.split('\t')
+            if (ids.contains(cols[0])) {
+                urlToId[cols[2]] = cols[0]
+            }
+        }
+
+        println("Found urls for ${urlToId.size} item of ${ids.size} needed.")
+
+        val urlsByShard = HashMap<Int, MutableList<String>>()
+        urlToId.forEach { url, _ ->
+            urlsByShard
+                    .computeIfAbsent(ShardWritersHash(url, shards)) { ArrayList() }
+                    .add(url)
+        }
+
+        val msg = Debouncer()
+        var completed = 0L
+        val total = urlToId.size.toLong()
+        File("$dataset.pagerank.tsv.gz").smartPrint { writer ->
+            urlsByShard.forEach { shardId, urls ->
+                println("Begin shard $shardId with ${urls.size} to find...")
+                val urlSet = urls.toHashSet()
+                File(base, "shard$shardId/$URLToPageRankFileName").smartLines {  lines ->
+                    for (line in lines) {
+                        val tab = line.indexOf('\t')
+                        val url = line.substring(0, tab)
+                        if (urlSet.remove(url)) {
+                            val id = urlToId[url]!!
+                            writer.println("$id\t$line")
+                            completed++
+                        }
+                        if (urlSet.isEmpty()) {
+                            println("Finished early!")
+                            break
+                        }
+                        if (msg.ready()) {
+                            println(msg.estimate(completed, total))
+                        }
+                    }
+                }
+                // finish using lines
             }
         }
     }
