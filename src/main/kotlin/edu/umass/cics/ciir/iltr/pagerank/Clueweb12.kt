@@ -48,6 +48,7 @@ class SortedKVIter(val reader: BufferedReader) : Closeable {
     }
 }
 val URLToPageRankFileName = "urlToPageRank.tsv.gz"
+val DomainToPageRankFileName = "domainToPageRank.tsv.gz"
 
 object JoinURLToPageRank {
     @JvmStatic fun main(args: Array<String>) {
@@ -60,7 +61,7 @@ object JoinURLToPageRank {
         var completed = 0L
         val msg = Debouncer()
 
-        ShardWriters(File(base, "url2pr"), shards, "domainToPageRank.tsv.gz").use { domainWriters ->
+        ShardWriters(File(base, "url2pr"), shards, DomainToPageRankFileName).use { domainWriters ->
             ShardWriters(File(base, "url2pr"), shards, URLToPageRankFileName).use { urlWriters ->
                 Pair(SortedKVIter(URLMapping), SortedKVIter(PageRank)).use { urls, scores ->
                     assert(!urls.done)
@@ -94,6 +95,46 @@ object JoinURLToPageRank {
 
                     print("Ending: urls@${urls.nextId} scores@${scores.nextId}")
                     println(msg.estimate(completed, total))
+                }
+            }
+        }
+    }
+}
+
+object ComputeDomainVectors {
+    @JvmStatic fun main(args: Array<String>) {
+        val base = File("/mnt/scratch/jfoley/clue12-data/url2pr")
+        val msg = Debouncer()
+        var completed = 0L
+
+        (0 until 50).forEach { shardId ->
+            val shardDir = File(base, "shard$shardId/")
+            assert(shardDir.isDirectory && shardDir.exists())
+            val domainPageRankStats = HashMap<String, StreamingStats>()
+            File(shardDir, DomainToPageRankFileName).smartLines { lines ->
+                for (line in lines) {
+                    val tab = line.indexOf('\t')
+                    if (tab > 0) {
+                        val domain = line.substring(0, tab)
+                        val pageRank = line.substring(tab+1).toDoubleOrNull() ?: continue
+                        domainPageRankStats.computeIfAbsent(domain, {StreamingStats()}).push(pageRank);
+                        completed++
+                        if(msg.ready()) {
+                            println("$shardId ${domainPageRankStats.size} ${msg.estimate(completed, completed)}")
+                        }
+                    }
+                }
+            }
+
+            File(shardDir, "domain-vectors.tsv.gz").smartPrint { writer ->
+                domainPageRankStats.forEach { domain, stats ->
+                    writer.append(domain).append('\t')
+                    stats.features.entries.joinTo(writer, separator = "\t") { "${it.key} ${it.value}" }
+                    writer.append('\n')
+
+                    if(msg.ready()) {
+                        println("$shardId ${domain} ${stats} ${msg.estimate(completed, completed)}")
+                    }
                 }
             }
         }

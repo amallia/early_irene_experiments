@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.chai
 
 import edu.umass.cics.ciir.sprf.incr
 import java.util.*
+import kotlin.streams.toList
 
 /**
  * @author jfoley
@@ -63,6 +64,11 @@ fun <T> Map<T, Double>.normalize(): Map<T, Double> {
     val norm = this.values.sum()
     return this.mapValues { (_,v) -> v/norm }
 }
+
+fun <T> List<T>.pfor(doFn: (T)->Unit) {
+    this.parallelStream().forEach(doFn)
+}
+fun <I,O> List<I>.pmap(mapper: (I)->O): List<O> = this.parallelStream().map(mapper).sequential().toList()
 
 class FeatureStats {
     var min = Double.MAX_VALUE
