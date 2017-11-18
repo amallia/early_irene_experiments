@@ -9,7 +9,7 @@ package edu.umass.cics.ciir.chai
  * http://www.johndcook.com/blog/standard_deviation/
  * @author jfoley
  */
-class StreamingStats {
+class StreamingStats() {
     var n: Long = 0
         private set
     var mean: Double = 0.toDouble()
@@ -33,13 +33,6 @@ class StreamingStats {
 
     init {
         clear()
-    }
-
-    constructor(x: Collection<Double>) {
-        x.forEach { this.push(it) }
-    }
-    constructor(x: Sequence<Double>) {
-        x.forEach { this.push(it) }
     }
 
     fun push(x: Double) {
