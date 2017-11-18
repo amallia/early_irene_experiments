@@ -35,6 +35,13 @@ class StreamingStats {
         clear()
     }
 
+    constructor(x: Collection<Double>) {
+        x.forEach { this.push(it) }
+    }
+    constructor(x: Sequence<Double>) {
+        x.forEach { this.push(it) }
+    }
+
     fun push(x: Double) {
         n++
 

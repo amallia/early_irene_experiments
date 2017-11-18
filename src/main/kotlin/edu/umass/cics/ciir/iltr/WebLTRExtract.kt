@@ -93,6 +93,18 @@ fun main(args: Array<String>) {
                 val feature_exprs = HashMap<String, RRExpr>()
                 val query_features = HashMap<String, Double>()
 
+                val qdf = StreamingStats(q.qterms.map { env.getStats(it, statsField).binaryProbability() })
+                query_features["q_min_df"] = qdf.min
+                query_features["q_mean_df"] = qdf.mean
+                query_features["q_max_df"] = qdf.max
+                query_features["q_stddev_df"] = qdf.standardDeviation
+
+                val wdf = StreamingStats(q.qterms.map { wiki.env.getStats(it, "body").binaryProbability() })
+                query_features["q_wiki_min_df"] = wdf.min
+                query_features["q_wiki_mean_df"] = wdf.mean
+                query_features["q_wiki_max_df"] = wdf.max
+                query_features["q_wiki_stddev_df"] = wdf.standardDeviation
+
                 val wikiQ =  SumExpr(
                         SequentialDependenceModel(q.qterms, field="short_text", statsField="body", stopwords=inqueryStop).weighted(fieldWeights["short_text"]),
                         SequentialDependenceModel(q.qterms, field="body", statsField="body", stopwords=inqueryStop).weighted(fieldWeights["body"]))
