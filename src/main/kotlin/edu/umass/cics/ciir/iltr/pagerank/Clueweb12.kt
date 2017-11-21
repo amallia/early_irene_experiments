@@ -2,11 +2,14 @@ package edu.umass.cics.ciir.iltr.pagerank
 
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.irene.example.galagoScrubUrl
+import edu.umass.cics.ciir.sprf.DataPaths
+import edu.umass.cics.ciir.sprf.pmake
 import org.lemurproject.galago.utility.Parameters
 import java.io.BufferedReader
 import java.io.Closeable
 import java.io.File
 import java.net.URI
+import java.net.URISyntaxException
 
 /**
  *
@@ -195,5 +198,72 @@ object FindNeededPageRanks {
                 // finish using lines
             }
         }
+    }
+}
+
+object FindDomainVectors {
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args);
+        val dataset = argp.get("dataset", "gov2")
+        val ids = File("$dataset.needed.ids").smartReader().lineSequence().toSet()
+
+        val meanDomainStats = StreamingStats()
+        val domainStats = File("/mnt/scratch/jfoley/clue12-data/domain-vectors.tsv.gz").smartLines { lines ->
+            val loading = CountingDebouncer(4_964_166L)
+            lines.associate { line ->
+                val cols = line.split('\t', ' ')
+                val domain = cols[0]
+
+                val map = (1 until cols.size step 2).associate { i ->
+                    val key = cols[i]
+                    val value = cols[i+1].toDoubleOrNull() ?: error("Bad parse: ${cols[i+1]}")
+                    Pair(key, value)
+                }
+                val theStats = ComputedStats(map)
+                meanDomainStats.push(theStats.mean)
+                loading.incr()?.let {
+                    println("Loading Domain Vectors: $it")
+                }
+                Pair(domain, theStats)
+            }
+        }
+
+        val featurePrefix = "domain-pagerank-"
+        val missingStats = meanDomainStats.toComputedStats().toFeatures(featurePrefix)
+        missingStats.set("domain-pagerank-is-bg", true)
+        File("$dataset.pagerankf.jsonl.gz").smartPrint { writer ->
+            val counting = CountingDebouncer(ids.size.toLong())
+            DataPaths.get(dataset).getIreneIndex().use { index ->
+                ids.parallelStream().map { id ->
+                    val internal = index.documentById(id)
+                    var foundStats: ComputedStats? = null
+                    if (internal != null) {
+                        val url = index.getField(internal, "stored-url")?.stringValue()
+                        if (url != null) {
+                            try {
+                                val uri = URI(url)
+                                val domain = uri.host
+                                if (domain != null) {
+                                    foundStats = domainStats[domain]
+                                }
+                            } catch (err: URISyntaxException) {
+                                // Nothing.
+                            }
+                        }
+                    }
+                    counting.incr()?.let {
+                        println("Processing URLs: $it")
+                    }
+                    Pair(id, foundStats)
+                }.sequential().forEach { (id, stats) ->
+                    val fmap = stats?.toFeatures(featurePrefix) ?: missingStats
+                    writer.println(pmake {
+                        set("id", id)
+                        set("features", fmap)
+                    })
+                }
+            }
+        }
+
     }
 }

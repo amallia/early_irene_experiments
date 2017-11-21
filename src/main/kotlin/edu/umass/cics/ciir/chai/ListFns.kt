@@ -68,7 +68,7 @@ fun <T> Map<T, Double>.normalize(): Map<T, Double> {
 fun <T> List<T>.pfor(doFn: (T)->Unit) {
     this.parallelStream().forEach(doFn)
 }
-fun <I,O> List<I>.pmap(mapper: (I)->O): List<O> = this.parallelStream().map(mapper).sequential().toList()
+fun <I,O> Collection<I>.pmap(mapper: (I)->O): List<O> = this.parallelStream().map(mapper).sequential().toList()
 
 class FeatureStats {
     var min = Double.MAX_VALUE

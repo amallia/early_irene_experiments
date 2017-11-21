@@ -4,3 +4,6 @@
 [submodule "deps/dbpedia-entity"]
 	path = deps/dbpedia-entity
 	url = git@github.com:iai-group/DBpedia-Entity.git
+[submodule "deps/jforests"]
+	path = deps/jforests
+	url = git@github.com:yasserg/jforests.git

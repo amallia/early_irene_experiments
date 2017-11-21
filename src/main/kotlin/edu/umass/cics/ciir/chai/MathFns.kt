@@ -1,5 +1,7 @@
 package edu.umass.cics.ciir.chai
 
+import org.lemurproject.galago.utility.Parameters
+
 /**
  * @author jfoley
  */
@@ -117,4 +119,35 @@ class StreamingStats() {
             push(x)
         }
     }
+    fun toComputedStats(): ComputedStats = ComputedStats(this)
 }
+
+data class ComputedStats(val mean: Double, val min: Double, val max: Double, val variance: Double, val stddev: Double, val total: Double, val count: Double) {
+    constructor(map: Map<String, Double>) : this(
+            map["mean"]!!,
+            map["min"]!!,
+            map["max"]!!,
+            map["variance"]!!,
+            map["stddev"]!!,
+            map["total"]!!,
+            map["count"]!!)
+    constructor(rhs: StreamingStats): this (rhs.mean, rhs.min, rhs.max, rhs.variance, rhs.standardDeviation, rhs.total, rhs.count)
+
+    val features: Map<String, Double>
+        get() = mapOf(Pair("mean", mean),
+                Pair("variance", variance),
+                Pair("stddev", stddev),
+                Pair("max", max),
+                Pair("min", min),
+                Pair("total", total),
+                Pair("count", count))
+
+    fun toFeatures(prefix: String? = null): Parameters {
+        return if (prefix != null) {
+            Parameters.wrap(features.mapKeys { (k,_) -> "$prefix$k" })
+        } else {
+            Parameters.wrap(features)
+        }
+    }
+}
+
