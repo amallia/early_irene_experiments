@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.sprf
 
 import gnu.trove.list.array.TDoubleArrayList
+import org.lemurproject.galago.core.eval.metric.QueryEvaluator
 import org.lemurproject.galago.core.eval.metric.QueryEvaluatorFactory
 import org.lemurproject.galago.utility.Parameters
 import java.util.*
@@ -22,6 +23,9 @@ class NamedMeasures : KeyedMeasure<String>() {
 }
 
 fun getEvaluators(metricNames: List<String>) = metricNames.associate { Pair(it, QueryEvaluatorFactory.create(it, Parameters.create())!!) }
+
+fun getEvaluator(name: String): QueryEvaluator =
+        QueryEvaluatorFactory.create(name, Parameters.create())!!
 
 val LN2 = Math.log(2.0)
 fun log2(x: Double): Double = Math.log(x) / LN2

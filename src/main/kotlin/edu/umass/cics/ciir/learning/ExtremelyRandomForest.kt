@@ -1,0 +1,206 @@
+package edu.umass.cics.ciir.learning
+
+import edu.umass.cics.ciir.chai.*
+import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
+import edu.umass.cics.ciir.sprf.DataPaths
+import edu.umass.cics.ciir.sprf.getEvaluator
+import org.lemurproject.galago.core.eval.QueryJudgments
+import org.lemurproject.galago.core.eval.QueryResults
+import org.lemurproject.galago.core.retrieval.ScoredDocument
+import org.lemurproject.galago.utility.Parameters
+import org.lemurproject.galago.utility.lists.Ranked
+import java.io.File
+import java.util.*
+import java.util.concurrent.ThreadLocalRandom
+
+/**
+ *
+ * @author jfoley.
+ */
+sealed class TreeNode {
+    abstract fun score(features: FloatArray): Double
+}
+data class FeatureSplit(val fid: Int, val point: Double, val lhs: TreeNode, val rhs: TreeNode): TreeNode() {
+    override fun score(features: FloatArray): Double = if (features[fid] < point) {
+        lhs.score(features)
+    } else {
+        rhs.score(features)
+    }
+}
+
+data class LeafResponse(val probability: Double) : TreeNode() {
+    override fun score(features: FloatArray): Double = probability
+}
+
+data class QDoc(val label: Float, val qid: String, val features: FloatArray, val name: String) {
+}
+
+fun String.splitAt(c: Char): Pair<String, String>? {
+    val pos = this.indexOf(c)
+    if (pos < 0) return null
+    return Pair(this.substring(0, pos), this.substring(pos+1))
+}
+
+data class CVSplit(val id: Int, val trainIds: Set<String>, val testIds: Set<String>)
+
+fun main(args: Array<String>) {
+    val argp = Parameters.parseArgs(args)
+    val dataset = argp.get("dataset", "gov2")
+    val input = argp.get("input", "l2rf/$dataset.features.ranklib")
+    val featureNames = Parameters.parseFile(argp.get("meta", "$input.meta.json"))
+    val numFeatures = argp.get("numFeatures",
+            featureNames.size)
+    val numTrees = argp.get("numTrees", 10)
+    val sampleRate = argp.get("srate", 0.3)
+    val featureSampleRate = argp.get("frate", 0.1)
+    val kSplits = argp.get("kcv", 5)
+    val querySet = DataPaths.get(dataset)
+    val queries = querySet.title_qs
+    val qrels = querySet.qrels
+    val measure = getEvaluator("ap")
+
+    val splitQueries = HashMap<Int, MutableList<String>>()
+    (queries.keys + qrels.keys).toSet().sorted().forEachIndexed { i, qid ->
+        splitQueries.push(i%kSplits, qid)
+    }
+
+    val splits = (0 until kSplits).map { index ->
+        val testQs = splitQueries[index]!!.toSet()
+        val trainQs = (0 until kSplits).filter { it != index }.flatMap { splitQueries[it]!! }.toSet()
+
+        println(trainQs.size)
+        println(testQs.size)
+
+        CVSplit(index, trainQs, testQs)
+    }
+
+    println("numFeatures: $numFeatures numSplits: $kSplits")
+
+    val byQuery = HashMap<String, MutableList<QDoc>>()
+    File(input).smartDoLines(true, total=150_000L) { line ->
+        val (ftrs, doc) = line.splitAt('#') ?: error("Can't find doc!")
+        val row = ftrs.trim().split(SpacesRegex)
+        val label = row[0].toFloatOrNull() ?: error("Can't parse label as float.")
+        val qid = row[1].substringAfter("qid:")
+        if (qid.isBlank()) {
+             error("Can't find qid: $row")
+        }
+
+        val fvec = FloatArray(numFeatures)
+        (3 until row.size).forEach { i ->
+            val (fid, fval) = row[i].splitAt(':') ?: error("Feature must have : split ${row[i]}.")
+            fvec[fid.toInt()-1] = fval.toFloat()
+        }
+
+        byQuery.push(qid, QDoc(label, qid, fvec, doc))
+    }
+
+    splits.forEach { split ->
+        if (split.id != 0) return
+
+        val trainInsts = split.trainIds.flatMap { byQuery[it]!! }
+        val trainFStats = (0 until numFeatures).map { StreamingStats() }
+        trainInsts.forEach { doc ->
+            doc.features.forEachIndexed { fid, fval -> trainFStats[fid].push(fval.toDouble()) }
+        }
+
+        val kFeatures = argp.get("numFeatures", (featureSampleRate * numFeatures).toInt())
+        val kSamples = argp.get("numSamples", (sampleRate * trainInsts.size).toInt())
+        if (kSamples <= 1) {
+            error("Cannot function with few samples. Only selects $kSamples in practice.")
+        }
+
+        val outputTrees = ArrayList<TreeNode>()
+
+        while(outputTrees.size < numTrees) {
+            val f_sample = (0 until numFeatures).sample(kFeatures).toList()
+            val x_sample = trainInsts.sample(kSamples).toList()
+
+            if (x_sample.none { it.label > 0 }) {
+                println("Note: bad sample, no positive labels in sample.")
+                continue
+            }
+
+            val tree = trainTree(trainFStats, f_sample, x_sample)
+            if (tree == null) {
+                println("Could not learn a tree from this sample...")
+                continue
+            }
+            println("Learned tree $tree")
+
+            val trainAP = split.trainIds.toList().meanByDouble { qid ->
+                val ranked = byQuery[qid]!!.mapTo(ArrayList()) {
+                    val pred = tree.score(it.features)
+                    ScoredDocument(it.name, -1, pred)
+                }
+                Ranked.setRanksByScore(ranked)
+                measure.evaluate(QueryResults(ranked), qrels[qid] ?: QueryJudgments(qid, emptyMap()))
+            }
+            println("train-AP: $trainAP")
+
+            outputTrees.add(tree)
+        }
+
+        println(trainFStats)
+    }
+
+}
+
+fun evaluate(tree: TreeNode, docs: List<QDoc>) {
+    docs.map { ScoredDocument() }
+}
+
+class InstanceSet {
+    val instances = ArrayList<QDoc>()
+    val labelStats = StreamingStats()
+    val size: Int get() = instances.size
+
+    fun push(x: QDoc) {
+        labelStats.push(x.label.toDouble())
+        instances.add(x)
+    }
+}
+
+fun trainTree(fStats: List<StreamingStats>, features: Collection<Int>, instances: Collection<QDoc>, score: Double? = null): TreeNode? {
+    val splits = features.mapNotNull { fid ->
+        val stats = fStats[fid]
+        if (stats.min == stats.max) {
+            return@mapNotNull null
+        }
+        Pair(fid, ThreadLocalRandom.current().nextDouble(stats.min, stats.max))
+    }.associate { it }
+    if (splits.isEmpty()) return null
+
+    val leftSet = features.associate { Pair(it, InstanceSet()) }
+    val rightSet = features.associate { Pair(it, InstanceSet()) }
+    instances.forEach { inst ->
+        splits.forEach { (fid, point) ->
+            if (inst.features[fid] < point) {
+                leftSet[fid]!!.push(inst)
+            } else {
+                rightSet[fid]!!.push(inst)
+            }
+        }
+    }
+    val bestFeature = features.mapNotNull { fid ->
+        val lhs = leftSet[fid]!!
+        val rhs = rightSet[fid]!!
+        if (rhs.size == 0 || lhs.size == 0) return@mapNotNull null
+        Pair(fid, Math.abs(rhs.labelStats.mean - lhs.labelStats.mean))
+    }.maxBy { it.second }
+
+    // Best feature found and there's a point in recursion:
+    if (bestFeature != null && features.size > 1) {
+        val splitF = bestFeature.first
+        val splitPoint = splits[splitF]!!
+        val remainingFeatures = HashSet<Int>(features).apply { remove(splitF) }
+        val lhs = leftSet[splitF]!!
+        val rhs = rightSet[splitF]!!
+
+        val lhsCond = trainTree(fStats, remainingFeatures, lhs.instances, lhs.labelStats.mean) ?: LeafResponse(lhs.labelStats.mean)
+        val rhsCond = trainTree(fStats, remainingFeatures, rhs.instances, rhs.labelStats.mean) ?: LeafResponse(rhs.labelStats.mean)
+        return FeatureSplit(bestFeature.first, splitPoint, lhsCond, rhsCond)
+    }
+    if (score == null) return null
+    return LeafResponse(score)
+}
