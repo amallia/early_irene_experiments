@@ -22,6 +22,145 @@ import java.util.concurrent.ThreadLocalRandom
 
 val mapper = ObjectMapper().registerModule(KotlinModule())
 
+interface Vector {
+    val dim: Int
+    val indexes: IntRange get() = (0 until dim)
+    fun toList() = indexes.map { get(it) }
+    operator fun get(i: Int): Double
+    fun dotp(v: Vector): Double {
+        assert(v.dim == dim)
+        return (0 until dim).sumByDouble { i -> this[i] * v[i] }
+    }
+}
+data class BiasedVector(val inner: Vector) {
+    val dim: Int = inner.dim + 1
+    operator fun get(i: Int): Double {
+        if (i == inner.dim) return 1.0
+        return inner[i]
+    }
+}
+interface MutableVector : Vector {
+    operator fun set(i: Int, y: Double)
+    val l1Norm: Double get() = (0 until dim).sumByDouble { Math.abs(this[it]) }
+    val l2Norm: Double get() = (0 until dim).sumByDouble {
+        val xi = this[it]
+        return xi*xi
+    }
+    fun clearToRandom(rand: Random) {
+        (0 until dim).forEach { i ->
+            this[i] = rand.nextGaussian()
+        }
+    }
+    fun normalizeL1() { normalize(l1Norm) }
+    fun normalizeL2() { normalize(l2Norm) }
+    fun normalize(norm: Double) {
+        (0 until dim).forEach { this[it] /= norm }
+    }
+    operator fun plusAssign(v : Vector) {
+        assert(v.dim == dim)
+        (0 until dim).forEach { i ->
+            this[i] += v[i]
+        }
+    }
+    operator fun minusAssign(v : Vector) {
+        assert(v.dim == dim)
+        (0 until dim).forEach { i ->
+            this[i] -= v[i]
+        }
+    }
+
+    // perceptron.
+    fun incr(scalar: Double, v: Vector) {
+        (0 until dim).forEach { i ->
+            this[i] += scalar*v[i]
+        }
+    }
+}
+
+class SimpleDenseVector(override val dim: Int) : MutableVector {
+    val data = DoubleArray(dim)
+    override fun get(i: Int): Double = data[i]
+    override fun set(i: Int, y: Double) { data[i] = y }
+}
+
+interface MachineLearningInput {
+    // num instances
+    val numInstances: Int
+    // num features
+    val numFeatures: Int
+    // may shuffle between rounds
+    fun shuffle()
+    // get X[i]
+    operator fun get(i: Int): Vector
+    // get y[i]
+    fun truth(i: Int): Boolean
+    // get y[i] as needed
+    fun label(i: Int): Int = if(truth(i)) { 1 } else { -1 }
+}
+
+data class PerceptronResult(val converged: Boolean, val accuracy: Double, val pos: Int, val neg: Int, val weights: MutableVector) {
+    init {
+        weights.normalizeL2()
+    }
+    val informative: Boolean get() = pos != 0 && neg != 0
+}
+
+fun learnAveragePerceptron(data: MachineLearningInput, maxIters: Int=100): PerceptronResult {
+    val N = data.numInstances
+    val D = data.numFeatures
+    data.shuffle()
+
+    // average perceptron
+    val tmpW = SimpleDenseVector(D)
+    tmpW.clearToRandom(ThreadLocalRandom.current())
+    val w = SimpleDenseVector(D)
+    var wLife = 0
+    var correct = 0
+    var pos = 0
+    var neg = 0
+    var changed = false
+
+    for (iter in (0 until maxIters)) {
+        correct = 0
+        pos = 0
+        neg = 0
+        changed = false
+        for (i in (0 until N)) {
+            val fv = data[i]
+            val label = data.label(i)
+            val pred = if (fv.dotp(w) >= 0.0) 1 else -1
+
+            if (pred > 0) { pos++ } else { neg++ }
+
+            if (pred != label) {
+                if (wLife > 0) {
+                    w.incr(wLife.toDouble(), tmpW)
+                }
+
+                // update
+                tmpW.incr(label.toDouble(), fv)
+
+                changed = true
+                wLife++
+            } else {
+                wLife++
+                correct++
+            }
+        }
+
+        // exit early if possible.
+        if (!changed && correct == N) {
+            // final averaged update
+            w.incr(wLife.toDouble(), tmpW)
+            return PerceptronResult(true, 1.0, pos, neg, w)
+        }
+    }
+    // final averaged update
+    w.incr(wLife.toDouble(), tmpW)
+
+    return PerceptronResult(false, safeDiv(correct, N), pos, neg, w)
+}
+
 /**
  *
  * @author jfoley.
@@ -46,6 +185,17 @@ data class FeatureSplit(val fid: Int, val point: Double, val lhs: TreeNode, val 
 
 data class LeafResponse(val probability: Double) : TreeNode() {
     override fun score(features: FloatArray): Double = weight * probability
+    override fun depth(): Int = 1
+}
+data class LinearPerceptronLeaf(val fids: List<Int>, val weights: List<Double>): TreeNode() {
+    override fun score(features: FloatArray): Double {
+        var sum = 0.0
+        fids.forEachIndexed { i, fid ->
+            sum += weights[i] * features[fid]
+        }
+        val pred = if (sum >= 0.0) { 1.0 } else { -1.0 }
+        return weight * pred
+    }
     override fun depth(): Int = 1
 }
 
@@ -187,6 +337,7 @@ fun main(args: Array<String>) {
                 continue
             }
 
+            learningParams.features = f_sample
             val tree = trainTree(learningParams, f_sample, x_sample)
             if (tree == null) {
                 println("Could not learn a tree from this sample...")
@@ -202,7 +353,7 @@ fun main(args: Array<String>) {
             tree.weight = oobAP
             outputTrees.add(tree)
 
-            if (outputTrees.size > 1) {
+            if (outputTrees.size >= 1) {
                 val ensemble = EnsembleNode(outputTrees)
                 val trainAP = split.evaluate(trainSet, measure, qrels, ensemble)
                 val valiAP = split.evaluate(valiSet, measure, qrels, ensemble)
@@ -219,12 +370,27 @@ fun main(args: Array<String>) {
     }
 }
 
-class InstanceSet {
+data class QDocFeatureView(val doc: QDoc, val features: List<Int>) : Vector {
+    override val dim: Int get() = features.size
+    override fun get(i: Int): Double = doc.features[features[i]].toDouble()
+}
+
+class InstanceSet() : MachineLearningInput {
+    lateinit var features: List<Int>
+    val forLearning: ArrayList<QDocFeatureView> by lazy { instances.mapTo(ArrayList()) { QDocFeatureView(it, features) } }
+    override val numInstances: Int get() = instances.size
+    override val numFeatures: Int get() = features.size
+    override fun shuffle() { forLearning.shuffled() }
+    override fun get(i: Int): Vector = forLearning[i]
+    override fun truth(i: Int): Boolean = forLearning[i].doc.label > 0.0
+
     val instances = ArrayList<QDoc>()
     val labelStats = StreamingStats()
     val size: Int get() = instances.size
     val output: Double get() = labelStats.mean
     val perceptronLabel: Int = if (output >= 0) { -1 } else { 1 }
+
+    val accuracy: Double get() = safeDiv(instances.count { it.perceptronLabel == perceptronLabel}, size)
 
     fun push(x: QDoc) {
         val label = x.perceptronLabel
@@ -264,6 +430,7 @@ class InstanceSet {
         val p_mistake = safeDiv(mistakeCount, count)
         return -plogp(p_correct) - plogp(p_mistake)
     }
+
 }
 
 data class FeatureSplitCandidate(
@@ -293,7 +460,9 @@ data class TreeLearningParams(
         val fStats: List<ComputedStats>,
         val numSplitsPerFeature: Int=4,
         val minLeafSupport: Int=30,
-        val maxDepth: Int = 10,
+        val maxDepth: Int = 5,
+        val perceptronLeaf: Boolean = true,
+        val perceptronMaxIters: Int = 100,
         val useFeaturesOnlyOnce: Boolean = false,
         val splitter: SplitGenerationStrategy = ExtraRandomForestSplitGenerator(),
         val strategy: TreeSplitSelectionStrategy = TrueVarianceReduction()
@@ -312,13 +481,29 @@ data class TreeLearningParams(
         fsc.cachedImportance = computed
         return computed
     }
+    var features: List<Int> = Collections.emptyList()
     fun makeOutputNode(elements: InstanceSet): TreeNode {
-        return LeafResponse(elements.output)
+        if (perceptronLeaf) {
+            if (elements.labelStats.variance > 0) {
+                elements.features = features
+                val learned = learnAveragePerceptron(elements, maxIters = perceptronMaxIters)
+                val p_acc = learned.accuracy
+                val e_acc = elements.accuracy
+                if (learned.informative && (learned.converged || p_acc > e_acc)) {
+                    println("Choose Perceptron. Accuracy of $p_acc vs $e_acc")
+                    return LinearPerceptronLeaf(features, learned.weights.toList())
+                }
+            }
+            return LeafResponse(elements.output)
+        } else {
+            return LeafResponse(elements.output)
+        }
     }
 
     fun reset(instances: Set<QDoc>) {
         bagInstances = instances
     }
+
 }
 
 data class RecursionTreeParams(val features: Set<Int>, val instances: Set<QDoc>, val depth: Int = 1) {
