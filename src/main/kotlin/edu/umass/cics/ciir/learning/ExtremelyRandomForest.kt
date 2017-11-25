@@ -99,6 +99,7 @@ fun main(args: Array<String>) {
     val queries = querySet.title_qs
     val qrels = querySet.qrels
     val measure = getEvaluator("ap")
+    val strategy = getImportanceStrategy(argp.get("strategy", "variance"))
 
     val splitQueries = HashMap<Int, MutableList<String>>()
     (queries.keys + qrels.keys).toSet().sorted().forEachIndexed { i, qid ->
@@ -159,6 +160,8 @@ fun main(args: Array<String>) {
 
         val trainInsts = split.trainIds.flatMap { byQuery[it]!! }
         val trainFStats = (0 until numFeatures).map { StreamingStats() }
+        val learningParams = TreeLearningParams(trainFStats, strategy = strategy)
+
         trainInsts.forEach { doc ->
             doc.features.forEachIndexed { fid, fval -> trainFStats[fid].push(fval.toDouble()) }
         }
@@ -187,7 +190,7 @@ fun main(args: Array<String>) {
                 continue
             }
 
-            val tree = trainTree(TreeLearningParams(trainFStats), f_sample, x_sample)
+            val tree = trainTree(learningParams, f_sample, x_sample)
             if (tree == null) {
                 println("Could not learn a tree from this sample...")
                 continue
@@ -280,6 +283,15 @@ data class FeatureSplitCandidate(val fid: Int, val split: Double) {
     }
     fun leftLeaf(): LeafResponse = LeafResponse(lhs.output)
     fun rightLeaf(): LeafResponse = LeafResponse(rhs.output)
+}
+
+fun getImportanceStrategy(importanceStrategyName: String): ImportanceStrategy = when(importanceStrategyName) {
+    "meanDiff" -> DifferenceInLabelMeans()
+    "minStdDev" -> MinLabelStdDeviation()
+    "gini" -> BinaryGiniImpurity()
+    "entropy" -> InformationGain()
+    "variance" -> TrueVarianceReduction()
+    else -> TODO(importanceStrategyName)
 }
 
 interface ImportanceStrategy {
