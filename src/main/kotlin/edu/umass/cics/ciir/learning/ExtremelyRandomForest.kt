@@ -56,7 +56,7 @@ fun String.splitAt(c: Char): Pair<String, String>? {
     return Pair(this.substring(0, pos), this.substring(pos+1))
 }
 
-data class CVSplit(val id: Int, val trainIds: Set<String>, val testIds: Set<String>) {
+data class CVSplit(val id: Int, val trainIds: Set<String>, val valiIds: Set<String>, val testIds: Set<String>) {
 
     fun evaluate(dataset: Map<String, List<QDoc>>, measure: QueryEvaluator, qrels: QuerySetJudgments, tree: TreeNode): Double {
         return dataset.toList().meanByDouble { (qid, inputList) ->
@@ -77,7 +77,7 @@ fun main(args: Array<String>) {
     val featureNames = Parameters.parseFile(argp.get("meta", "$input.meta.json"))
     val numFeatures = argp.get("numFeatures",
             featureNames.size)
-    val numTrees = argp.get("numTrees", 500)
+    val numTrees = argp.get("numTrees", 100)
     val sampleRate = argp.get("srate", 0.25)
     val featureSampleRate = argp.get("frate", 0.05)
     val kSplits = argp.get("kcv", 5)
@@ -92,13 +92,18 @@ fun main(args: Array<String>) {
     }
 
     val splits = (0 until kSplits).map { index ->
-        val testQs = splitQueries[index]!!.toSet()
-        val trainQs = (0 until kSplits).filter { it != index }.flatMap { splitQueries[it]!! }.toSet()
+        val testId = index
+        val valiId = (index+1) % kSplits
+        val trainIds = (0 until kSplits).filter { it != testId  && it != valiId }.toSet()
+        val testQs = splitQueries[testId]!!.toSet()
+        val valiQs = splitQueries[valiId]!!.toSet()
+        val trainQs = trainIds.flatMap { splitQueries[it]!! }.toSet()
 
         println(trainQs.size)
+        println(valiQs.size)
         println(testQs.size)
 
-        CVSplit(index, trainQs, testQs)
+        CVSplit(index, trainQs, valiQs, testQs)
     }
 
     println("numFeatures: $numFeatures numSplits: $kSplits")
@@ -139,13 +144,14 @@ fun main(args: Array<String>) {
 
         val trainSet = trainInsts.groupBy { it.qid }
         val testSet = split.testIds.flatMap { byQuery[it]!! }.groupBy { it.qid }
+        val valiSet = split.valiIds.flatMap { byQuery[it]!! }.groupBy { it.qid }
 
         val outputTrees = ArrayList<TreeNode>()
 
         while(outputTrees.size < numTrees) {
             val f_sample = (0 until numFeatures).sample(kFeatures).toList()
             val x_sample = trainInsts.sample(kSamples).toList()
-            println(f_sample)
+            //println(f_sample)
 
             val outOfBag = HashSet(trainInsts).apply { removeAll(x_sample) }.groupBy { it.qid }
 
@@ -161,10 +167,10 @@ fun main(args: Array<String>) {
             }
             //println("Learned tree $tree")
 
-            val trainAP = split.evaluate(trainSet, measure, qrels, tree)
+            //val trainAP = split.evaluate(trainSet, measure, qrels, tree)
             val oobAP = split.evaluate(outOfBag, measure, qrels, tree)
-            val testAP = split.evaluate(testSet, measure, qrels, tree)
-            println("\ttrain-AP: $trainAP, oob-AP: $oobAP, test-AP: $testAP")
+            //val valiAP = split.evaluate(valiSet, measure, qrels, tree)
+            //println("\ttrain-AP: $trainAP, oob-AP: $oobAP, vali-AP: $valiAP")
 
             tree.weight = oobAP
             outputTrees.add(tree)
@@ -172,12 +178,17 @@ fun main(args: Array<String>) {
             if (outputTrees.size > 1) {
                 val ensemble = EnsembleNode(outputTrees)
                 val trainAP = split.evaluate(trainSet, measure, qrels, ensemble)
+                val valiAP = split.evaluate(valiSet, measure, qrels, ensemble)
                 val testAP = split.evaluate(testSet, measure, qrels, ensemble)
-                println("ENSEMBLE[]${outputTrees.size} train-AP: $trainAP, test-AP: $testAP")
+                println("ENSEMBLE[]%d train-AP: %1.3f, vali-AP: %1.3f, test-AP: %1.3f".format(outputTrees.size, trainAP, valiAP, testAP))
+                //println("ENSEMBLE[]${outputTrees.size} train-AP: $trainAP, vali-AP: $valiAP, test-AP: $testAP")
             }
         }
 
-        println(trainFStats)
+        val ensemble = EnsembleNode(outputTrees)
+        val testAP = split.evaluate(testSet, measure, qrels, ensemble)
+
+        println("Split: ${split.id} Test-AP: ${"%1.3f".format(testAP)}")
     }
 }
 
