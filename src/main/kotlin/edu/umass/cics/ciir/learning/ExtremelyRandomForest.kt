@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.learning
 
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
+import edu.umass.cics.ciir.irene.example.safeDiv
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.getEvaluator
 import org.lemurproject.galago.core.eval.QueryJudgments
@@ -202,10 +203,26 @@ class InstanceSet {
     val labelStats = StreamingStats()
     val size: Int get() = instances.size
     val output: Double get() = labelStats.mean
+    val perceptronLabel: Int = if (output >= 0) { -1 } else { 1 }
 
     fun push(x: QDoc) {
-        labelStats.push(x.perceptronLabel)
+        val label = x.perceptronLabel
+        labelStats.push(label)
         instances.add(x)
+    }
+
+    fun giniImpurity(): Double {
+        val actualLabel = perceptronLabel
+        val count = instances.size
+        val mistakeCount = instances.count { it.perceptronLabel != actualLabel }
+        val correctCount = count - mistakeCount
+
+        val p_correct = safeDiv(correctCount, count)
+        val p_mistake = safeDiv(mistakeCount, count)
+
+        // this is going to be symmetric (choose correct, predict mistake) and (choose mistake, predict correct).
+        val p_choose_and_wrong = p_correct * p_mistake
+        return p_choose_and_wrong + p_choose_and_wrong
     }
 }
 
@@ -238,12 +255,30 @@ class DifferenceInLabelMeans : ImportanceStrategy {
         return Math.abs(fsc.rhs.labelStats.mean - fsc.lhs.labelStats.mean)
     }
 }
+// The best split is the one where the standard deviation of labels goes very low.
+// Ideally in both splits, here just in one is enough (we'll split the other again.
+class MinLabelStdDeviation : ImportanceStrategy {
+    override fun importance(fsc: FeatureSplitCandidate): Double {
+        return -minOf(fsc.rhs.labelStats.standardDeviation, fsc.lhs.labelStats.standardDeviation)
+    }
+}
+class MultLabelStdDeviation : ImportanceStrategy {
+    override fun importance(fsc: FeatureSplitCandidate): Double {
+        return -fsc.rhs.labelStats.standardDeviation * fsc.lhs.labelStats.standardDeviation
+    }
+}
+// Typically want to minimize impurity, so negative.
+class BinaryGiniImpurity : ImportanceStrategy {
+    override fun importance(fsc: FeatureSplitCandidate): Double {
+        return -(fsc.lhs.giniImpurity() + fsc.lhs.giniImpurity())
+    }
+}
 
 data class TreeLearningParams(
         val fStats: List<StreamingStats>,
         val numSplitsPerFeature: Int=1,
         val minLeafSupport: Int=30,
-        val strategy: ImportanceStrategy = DifferenceInLabelMeans()
+        val strategy: ImportanceStrategy = BinaryGiniImpurity()
 ) {
     fun validFeatures(fids: Collection<Int>): List<Int> = fids.filter {
         val stats = fStats[it]
@@ -282,7 +317,6 @@ fun trainTreeRecursive(params: TreeLearningParams, step: RecursionTreeParams): T
     }.filter { params.isValid(it) }
     if (splits.isEmpty()) return null
 
-    // TODO extract to strategy argument somehow.
     val bestFeature = splits.maxBy { params.estimateImportance(it) } ?: return null
 
     val (lhsp, rhsp) = step.choose(bestFeature)
