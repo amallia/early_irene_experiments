@@ -99,7 +99,7 @@ fun main(args: Array<String>) {
     val queries = querySet.title_qs
     val qrels = querySet.qrels
     val measure = getEvaluator("ap")
-    val strategy = getImportanceStrategy(argp.get("strategy", "variance"))
+    val strategy = getTreeSplitSelectionStrategy(argp.get("strategy", "variance"))
 
     val splitQueries = HashMap<Int, MutableList<String>>()
     (queries.keys + qrels.keys).toSet().sorted().forEachIndexed { i, qid ->
@@ -285,70 +285,11 @@ data class FeatureSplitCandidate(val fid: Int, val split: Double) {
     fun rightLeaf(): LeafResponse = LeafResponse(rhs.output)
 }
 
-fun getImportanceStrategy(importanceStrategyName: String): ImportanceStrategy = when(importanceStrategyName) {
-    "meanDiff" -> DifferenceInLabelMeans()
-    "minStdDev" -> MinLabelStdDeviation()
-    "gini" -> BinaryGiniImpurity()
-    "entropy" -> InformationGain()
-    "variance" -> TrueVarianceReduction()
-    else -> TODO(importanceStrategyName)
-}
-
-interface ImportanceStrategy {
-    fun importance(fsc: FeatureSplitCandidate): Double
-}
-class DifferenceInLabelMeans : ImportanceStrategy {
-    override fun importance(fsc: FeatureSplitCandidate): Double {
-        return Math.abs(fsc.rhs.labelStats.mean - fsc.lhs.labelStats.mean)
-    }
-}
-// The best split is the one where the standard deviation of labels goes very low.
-// Ideally in both splits, here just in one is enough (we'll split the other again.
-class MinLabelStdDeviation : ImportanceStrategy {
-    override fun importance(fsc: FeatureSplitCandidate): Double {
-        return -minOf(fsc.rhs.labelStats.standardDeviation, fsc.lhs.labelStats.standardDeviation)
-    }
-}
-class MultLabelStdDeviation : ImportanceStrategy {
-    override fun importance(fsc: FeatureSplitCandidate): Double {
-        return -fsc.rhs.labelStats.standardDeviation * fsc.lhs.labelStats.standardDeviation
-    }
-}
-// Typically want to minimize impurity, so negative.
-class BinaryGiniImpurity : ImportanceStrategy {
-    override fun importance(fsc: FeatureSplitCandidate): Double {
-        val lhs_size = fsc.lhs.size.toDouble()
-        val rhs_size = fsc.rhs.size.toDouble()
-        val size = lhs_size + rhs_size
-        return -(fsc.lhs.giniImpurity()*lhs_size + fsc.lhs.giniImpurity()*rhs_size) / size
-    }
-}
-// Typically want to minimize impurity, so negative.
-class InformationGain : ImportanceStrategy {
-    override fun importance(fsc: FeatureSplitCandidate): Double {
-        val lhs_size = fsc.lhs.size.toDouble()
-        val rhs_size = fsc.rhs.size.toDouble()
-        val size = lhs_size + rhs_size
-        // entropy(parent) is a constant under comparison
-        return -(fsc.lhs.entropy()*lhs_size + fsc.lhs.entropy()*rhs_size) / size
-    }
-}
-// Variance reduction
-class TrueVarianceReduction : ImportanceStrategy {
-    override fun importance(fsc: FeatureSplitCandidate): Double {
-        val lhs_size = fsc.lhs.size.toDouble()
-        val rhs_size = fsc.rhs.size.toDouble()
-        val size = lhs_size + rhs_size
-        // variance(parent) is a constant under comparison
-        return -(fsc.lhs.labelStats.variance*lhs_size + fsc.lhs.labelStats.variance*rhs_size) / size
-    }
-}
-
 data class TreeLearningParams(
         val fStats: List<StreamingStats>,
         val numSplitsPerFeature: Int=1,
         val minLeafSupport: Int=30,
-        val strategy: ImportanceStrategy = TrueVarianceReduction()
+        val strategy: TreeSplitSelectionStrategy = TrueVarianceReduction()
 ) {
     fun validFeatures(fids: Collection<Int>): List<Int> = fids.filter {
         val stats = fStats[it]
