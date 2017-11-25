@@ -37,6 +37,9 @@ class StreamingStats() {
         clear()
     }
 
+    fun push(x: Int) = push(x.toDouble())
+    fun push(x: Float) = push(x.toDouble())
+    fun push(x: Long) = push(x.toDouble())
     fun push(x: Double) {
         n++
 

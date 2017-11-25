@@ -52,6 +52,7 @@ data class QDoc(val label: Float, val qid: String, val features: FloatArray, val
         }
         return false
     }
+    val perceptronLabel: Int = if (label > 0) { 1 } else { -1 }
 }
 
 fun String.splitAt(c: Char): Pair<String, String>? {
@@ -203,7 +204,7 @@ class InstanceSet {
     val output: Double get() = labelStats.mean
 
     fun push(x: QDoc) {
-        labelStats.push(x.label.toDouble())
+        labelStats.push(x.perceptronLabel)
         instances.add(x)
     }
 }
@@ -225,9 +226,6 @@ data class FeatureSplitCandidate(val fid: Int, val split: Double) {
         (0 until splitPoint).forEach { lhs.push(instances[it]) }
         (splitPoint until instances.size).forEach { rhs.push(instances[it]) }
     }
-    // Estimate the usefulness as the difference in label means between the splits.
-    val usefulness: Double get() = Math.abs(rhs.labelStats.mean - lhs.labelStats.mean)
-
     fun leftLeaf(): LeafResponse = LeafResponse(lhs.output)
     fun rightLeaf(): LeafResponse = LeafResponse(rhs.output)
 }
@@ -245,7 +243,7 @@ data class TreeLearningParams(
         val fStats: List<StreamingStats>,
         val numSplitsPerFeature: Int=1,
         val minLeafSupport: Int=30,
-        val strategy: ImportanceStrategy
+        val strategy: ImportanceStrategy = DifferenceInLabelMeans()
 ) {
     fun validFeatures(fids: Collection<Int>): List<Int> = fids.filter {
         val stats = fStats[it]
