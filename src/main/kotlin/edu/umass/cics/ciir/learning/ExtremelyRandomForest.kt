@@ -127,7 +127,7 @@ fun main(args: Array<String>) {
     val inputF = File(input)
     val cborInput = File("$input.cbor.gz")
     if (cborInput.exists()) {
-        cborInput.bufferedReader().use { br ->
+        cborInput.smartReader().use { br ->
             byQuery.putAll(mapper.readValue<RLDataset>(br).byQuery)
         }
     } else {
@@ -149,7 +149,7 @@ fun main(args: Array<String>) {
             byQuery.push(qid, QDoc(label, qid, fvec, doc))
         }
 
-        cborInput.bufferedWriter().use { ow ->
+        cborInput.smartWriter().use { ow ->
             mapper.writeValue(ow, RLDataset(byQuery))
         }
     }
@@ -321,12 +321,22 @@ class InformationGain : ImportanceStrategy {
         return -(fsc.lhs.entropy()*lhs_size + fsc.lhs.entropy()*rhs_size) / size
     }
 }
+// Variance reduction
+class TrueVarianceReduction : ImportanceStrategy {
+    override fun importance(fsc: FeatureSplitCandidate): Double {
+        val lhs_size = fsc.lhs.size.toDouble()
+        val rhs_size = fsc.rhs.size.toDouble()
+        val size = lhs_size + rhs_size
+        // variance(parent) is a constant under comparison
+        return -(fsc.lhs.labelStats.variance*lhs_size + fsc.lhs.labelStats.variance*rhs_size) / size
+    }
+}
 
 data class TreeLearningParams(
         val fStats: List<StreamingStats>,
         val numSplitsPerFeature: Int=1,
         val minLeafSupport: Int=30,
-        val strategy: ImportanceStrategy = InformationGain()
+        val strategy: ImportanceStrategy = TrueVarianceReduction()
 ) {
     fun validFeatures(fids: Collection<Int>): List<Int> = fids.filter {
         val stats = fStats[it]

@@ -48,6 +48,7 @@ fun File.smartDoLines(doProgress: Boolean=false, limit: Int? = null,  total: Lon
         println(msg.estimate(done, done))
     }
 }
+fun File.smartWriter() = StreamCreator.openOutputStream(this).buffered()
 fun File.smartPrint(block: (PrintWriter)->Unit) = StreamCreator.openOutputStream(this).printer().use(block)
 
 fun openResource(path: String): InputStream {
