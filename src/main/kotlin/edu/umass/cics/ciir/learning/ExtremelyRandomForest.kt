@@ -22,8 +22,10 @@ import java.util.concurrent.ThreadLocalRandom
 sealed class TreeNode {
     var weight: Double = 1.0
     abstract fun score(features: FloatArray): Double
+    abstract fun depth(): Int
 }
 data class EnsembleNode(val guesses: List<TreeNode>): TreeNode() {
+    override fun depth(): Int = guesses.map { it.depth() }.max() ?: 0
     override fun score(features: FloatArray): Double = weight * guesses.meanByDouble { it.score(features) }
 }
 data class FeatureSplit(val fid: Int, val point: Double, val lhs: TreeNode, val rhs: TreeNode): TreeNode() {
@@ -32,10 +34,12 @@ data class FeatureSplit(val fid: Int, val point: Double, val lhs: TreeNode, val 
     } else {
         weight * rhs.score(features)
     }
+    override fun depth(): Int = 1 + maxOf(lhs.depth(), rhs.depth())
 }
 
 data class LeafResponse(val probability: Double) : TreeNode() {
     override fun score(features: FloatArray): Double = weight * probability
+    override fun depth(): Int = 1
 }
 
 data class QDoc(val label: Float, val qid: String, val features: FloatArray, val name: String) {
@@ -160,7 +164,7 @@ fun main(args: Array<String>) {
                 continue
             }
 
-            val tree = trainTree(trainFStats, f_sample, x_sample)
+            val tree = trainTree(TreeLearningParams(trainFStats), f_sample, x_sample)
             if (tree == null) {
                 println("Could not learn a tree from this sample...")
                 continue
@@ -180,7 +184,7 @@ fun main(args: Array<String>) {
                 val trainAP = split.evaluate(trainSet, measure, qrels, ensemble)
                 val valiAP = split.evaluate(valiSet, measure, qrels, ensemble)
                 val testAP = split.evaluate(testSet, measure, qrels, ensemble)
-                println("ENSEMBLE[]%d train-AP: %1.3f, vali-AP: %1.3f, test-AP: %1.3f".format(outputTrees.size, trainAP, valiAP, testAP))
+                println("ENSEMBLE[]%d.d=%d train-AP: %1.3f, vali-AP: %1.3f, test-AP: %1.3f".format(outputTrees.size, outputTrees.last().depth(), trainAP, valiAP, testAP))
                 //println("ENSEMBLE[]${outputTrees.size} train-AP: $trainAP, vali-AP: $valiAP, test-AP: $testAP")
             }
         }
@@ -220,36 +224,46 @@ data class FeatureSplitCandidate(val fid: Int, val split: Double) {
     val isGoodSplit: Boolean get() = lhs.size != 0 && rhs.size != 0
     // Estimate the usefulness as the difference in label means between the splits.
     val usefulness: Double get() = Math.abs(rhs.labelStats.mean - lhs.labelStats.mean)
+
+    fun leftLeaf(): LeafResponse = LeafResponse(lhs.output)
+    fun rightLeaf(): LeafResponse = LeafResponse(rhs.output)
 }
 
-fun trainTree(fStats: List<StreamingStats>, features: Collection<Int>, instances: Collection<QDoc>, score: Double? = null): TreeNode? {
-    val splits = features.mapNotNull { fid ->
-        val stats = fStats[fid]
-        if (stats.min == stats.max) {
-            return@mapNotNull null
-        }
+data class TreeLearningParams(val fStats: List<StreamingStats>) {
+    fun validFeatures(fids: Collection<Int>): List<Int> = fids.filter {
+        val stats = fStats[it]
+        stats.min != stats.max
+    }
+}
+data class RecursionTreeParams(val features: Set<Int>, val instances: Set<QDoc>, val depth: Int = 0) {
+    val done: Boolean get() = features.isEmpty()
+    fun choose(fsc: FeatureSplitCandidate): Pair<RecursionTreeParams, RecursionTreeParams> {
+        val fnext = HashSet(features).apply { remove(fsc.fid) }
+        return Pair(
+            RecursionTreeParams(fnext, fsc.lhs.instances.toSet(), depth+1),
+            RecursionTreeParams(fnext, fsc.rhs.instances.toSet(), depth+1))
+    }
+}
+
+fun trainTreeRecursive(params: TreeLearningParams, step: RecursionTreeParams): TreeNode? {
+    if (step.done) return null
+
+    val splits = params.validFeatures(step.features).map { fid ->
+        val stats = params.fStats[fid]
         FeatureSplitCandidate(fid,
                 ThreadLocalRandom.current().nextDouble(stats.min, stats.max)).apply {
-            consider(instances)
+            consider(step.instances)
         }
     }.filter { it.isGoodSplit }
     if (splits.isEmpty()) return null
 
     // TODO extract to strategy argument somehow.
-    val bestFeature = splits.maxBy { it.usefulness }
+    val bestFeature = splits.maxBy { it.usefulness } ?: return null
 
-    // Best feature found and there's a point in recursion:
-    if (bestFeature != null && features.size > 1) {
-        val splitF = bestFeature.fid
-        val splitPoint = bestFeature.split
-        val remainingFeatures = HashSet<Int>(features).apply { remove(splitF) }
-        val lhs = bestFeature.lhs
-        val rhs = bestFeature.rhs
-
-        val lhsCond = trainTree(fStats, remainingFeatures, lhs.instances, lhs.output) ?: LeafResponse(lhs.output)
-        val rhsCond = trainTree(fStats, remainingFeatures, rhs.instances, rhs.output) ?: LeafResponse(rhs.output)
-        return FeatureSplit(splitF, splitPoint, lhsCond, rhsCond)
-    }
-    if (score == null) return null
-    return LeafResponse(score)
+    val (lhsp, rhsp) = step.choose(bestFeature)
+    val lhs = trainTreeRecursive(params, lhsp) ?: bestFeature.leftLeaf()
+    val rhs = trainTreeRecursive(params, rhsp) ?: bestFeature.rightLeaf()
+    return FeatureSplit(bestFeature.fid, bestFeature.split, lhs, rhs)
 }
+
+fun trainTree(params: TreeLearningParams, features: Collection<Int>, instances: Collection<QDoc>): TreeNode? = trainTreeRecursive(params, RecursionTreeParams(params.validFeatures(features).toSet(), instances.toSet()))
