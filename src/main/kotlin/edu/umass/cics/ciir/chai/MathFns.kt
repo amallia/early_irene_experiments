@@ -117,10 +117,11 @@ class StreamingStats() {
         }
     }
 
-    fun pushAll(select: List<Double>) {
+    fun pushAll(select: List<Double>): StreamingStats {
         for (x in select) {
             push(x)
         }
+        return this
     }
     fun toComputedStats(): ComputedStats = ComputedStats(this)
 }

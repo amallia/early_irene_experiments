@@ -114,10 +114,7 @@ fun main(args: Array<String>) {
         val valiQs = splitQueries[valiId]!!.toSet()
         val trainQs = trainIds.flatMap { splitQueries[it]!! }.toSet()
 
-        println(trainQs.size)
-        println(valiQs.size)
-        println(testQs.size)
-
+        println("Train ${trainQs.size} Validate: ${valiQs.size} Test ${testQs.size}.")
         CVSplit(index, trainQs, valiQs, testQs)
     }
 
@@ -160,11 +157,11 @@ fun main(args: Array<String>) {
 
         val trainInsts = split.trainIds.flatMap { byQuery[it]!! }
         val trainFStats = (0 until numFeatures).map { StreamingStats() }
-        val learningParams = TreeLearningParams(trainFStats, strategy = strategy)
 
         trainInsts.forEach { doc ->
             doc.features.forEachIndexed { fid, fval -> trainFStats[fid].push(fval.toDouble()) }
         }
+        val learningParams = TreeLearningParams(trainFStats.map { it.toComputedStats() }, strategy = strategy)
 
         val kFeatures = argp.get("numFeatures", (featureSampleRate * numFeatures).toInt())
         val kSamples = argp.get("numSamples", (sampleRate * trainInsts.size).toInt())
@@ -234,6 +231,11 @@ class InstanceSet {
         labelStats.push(label)
         instances.add(x)
     }
+    fun pushAll(x: Collection<QDoc>): InstanceSet {
+        labelStats.pushAll(x.map { it.perceptronLabel.toDouble() })
+        instances.addAll(x)
+        return this
+    }
 
     fun giniImpurity(): Double {
         val actualLabel = perceptronLabel
@@ -264,9 +266,11 @@ class InstanceSet {
     }
 }
 
-data class FeatureSplitCandidate(val fid: Int, val split: Double) {
-    val lhs = InstanceSet()
-    val rhs = InstanceSet()
+data class FeatureSplitCandidate(
+        val fid: Int, val split: Double,
+        val lhs: InstanceSet = InstanceSet(),
+        val rhs: InstanceSet = InstanceSet()) {
+    var cachedImportance: Double? = null
     fun considerSorted(instances: List<QDoc>) {
         var splitPoint = 0
         var index = 0
@@ -281,16 +285,20 @@ data class FeatureSplitCandidate(val fid: Int, val split: Double) {
         (0 until splitPoint).forEach { lhs.push(instances[it]) }
         (splitPoint until instances.size).forEach { rhs.push(instances[it]) }
     }
-    fun leftLeaf(): LeafResponse = LeafResponse(lhs.output)
-    fun rightLeaf(): LeafResponse = LeafResponse(rhs.output)
+    fun leftLeaf(params: TreeLearningParams): TreeNode = params.makeOutputNode(lhs)
+    fun rightLeaf(params: TreeLearningParams): TreeNode = params.makeOutputNode(rhs)
 }
 
 data class TreeLearningParams(
-        val fStats: List<StreamingStats>,
-        val numSplitsPerFeature: Int=1,
+        val fStats: List<ComputedStats>,
+        val numSplitsPerFeature: Int=4,
         val minLeafSupport: Int=30,
+        val maxDepth: Int = 10,
+        val useFeaturesOnlyOnce: Boolean = false,
+        val splitter: SplitGenerationStrategy = ExtraRandomForestSplitGenerator(),
         val strategy: TreeSplitSelectionStrategy = TrueVarianceReduction()
 ) {
+    var bagInstances: Set<QDoc> = emptySet()
     fun validFeatures(fids: Collection<Int>): List<Int> = fids.filter {
         val stats = fStats[it]
         stats.min != stats.max
@@ -298,43 +306,113 @@ data class TreeLearningParams(
     fun isValid(fsc: FeatureSplitCandidate): Boolean {
         return fsc.lhs.size >= minLeafSupport && fsc.rhs.size >= minLeafSupport
     }
-    fun estimateImportance(fsc: FeatureSplitCandidate): Double = strategy.importance(fsc)
+    fun estimateImportance(fsc: FeatureSplitCandidate): Double {
+        fsc.cachedImportance?.let { found -> return found }
+        val computed = strategy.importance(fsc)
+        fsc.cachedImportance = computed
+        return computed
+    }
+    fun makeOutputNode(elements: InstanceSet): TreeNode {
+        return LeafResponse(elements.output)
+    }
+
+    fun reset(instances: Set<QDoc>) {
+        bagInstances = instances
+    }
 }
 
-data class RecursionTreeParams(val features: Set<Int>, val instances: Set<QDoc>, val depth: Int = 0) {
+data class RecursionTreeParams(val features: Set<Int>, val instances: Set<QDoc>, val depth: Int = 1) {
     val done: Boolean get() = features.isEmpty()
-    fun choose(fsc: FeatureSplitCandidate): Pair<RecursionTreeParams, RecursionTreeParams> {
-        val fnext = HashSet(features).apply { remove(fsc.fid) }
+    fun choose(params: TreeLearningParams, fsc: FeatureSplitCandidate): Pair<RecursionTreeParams, RecursionTreeParams> {
+        val fnext = if (params.useFeaturesOnlyOnce) {
+            HashSet(features).apply { remove(fsc.fid) }
+        } else features
         return Pair(
             RecursionTreeParams(fnext, fsc.lhs.instances.toSet(), depth+1),
             RecursionTreeParams(fnext, fsc.rhs.instances.toSet(), depth+1))
     }
 }
 
+interface SplitGenerationStrategy {
+    fun reset()
+    fun generateSplits(params: TreeLearningParams, stats: ComputedStats, fid: Int, instances: Collection<QDoc>): List<FeatureSplitCandidate>
+    fun rand(min: Double, max: Double) = ThreadLocalRandom.current().nextDouble(min, max)
+}
+class ExtraRandomForestSplitGenerator : SplitGenerationStrategy {
+    override fun reset() { }
+    override fun generateSplits(params: TreeLearningParams, stats: ComputedStats, fid: Int, instances: Collection<QDoc>): List<FeatureSplitCandidate> {
+        val sorted = instances.sortedBy { it.features[fid] }
+        val actualStats = StreamingStats().pushAll(instances.map { it.features[fid].toDouble() })
+        if (actualStats.min == actualStats.max) return emptyList()
+        return (0 until params.numSplitsPerFeature).map {
+            FeatureSplitCandidate(fid, rand(actualStats.min, actualStats.max)).apply {
+                considerSorted(sorted)
+            }
+        }
+    }
+}
+class EvenSplitGenerator : SplitGenerationStrategy {
+    val bucketed = HashMap<Int, List<Pair<Double, List<QDoc>>>>()
+    override fun reset() {
+        bucketed.clear()
+    }
+    override fun generateSplits(params: TreeLearningParams, stats: ComputedStats, fid: Int, instances: Collection<QDoc>): List<FeatureSplitCandidate> {
+        if (!bucketed.containsKey(fid)) {
+            val sorted = LinkedList(instances.sortedBy { it.features[fid] })
+
+            val range = stats.max - stats.min
+            val k = params.numSplitsPerFeature
+            val splits = (0 until k).map { i ->
+                val frac = safeDiv(i, k-1)
+                val split = frac * range + stats.min
+
+                val bucket = ArrayList<QDoc>()
+                while(true) {
+                    val head = sorted.peek() ?: break
+                    if (head.features[fid] < split) {
+                        bucket.add(sorted.pop())
+                    } else break
+                }
+                Pair(split, bucket)
+            }.filter { it.second.isNotEmpty() }
+            bucketed[fid] = splits
+        }
+
+        val bucketSplits = bucketed[fid]!!
+        return bucketSplits.mapIndexed { i, split ->
+            val splitPoint = split.first
+            val lhs = bucketSplits.subList(0, i).flatMap { it.second }
+            val rhs = bucketSplits.subList(i, bucketSplits.size).flatMap { it.second }
+
+            FeatureSplitCandidate(fid, splitPoint, InstanceSet().pushAll(lhs), InstanceSet().pushAll(rhs))
+        }
+    }
+}
+
 fun trainTreeRecursive(params: TreeLearningParams, step: RecursionTreeParams): TreeNode? {
+    // Limit recursion depth according to parameters.
+    if (step.depth >= params.maxDepth) return null
+    // Stop if we run out of features in this sample.
     if (step.done) return null
     // if we can't possibly generate supported leaves:
     if (step.instances.size < params.minLeafSupport*2) return null
 
     val splits = params.validFeatures(step.features).flatMap { fid ->
         val stats = params.fStats[fid]
-        val sortedInstances = step.instances.sortedBy { it.features[fid] }
-        (0 until params.numSplitsPerFeature).map {
-            FeatureSplitCandidate(fid,
-                    ThreadLocalRandom.current().nextDouble(stats.min, stats.max)).apply {
-                considerSorted(sortedInstances)
-            }
-        }
+        params.splitter.generateSplits(params, stats, fid, step.instances)
     }.filter { params.isValid(it) }
     if (splits.isEmpty()) return null
 
     val bestFeature = splits.maxBy { params.estimateImportance(it) } ?: return null
 
-    val (lhsp, rhsp) = step.choose(bestFeature)
-    val lhs = trainTreeRecursive(params, lhsp) ?: bestFeature.leftLeaf()
-    val rhs = trainTreeRecursive(params, rhsp) ?: bestFeature.rightLeaf()
+    val (lhsp, rhsp) = step.choose(params, bestFeature)
+    val lhs = trainTreeRecursive(params, lhsp) ?: bestFeature.leftLeaf(params)
+    val rhs = trainTreeRecursive(params, rhsp) ?: bestFeature.rightLeaf(params)
     return FeatureSplit(bestFeature.fid, bestFeature.split, lhs, rhs)
 }
 
 
-fun trainTree(params: TreeLearningParams, features: Collection<Int>, instances: Collection<QDoc>): TreeNode? = trainTreeRecursive(params, RecursionTreeParams(params.validFeatures(features).toSet(), instances.toSet()))
+fun trainTree(params: TreeLearningParams, features: Collection<Int>, instances: Collection<QDoc>): TreeNode? {
+    params.reset(instances.toSet())
+    return trainTreeRecursive(params, RecursionTreeParams(params.validFeatures(features).toSet(), instances.toSet()))
+}
