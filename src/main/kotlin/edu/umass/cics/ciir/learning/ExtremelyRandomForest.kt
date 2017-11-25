@@ -224,6 +224,20 @@ class InstanceSet {
         val p_choose_and_wrong = p_correct * p_mistake
         return p_choose_and_wrong + p_choose_and_wrong
     }
+    fun plogp(p: Double): Double {
+        if (p == 0.0) return 0.0
+        return p * Math.log(p)
+    }
+    fun entropy(): Double {
+        val actualLabel = perceptronLabel
+        val count = instances.size
+        val mistakeCount = instances.count { it.perceptronLabel != actualLabel }
+        val correctCount = count - mistakeCount
+
+        val p_correct = safeDiv(correctCount, count)
+        val p_mistake = safeDiv(mistakeCount, count)
+        return -plogp(p_correct) - plogp(p_mistake)
+    }
 }
 
 data class FeatureSplitCandidate(val fid: Int, val split: Double) {
@@ -270,15 +284,28 @@ class MultLabelStdDeviation : ImportanceStrategy {
 // Typically want to minimize impurity, so negative.
 class BinaryGiniImpurity : ImportanceStrategy {
     override fun importance(fsc: FeatureSplitCandidate): Double {
-        return -(fsc.lhs.giniImpurity() + fsc.lhs.giniImpurity())
+        val lhs_size = fsc.lhs.size.toDouble()
+        val rhs_size = fsc.rhs.size.toDouble()
+        val size = lhs_size + rhs_size
+        return -(fsc.lhs.giniImpurity()*lhs_size + fsc.lhs.giniImpurity()*rhs_size) / size
+    }
+}
+// Typically want to minimize impurity, so negative.
+class InformationGain : ImportanceStrategy {
+    override fun importance(fsc: FeatureSplitCandidate): Double {
+        val lhs_size = fsc.lhs.size.toDouble()
+        val rhs_size = fsc.rhs.size.toDouble()
+        val size = lhs_size + rhs_size
+        // entropy(parent) is a constant under comparison
+        return -(fsc.lhs.entropy()*lhs_size + fsc.lhs.entropy()*rhs_size) / size
     }
 }
 
 data class TreeLearningParams(
         val fStats: List<StreamingStats>,
-        val numSplitsPerFeature: Int=1,
+        val numSplitsPerFeature: Int=5,
         val minLeafSupport: Int=30,
-        val strategy: ImportanceStrategy = BinaryGiniImpurity()
+        val strategy: ImportanceStrategy = InformationGain()
 ) {
     fun validFeatures(fids: Collection<Int>): List<Int> = fids.filter {
         val stats = fStats[it]
