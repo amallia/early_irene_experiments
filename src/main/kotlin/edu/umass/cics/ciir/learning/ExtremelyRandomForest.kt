@@ -1,5 +1,8 @@
 package edu.umass.cics.ciir.learning
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.KotlinModule
+import com.fasterxml.jackson.module.kotlin.readValue
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
 import edu.umass.cics.ciir.irene.example.safeDiv
@@ -15,6 +18,9 @@ import org.lemurproject.galago.utility.lists.Ranked
 import java.io.File
 import java.util.*
 import java.util.concurrent.ThreadLocalRandom
+
+
+val mapper = ObjectMapper().registerModule(KotlinModule())
 
 /**
  *
@@ -76,6 +82,8 @@ data class CVSplit(val id: Int, val trainIds: Set<String>, val valiIds: Set<Stri
     }
 }
 
+data class RLDataset(val byQuery: Map<String, MutableList<QDoc>>)
+
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val dataset = argp.get("dataset", "gov2")
@@ -115,22 +123,35 @@ fun main(args: Array<String>) {
     println("numFeatures: $numFeatures numSplits: $kSplits")
 
     val byQuery = HashMap<String, MutableList<QDoc>>()
-    File(input).smartDoLines(true, total=150_000L) { line ->
-        val (ftrs, doc) = line.splitAt('#') ?: error("Can't find doc!")
-        val row = ftrs.trim().split(SpacesRegex)
-        val label = row[0].toFloatOrNull() ?: error("Can't parse label as float.")
-        val qid = row[1].substringAfter("qid:")
-        if (qid.isBlank()) {
-             error("Can't find qid: $row")
+
+    val inputF = File(input)
+    val cborInput = File("$input.cbor.gz")
+    if (cborInput.exists()) {
+        cborInput.bufferedReader().use { br ->
+            byQuery.putAll(mapper.readValue<RLDataset>(br).byQuery)
+        }
+    } else {
+        inputF.smartDoLines(true, total = 150_000L) { line ->
+            val (ftrs, doc) = line.splitAt('#') ?: error("Can't find doc!")
+            val row = ftrs.trim().split(SpacesRegex)
+            val label = row[0].toFloatOrNull() ?: error("Can't parse label as float.")
+            val qid = row[1].substringAfter("qid:")
+            if (qid.isBlank()) {
+                error("Can't find qid: $row")
+            }
+
+            val fvec = FloatArray(numFeatures)
+            (3 until row.size).forEach { i ->
+                val (fid, fval) = row[i].splitAt(':') ?: error("Feature must have : split ${row[i]}.")
+                fvec[fid.toInt() - 1] = fval.toFloat()
+            }
+
+            byQuery.push(qid, QDoc(label, qid, fvec, doc))
         }
 
-        val fvec = FloatArray(numFeatures)
-        (3 until row.size).forEach { i ->
-            val (fid, fval) = row[i].splitAt(':') ?: error("Feature must have : split ${row[i]}.")
-            fvec[fid.toInt()-1] = fval.toFloat()
+        cborInput.bufferedWriter().use { ow ->
+            mapper.writeValue(ow, RLDataset(byQuery))
         }
-
-        byQuery.push(qid, QDoc(label, qid, fvec, doc))
     }
 
     splits.forEach { split ->
@@ -303,7 +324,7 @@ class InformationGain : ImportanceStrategy {
 
 data class TreeLearningParams(
         val fStats: List<StreamingStats>,
-        val numSplitsPerFeature: Int=5,
+        val numSplitsPerFeature: Int=1,
         val minLeafSupport: Int=30,
         val strategy: ImportanceStrategy = InformationGain()
 ) {
