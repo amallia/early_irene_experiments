@@ -192,10 +192,6 @@ fun main(args: Array<String>) {
     }
 }
 
-fun evaluate(tree: TreeNode, docs: List<QDoc>) {
-    docs.map { ScoredDocument() }
-}
-
 class InstanceSet {
     val instances = ArrayList<QDoc>()
     val labelStats = StreamingStats()
@@ -208,45 +204,51 @@ class InstanceSet {
     }
 }
 
+data class FeatureSplitCandidate(val fid: Int, val split: Double) {
+    val lhs = InstanceSet()
+    val rhs = InstanceSet()
+    fun consider(instances: Collection<QDoc>) {
+        instances.forEach { inst ->
+            if (inst.features[fid] < split) {
+                lhs.push(inst)
+            } else {
+                rhs.push(inst)
+            }
+        }
+    }
+    // Actually splits the data:
+    val isGoodSplit: Boolean get() = lhs.size != 0 && rhs.size != 0
+    // Estimate the usefulness as the difference in label means between the splits.
+    val usefulness: Double get() = Math.abs(rhs.labelStats.mean - lhs.labelStats.mean)
+}
+
 fun trainTree(fStats: List<StreamingStats>, features: Collection<Int>, instances: Collection<QDoc>, score: Double? = null): TreeNode? {
     val splits = features.mapNotNull { fid ->
         val stats = fStats[fid]
         if (stats.min == stats.max) {
             return@mapNotNull null
         }
-        Pair(fid, ThreadLocalRandom.current().nextDouble(stats.min, stats.max))
-    }.associate { it }
+        FeatureSplitCandidate(fid,
+                ThreadLocalRandom.current().nextDouble(stats.min, stats.max)).apply {
+            consider(instances)
+        }
+    }.filter { it.isGoodSplit }
     if (splits.isEmpty()) return null
 
-    val leftSet = features.associate { Pair(it, InstanceSet()) }
-    val rightSet = features.associate { Pair(it, InstanceSet()) }
-    instances.forEach { inst ->
-        splits.forEach { (fid, point) ->
-            if (inst.features[fid] < point) {
-                leftSet[fid]!!.push(inst)
-            } else {
-                rightSet[fid]!!.push(inst)
-            }
-        }
-    }
-    val bestFeature = features.mapNotNull { fid ->
-        val lhs = leftSet[fid]!!
-        val rhs = rightSet[fid]!!
-        if (rhs.size == 0 || lhs.size == 0) return@mapNotNull null
-        Pair(fid, Math.abs(rhs.labelStats.mean - lhs.labelStats.mean))
-    }.maxBy { it.second }
+    // TODO extract to strategy argument somehow.
+    val bestFeature = splits.maxBy { it.usefulness }
 
     // Best feature found and there's a point in recursion:
     if (bestFeature != null && features.size > 1) {
-        val splitF = bestFeature.first
-        val splitPoint = splits[splitF]!!
+        val splitF = bestFeature.fid
+        val splitPoint = bestFeature.split
         val remainingFeatures = HashSet<Int>(features).apply { remove(splitF) }
-        val lhs = leftSet[splitF]!!
-        val rhs = rightSet[splitF]!!
+        val lhs = bestFeature.lhs
+        val rhs = bestFeature.rhs
 
         val lhsCond = trainTree(fStats, remainingFeatures, lhs.instances, lhs.output) ?: LeafResponse(lhs.output)
         val rhsCond = trainTree(fStats, remainingFeatures, rhs.instances, rhs.output) ?: LeafResponse(rhs.output)
-        return FeatureSplit(bestFeature.first, splitPoint, lhsCond, rhsCond)
+        return FeatureSplit(splitF, splitPoint, lhsCond, rhsCond)
     }
     if (score == null) return null
     return LeafResponse(score)
