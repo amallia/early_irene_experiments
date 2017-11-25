@@ -155,3 +155,5 @@ data class ComputedStats(val mean: Double, val min: Double, val max: Double, val
     }
 }
 
+fun safeDiv(x: Int, y: Int): Double = if (x == 0 || y == 0) 0.0 else x.toDouble() / y.toDouble()
+

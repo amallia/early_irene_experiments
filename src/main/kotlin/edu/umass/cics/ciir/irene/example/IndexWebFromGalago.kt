@@ -256,8 +256,6 @@ object ExtractLinksReduce {
     }
 }
 
-fun safeDiv(x: Int, y: Int): Double = if (x == 0 || y == 0) 0.0 else x.toDouble() / y.toDouble()
-
 val MyWhitelist = Cleaner(Whitelist.relaxed().apply {
     removeAttributes("a", "href")
 })
