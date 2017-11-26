@@ -8,9 +8,14 @@ import kotlin.streams.toList
  * @author jfoley
  */
 
-fun <T>  Iterable<T>.shuffled(rand: Random = Random()) {
+fun <T>  Iterable<T>.shuffled(rand: Random = Random()): ArrayList<T> {
     val x = this.toCollection(ArrayList<T>())
     Collections.shuffle(x, rand)
+    return x
+}
+fun <T, L: MutableList<T>> L.shuffle(rand: Random = Random()): L {
+    Collections.shuffle(this, rand)
+    return this
 }
 
 fun <M: MutableMap<K, MutableList<V>>, K,V> M.push(k: K, v: V) {

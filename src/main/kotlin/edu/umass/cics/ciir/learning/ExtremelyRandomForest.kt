@@ -5,7 +5,6 @@ import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.fasterxml.jackson.module.kotlin.readValue
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
-import edu.umass.cics.ciir.irene.example.safeDiv
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.getEvaluator
 import org.lemurproject.galago.core.eval.QueryJudgments
@@ -13,6 +12,7 @@ import org.lemurproject.galago.core.eval.QueryResults
 import org.lemurproject.galago.core.eval.QuerySetJudgments
 import org.lemurproject.galago.core.eval.metric.QueryEvaluator
 import org.lemurproject.galago.core.retrieval.ScoredDocument
+import org.lemurproject.galago.utility.MathUtils
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.lists.Ranked
 import java.io.File
@@ -47,6 +47,16 @@ data class FeatureSplit(val fid: Int, val point: Double, val lhs: TreeNode, val 
 
 data class LeafResponse(val probability: Double) : TreeNode() {
     override fun score(features: FloatArray): Double = weight * probability
+    override fun depth(): Int = 1
+}
+data class LinearRankingLeaf(val fids: List<Int>, val weights: List<Double>): TreeNode() {
+    override fun score(features: FloatArray): Double {
+        var sum = 0.0
+        fids.forEachIndexed { i, fid ->
+            sum += weights[i] * features[fid]
+        }
+        return weight * MathUtils.sigmoid(sum)
+    }
     override fun depth(): Int = 1
 }
 data class LinearPerceptronLeaf(val fids: List<Int>, val weights: List<Double>): TreeNode() {
@@ -242,7 +252,7 @@ class InstanceSet() : MachineLearningInput {
     val forLearning: ArrayList<QDocFeatureView> by lazy { instances.mapTo(ArrayList()) { QDocFeatureView(it, features) } }
     override val numInstances: Int get() = instances.size
     override val numFeatures: Int get() = features.size
-    override fun shuffle() { forLearning.shuffled() }
+    override fun shuffle() { forLearning.shuffle() }
     override fun get(i: Int): Vector = forLearning[i]
     override fun truth(i: Int): Boolean = forLearning[i].doc.label > 0.0
 
@@ -322,7 +332,8 @@ data class TreeLearningParams(
         val fStats: List<ComputedStats>,
         val numSplitsPerFeature: Int=4,
         val minLeafSupport: Int=30,
-        val maxDepth: Int = 5,
+        val maxDepth: Int = 9,
+        val rankerLeaf: Boolean = true,
         val perceptronLeaf: Boolean = true,
         val perceptronMaxIters: Int = 100,
         val useFeaturesOnlyOnce: Boolean = false,
@@ -345,12 +356,19 @@ data class TreeLearningParams(
     }
     var features: List<Int> = Collections.emptyList()
     fun makeOutputNode(elements: InstanceSet): TreeNode {
-        if (perceptronLeaf) {
-            if (elements.labelStats.variance > 0) {
+        val accuracy = elements.accuracy
+
+        if (rankerLeaf) {
+            elements.features = features
+            val ca = CoordinateAscentRanker(elements)
+            val weights = ca.learn()
+            return LinearRankingLeaf(features, weights.toList())
+        } else if (perceptronLeaf) {
+            if (elements.labelStats.variance > 0 && accuracy < 0.8) {
                 elements.features = features
                 val learned = learnAveragePerceptron(elements, maxIters = perceptronMaxIters)
                 val p_acc = learned.accuracy
-                val e_acc = elements.accuracy
+                val e_acc = accuracy
                 if (learned.informative && (learned.converged || p_acc > e_acc)) {
                     println("Choose Perceptron. Accuracy of $p_acc vs $e_acc")
                     return LinearPerceptronLeaf(features, learned.weights.toList())

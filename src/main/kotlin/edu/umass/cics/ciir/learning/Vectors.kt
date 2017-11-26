@@ -9,11 +9,24 @@ import java.util.*
 interface Vector {
     val dim: Int
     val indexes: IntRange get() = (0 until dim)
+    val l1Norm: Double get() = (0 until dim).sumByDouble { Math.abs(this[it]) }
+    val l2Norm: Double get() = (0 until dim).sumByDouble {
+        val xi = this[it]
+        return xi*xi
+    }
+
     fun toList() = indexes.map { get(it) }
     operator fun get(i: Int): Double
     fun dotp(v: Vector): Double {
         assert(v.dim == dim)
         return (0 until dim).sumByDouble { i -> this[i] * v[i] }
+    }
+    fun copy(): SimpleDenseVector {
+        val out = SimpleDenseVector(dim)
+        (0 until dim).forEach {
+            out[it] = this[it]
+        }
+        return out
     }
 }
 data class BiasedVector(val inner: Vector) {
@@ -25,11 +38,6 @@ data class BiasedVector(val inner: Vector) {
 }
 interface MutableVector : Vector {
     operator fun set(i: Int, y: Double)
-    val l1Norm: Double get() = (0 until dim).sumByDouble { Math.abs(this[it]) }
-    val l2Norm: Double get() = (0 until dim).sumByDouble {
-        val xi = this[it]
-        return xi*xi
-    }
     fun clearToRandom(rand: Random = Random()) {
         (0 until dim).forEach { i ->
             this[i] = rand.nextGaussian()
@@ -59,12 +67,19 @@ interface MutableVector : Vector {
             this[i] += scalar*v[i]
         }
     }
+
+    fun copyFrom(v: Vector) {
+        (0 until dim).forEach { i ->
+            this[i] = v[i]
+        }
+    }
 }
 
 class SimpleDenseVector(override val dim: Int) : MutableVector {
     val data = DoubleArray(dim)
     override fun get(i: Int): Double = data[i]
     override fun set(i: Int, y: Double) { data[i] = y }
+    override fun toString(): String = data.joinToString { "%1.3f".format(it) }
 }
 
 interface MachineLearningInput {
