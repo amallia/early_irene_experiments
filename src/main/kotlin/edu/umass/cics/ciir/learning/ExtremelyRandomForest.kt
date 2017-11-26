@@ -46,8 +46,9 @@ data class FeatureSplit(val fid: Int, val point: Double, val lhs: TreeNode, val 
     override fun depth(): Int = 1 + maxOf(lhs.depth(), rhs.depth())
 }
 
-data class LeafResponse(val probability: Double) : TreeNode() {
-    override fun score(features: FloatArray): Double = weight * probability
+data class LeafResponse(val probability: Double, val accuracy: Double) : TreeNode() {
+    private val precomputed = accuracy * probability
+    override fun score(features: FloatArray): Double = weight * precomputed
     override fun depth(): Int = 1
 }
 data class LinearRankingLeaf(val fids: List<Int>, val weights: List<Double>): TreeNode() {
@@ -125,6 +126,7 @@ fun main(args: Array<String>) {
     val measure = getEvaluator("ap")
     val strategy = getTreeSplitSelectionStrategy(argp.get("strategy", "variance"))
 
+
     val splitQueries = HashMap<Int, MutableList<String>>()
     (queries.keys + qrels.keys).toSet().sorted().forEachIndexed { i, qid ->
         splitQueries.push(i%kSplits, qid)
@@ -176,9 +178,7 @@ fun main(args: Array<String>) {
         }
     }
 
-    splits.forEach { split ->
-        if (split.id != 0) return
-
+    val splitPerf = splits.pmap { split ->
         val trainInsts = split.trainIds.flatMap { byQuery[it]!! }
         val trainFStats = (0 until numFeatures).map { StreamingStats() }
 
@@ -198,10 +198,11 @@ fun main(args: Array<String>) {
         val valiSet = split.valiIds.flatMap { byQuery[it]!! }.groupBy { it.qid }
 
         val outputTrees = ArrayList<TreeNode>()
+        val rand = Random(13)
 
         while(outputTrees.size < numTrees) {
-            val f_sample = (0 until numFeatures).sample(kFeatures).toList()
-            val x_sample = trainInsts.sample(kSamples).toList()
+            val f_sample = (0 until numFeatures).sample(kFeatures, rand).toList()
+            val x_sample = trainInsts.sample(kSamples, rand).toList()
             //println(f_sample)
 
             val outOfBag = HashSet(trainInsts).apply { removeAll(x_sample) }.groupBy { it.qid }
@@ -232,7 +233,9 @@ fun main(args: Array<String>) {
                 val trainAP = split.evaluate(trainSet, measure, qrels, ensemble)
                 val valiAP = split.evaluate(valiSet, measure, qrels, ensemble)
                 val testAP = split.evaluate(testSet, measure, qrels, ensemble)
-                println("ENSEMBLE[]%d.d=%d train-AP: %1.3f, vali-AP: %1.3f, test-AP: %1.3f".format(outputTrees.size, outputTrees.last().depth(), trainAP, valiAP, testAP))
+                synchronized(System.out) {
+                    println("${split.id} ENSEMBLE[]%d.d=%d.w=%1.3f train-AP: %1.3f, vali-AP: %1.3f, test-AP: %1.3f".format(outputTrees.size, tree.depth(), oobAP, trainAP, valiAP, testAP))
+                }
                 //println("ENSEMBLE[]${outputTrees.size} train-AP: $trainAP, vali-AP: $valiAP, test-AP: $testAP")
             }
         }
@@ -241,7 +244,12 @@ fun main(args: Array<String>) {
         val testAP = split.evaluate(testSet, measure, qrels, ensemble)
 
         println("Split: ${split.id} Test-AP: ${"%1.3f".format(testAP)}")
-    }
+        Pair(split.id, testAP)
+    }.associate { it }
+
+    val overallTestAP = splitPerf.values.toList().mean()
+    println("Overall Test-AP: ${"%1.3f".format(overallTestAP)}")
+    println(splitPerf)
 }
 
 data class QDocFeatureView(val doc: QDoc, val features: List<Int>) : Vector {
@@ -361,7 +369,7 @@ data class TreeLearningParams(
     fun makeOutputNode(elements: InstanceSet): TreeNode {
         val accuracy = elements.accuracy
         if (accuracy > 0.95) {
-            return LeafResponse(elements.output)
+            return LeafResponse(elements.output, accuracy)
         }
 
         if (rankerLeaf) {
@@ -381,9 +389,9 @@ data class TreeLearningParams(
                     return LinearPerceptronLeaf(features, learned.weights.toList())
                 }
             }
-            return LeafResponse(elements.output)
+            return LeafResponse(elements.output, accuracy)
         } else {
-            return LeafResponse(elements.output)
+            return LeafResponse(elements.output, accuracy)
         }
     }
 

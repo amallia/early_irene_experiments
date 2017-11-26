@@ -2,7 +2,7 @@ package edu.umass.cics.ciir.chai
 
 import edu.umass.cics.ciir.sprf.incr
 import java.util.*
-import kotlin.streams.toList
+import java.util.concurrent.TimeUnit
 
 /**
  * @author jfoley
@@ -73,7 +73,19 @@ fun <T> Map<T, Double>.normalize(): Map<T, Double> {
 fun <T> List<T>.pfor(doFn: (T)->Unit) {
     this.parallelStream().forEach(doFn)
 }
-fun <I,O> Collection<I>.pmap(mapper: (I)->O): List<O> = this.parallelStream().map(mapper).sequential().toList()
+fun <I,O> Collection<I>.pmap(mapper: (I)->O): List<O> {
+    val pool = java.util.concurrent.ForkJoinPool.commonPool()!!
+    val output = Vector<O>()
+    this.forEach { input ->
+        pool.submit({
+            output.add(mapper(input))
+        })
+    }
+    while (!pool.awaitQuiescence(1, TimeUnit.SECONDS)) {
+        // wait for jobs.
+    }
+    return output.toList()
+}
 
 class FeatureStats {
     var min = Double.MAX_VALUE

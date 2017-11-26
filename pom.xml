@@ -97,6 +97,12 @@
         </dependency>
 
         <dependency>
+            <groupId>edu.unh.cs.treccar</groupId>
+            <artifactId>treccar-tools</artifactId>
+            <version>1.4</version>
+        </dependency>
+
+        <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-core</artifactId>
             <version>2.9.0</version>

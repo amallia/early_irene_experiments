@@ -7,3 +7,6 @@
 [submodule "deps/jforests"]
 	path = deps/jforests
 	url = git@github.com:yasserg/jforests.git
+[submodule "deps/trec-car-tools"]
+	path = deps/trec-car-tools
+	url = git@github.com:TREMA-UNH/trec-car-tools.git
