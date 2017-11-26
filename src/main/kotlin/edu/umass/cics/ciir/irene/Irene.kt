@@ -89,13 +89,13 @@ class IreneIndexer(val params: IndexParams) : Closeable {
     fun commit() {
         writer.commit()
     }
-    fun push(vararg doc: IndexableField) {
+    fun push(vararg doc: IndexableField): Long {
         writer.addDocument(doc.toList())
-        processed.incrementAndGet()
+        return processed.incrementAndGet()
     }
-    fun push(doc: Iterable<IndexableField>) {
+    fun push(doc: Iterable<IndexableField>): Long {
         writer.addDocument(doc)
-        processed.incrementAndGet()
+        return processed.incrementAndGet()
     }
     fun open() = IreneIndex(dest, params)
 }
