@@ -7,6 +7,7 @@ import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.getEvaluator
+import gnu.trove.map.hash.TIntIntHashMap
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QueryResults
 import org.lemurproject.galago.core.eval.QuerySetJudgments
@@ -81,6 +82,7 @@ data class QDoc(val label: Float, val qid: String, val features: FloatArray, val
         }
         return false
     }
+    val binaryLabel: Int = if (label > 0) { 1 } else { 0 }
     val perceptronLabel: Int = if (label > 0) { 1 } else { -1 }
 }
 
@@ -259,18 +261,24 @@ class InstanceSet() : MachineLearningInput {
     val instances = ArrayList<QDoc>()
     val labelStats = StreamingStats()
     val size: Int get() = instances.size
-    val output: Double get() = labelStats.mean
-    val perceptronLabel: Int = if (output >= 0) { -1 } else { 1 }
+    val output: Double get() = safeDiv(labelCounts[1], size)
+    val labelCounts = TIntIntHashMap()
+    val perceptronLabel: Int get() = if (output >= 0) { 1 } else { -1 }
 
-    val accuracy: Double get() = safeDiv(instances.count { it.perceptronLabel == perceptronLabel}, size)
+    val accuracy: Double get() = safeDiv(labelCounts[perceptronLabel], size)
 
     fun push(x: QDoc) {
         val label = x.perceptronLabel
+        labelCounts.adjustOrPutValue(label, 1, 1)
         labelStats.push(label)
         instances.add(x)
     }
     fun pushAll(x: Collection<QDoc>): InstanceSet {
-        labelStats.pushAll(x.map { it.perceptronLabel.toDouble() })
+        x.forEach {
+            val label = it.perceptronLabel
+            labelStats.push(label.toDouble())
+            labelCounts.adjustOrPutValue(label, 1, 1)
+        }
         instances.addAll(x)
         return this
     }
@@ -310,19 +318,14 @@ data class FeatureSplitCandidate(
         val lhs: InstanceSet = InstanceSet(),
         val rhs: InstanceSet = InstanceSet()) {
     var cachedImportance: Double? = null
-    fun considerSorted(instances: List<QDoc>) {
-        var splitPoint = 0
-        var index = 0
+    fun consider(instances: Collection<QDoc>) {
         for (inst in instances) {
-            val here = index++
             if (inst.features[fid] >= split) {
-                splitPoint = here
-                break
+                rhs.push(inst)
+            } else {
+                lhs.push(inst)
             }
         }
-
-        (0 until splitPoint).forEach { lhs.push(instances[it]) }
-        (splitPoint until instances.size).forEach { rhs.push(instances[it]) }
     }
     fun leftLeaf(params: TreeLearningParams): TreeNode = params.makeOutputNode(lhs)
     fun rightLeaf(params: TreeLearningParams): TreeNode = params.makeOutputNode(rhs)
@@ -333,8 +336,8 @@ data class TreeLearningParams(
         val numSplitsPerFeature: Int=4,
         val minLeafSupport: Int=30,
         val maxDepth: Int = 9,
-        val rankerLeaf: Boolean = true,
-        val perceptronLeaf: Boolean = true,
+        val rankerLeaf: Boolean = false,
+        val perceptronLeaf: Boolean = false,
         val perceptronMaxIters: Int = 100,
         val useFeaturesOnlyOnce: Boolean = false,
         val splitter: SplitGenerationStrategy = ExtraRandomForestSplitGenerator(),
@@ -357,11 +360,15 @@ data class TreeLearningParams(
     var features: List<Int> = Collections.emptyList()
     fun makeOutputNode(elements: InstanceSet): TreeNode {
         val accuracy = elements.accuracy
+        if (accuracy > 0.95) {
+            return LeafResponse(elements.output)
+        }
 
         if (rankerLeaf) {
             elements.features = features
             val ca = CoordinateAscentRanker(elements)
-            val weights = ca.learn()
+            val weights = ca.learn().copy()
+            weights.normalizeL2()
             return LinearRankingLeaf(features, weights.toList())
         } else if (perceptronLeaf) {
             if (elements.labelStats.variance > 0 && accuracy < 0.8) {
@@ -406,12 +413,11 @@ interface SplitGenerationStrategy {
 class ExtraRandomForestSplitGenerator : SplitGenerationStrategy {
     override fun reset() { }
     override fun generateSplits(params: TreeLearningParams, stats: ComputedStats, fid: Int, instances: Collection<QDoc>): List<FeatureSplitCandidate> {
-        val sorted = instances.sortedBy { it.features[fid] }
         val actualStats = StreamingStats().pushAll(instances.map { it.features[fid].toDouble() })
         if (actualStats.min == actualStats.max) return emptyList()
         return (0 until params.numSplitsPerFeature).map {
             FeatureSplitCandidate(fid, rand(actualStats.min, actualStats.max)).apply {
-                considerSorted(sorted)
+                consider(instances)
             }
         }
     }

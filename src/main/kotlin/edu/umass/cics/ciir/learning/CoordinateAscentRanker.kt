@@ -38,6 +38,8 @@ data class CoordinateAscentRanker(
             // Get a new set of shuffled features
             val features = shuffledFeatures
             for (fid in features) {
+                // clear any caching, just in case.
+                val startScore = state.score()
                 val startWeight = state.weight[fid]
                 var bestWeight = startWeight
                 var success = false
@@ -106,8 +108,15 @@ class CoordinateAscentState(val params: CoordinateAscentRanker) {
     val numRelevant = predicted.count { it.correct }
 
     fun score(fidChanged: Int? = null, amtChanged: Double? = null): Double {
-        for (i in (0 until params.dataset.numInstances)) {
-            predictions[i] = weight.dotp(params.dataset[i])
+        if (fidChanged != null) {
+            val delta = amtChanged ?: 0.0
+            for (i in (0 until params.dataset.numInstances)) {
+                predictions[i] += delta * params.dataset[i][fidChanged]
+            }
+        } else {
+            for (i in (0 until params.dataset.numInstances)) {
+                predictions[i] = weight.dotp(params.dataset[i])
+            }
         }
         predicted.sort()
         return computeAP(predicted, numRelevant)
