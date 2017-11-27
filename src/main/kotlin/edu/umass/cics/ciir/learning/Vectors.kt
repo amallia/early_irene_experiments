@@ -43,6 +43,9 @@ interface MutableVector : Vector {
             this[i] = rand.nextGaussian()
         }
     }
+    fun scale(x: Double) {
+        (0 until dim).forEach { this[it] *= x }
+    }
     fun normalizeL1() { normalize(l1Norm) }
     fun normalizeL2() { normalize(l2Norm) }
     fun normalize(norm: Double) {

@@ -21,7 +21,6 @@ import org.lemurproject.galago.core.eval.QuerySetJudgments
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.File
-import java.net.URLDecoder
 
 fun getTrecCarIndexParams(path: File) = IndexParams().apply {
     withPath(path)
@@ -69,9 +68,34 @@ fun main(args: Array<String>) {
 
 data class TrecCarJudgment(val qid: String, val paragraphId: String, val judgment: Int=1) {
     val queryParts: List<String>
-            get() = qid.split('/').map { URLDecoder.decode(it, "UTF-8") }.reversed()
+            get() = qid.split('/').map { decodeURL(it) }.reversed()
     val page: String
         get() = queryParts.last()
+}
+
+// Lex URLs into an escape, or single % or any other text.
+val EscapeMatcher = "(%\\d{2}|%|[^%]*)".toRegex()
+fun decodeURL(input: String): String {
+    return EscapeMatcher.findAll(input).map { match ->
+        val substr = match.value
+        if (substr.length == 3 && substr[0] == '%') {
+            val rest = substr.substring(1).toIntOrNull(16)
+                    ?: return@map substr
+            rest.toChar().toString()
+        } else {
+            substr
+        }
+    }.joinToString(separator = "") { it }
+}
+
+object TestDecode {
+    @JvmStatic fun main(args: Array<String>) {
+        (1 .. 4).forEach { fold ->
+            val qrelsPath = File("/mnt/scratch/jfoley/trec-car/train/train.fold$fold.cbor.hierarchical.qrels")
+            val (queries, qrels) = loadTrecCarDataset(qrelsPath)
+            println("Fold $fold, Queries: ${queries.size}")
+        }
+    }
 }
 
 data class TrecCarDataset(val queries: Map<String, String>, val judgments: QuerySetJudgments)
@@ -109,18 +133,20 @@ object CountDocuments {
 
 // QL performance: map=0.151 r-prec=0.114 recip_rank=0.211
 // BM25 from paper: map=0.150 r-prec=0.118 recip_rank=0.216
+// SDM-min-stop: map=0.156	r=0.486	r-prec=0.117	recip_rank=0.219
 object Test200Baseline {
     @JvmStatic fun main(args: Array<String>) {
         val basePath = File("/mnt/scratch/jfoley/trec-car/")
         val argp = Parameters.parseArgs(args)
-        val qrelsPath = File(argp.get("qrels", File(basePath, "test200/train.test200.fold0.cbor.hierarchical.qrels").absolutePath))
+        //val qrelsPath = File(argp.get("qrels", File(basePath, "test200/train.test200.fold0.cbor.hierarchical.qrels").absolutePath))
+        val qrelsPath = File(argp.get("qrels", File(basePath, "train/train.fold1.cbor.hierarchical.qrels").absolutePath))
         val measures = getEvaluators("map", "recip_rank", "r-prec", "r")
         val summary = NamedMeasures()
 
         val (queries, qrels) = loadTrecCarDataset(qrelsPath)
         println(queries.size)
 
-        File("data/trec-car-test200.irene-sdm.qlpool.jsonl.gz").smartPrint { output ->
+        File(argp.get("output","trec-car-test200.irene-sdm.qlpool.jsonl.gz")).smartPrint { output ->
             IreneIndex(getTrecCarIndexParams(File(argp.get("index", "/mnt/scratch/jfoley/trec-car/paragraphs.irene2")))).use { index ->
                 index.env.estimateStats = "min"
                 val msg = CountingDebouncer(queries.size.toLong())

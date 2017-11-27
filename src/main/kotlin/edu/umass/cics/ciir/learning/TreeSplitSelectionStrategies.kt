@@ -11,6 +11,7 @@ fun getTreeSplitSelectionStrategy(importanceStrategyName: String): TreeSplitSele
     "gini" -> BinaryGiniImpurity()
     "entropy" -> InformationGain()
     "variance" -> TrueVarianceReduction()
+    "conf-variance" -> ConfidentVarianceReduction()
     else -> TODO(importanceStrategyName)
 }
 
@@ -62,5 +63,16 @@ class TrueVarianceReduction : TreeSplitSelectionStrategy {
         val size = lhs_size + rhs_size
         // variance(parent) is a constant under comparison
         return -(fsc.lhs.labelStats.variance*lhs_size + fsc.lhs.labelStats.variance*rhs_size) / size
+    }
+}
+
+// Variance reduction
+class ConfidentVarianceReduction : TreeSplitSelectionStrategy {
+    override fun importance(fsc: FeatureSplitCandidate): Double {
+        val lhs_size = fsc.lhs.size.toDouble()
+        val rhs_size = fsc.rhs.size.toDouble()
+        val size = lhs_size + rhs_size
+        // variance(parent) is a constant under comparison
+        return -(fsc.lhs.labelStats.variance*fsc.lhs.confidence*lhs_size + fsc.lhs.labelStats.variance*fsc.rhs.confidence*rhs_size) / size
     }
 }

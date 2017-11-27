@@ -2,6 +2,10 @@ package edu.umass.cics.ciir.sprf
 
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndex
+import edu.umass.cics.ciir.irene.example.TrecCarDataset
+import edu.umass.cics.ciir.irene.example.getTrecCarIndexParams
+import edu.umass.cics.ciir.irene.example.loadTrecCarDataset
+import edu.umass.cics.ciir.sprf.IRDataset.Companion.host
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QuerySetJudgments
@@ -242,6 +246,24 @@ class WT10G : IRDataset {
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "wt10g/wt10g.qrels")
 }
 
+class TrecCarTest200 : IRDataset {
+    override val name: String = "trec-car"
+    fun getBaseDir(): File = File(when(host) {
+        "oakey" -> "/mnt/scratch/jfoley/trec-car/"
+        else -> notImpl(host)
+    })
+    val tcd: TrecCarDataset by lazy { loadTrecCarDataset(File(getBaseDir(), "test200/train.test200.fold0.cbor.hierarchical.qrels")) }
+    override fun getIreneIndex(): IreneIndex = IreneIndex(getIndexParams())
+    override fun getIndexParams(): IndexParams = getTrecCarIndexParams(File(getBaseDir(), "paragraphs.irene2"))
+    override fun getIndexFile(): File = error("No galago.")
+    override fun getTitleQueryFile(): File = error("No title queries.")
+    override fun getDescQueryFile(): File = error("No desc queries.")
+    override fun getQueryJudgmentsFile(): File = error("No judgments file.")
+    override fun getTitleQueries(): Map<String, String> = tcd.queries
+    override fun getDescQueries(): Map<String, String> = tcd.queries
+    override fun getQueryJudgments(): QuerySetJudgments = tcd.judgments
+}
+
 /**
  * @author jfoley
  */
@@ -251,11 +273,13 @@ object DataPaths {
     val Gov2_MQT = MQ2007()
     val Clue09BSpam60 = Clue09BSpam60()
     val WT10G = WT10G()
+    val TrecCarT200 = TrecCarTest200()
 
     val REWQ_Clue12: WikiSource = Clue12Rewq()
     val DBPE: WikiSource = DBPE()
 
     fun get(name: String): IRDataset = when(name) {
+        "trec-car-test200", "trec-car" -> TrecCarT200
         "robust", "robust04" -> Robust
         "gov2" -> Gov2
         "mq07", "gov2mqt" -> Gov2_MQT

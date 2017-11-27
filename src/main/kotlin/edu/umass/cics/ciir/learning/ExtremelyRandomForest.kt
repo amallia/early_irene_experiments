@@ -46,8 +46,9 @@ data class FeatureSplit(val fid: Int, val point: Double, val lhs: TreeNode, val 
     override fun depth(): Int = 1 + maxOf(lhs.depth(), rhs.depth())
 }
 
-data class LeafResponse(val probability: Double, val accuracy: Double) : TreeNode() {
-    private val precomputed = accuracy * probability
+data class LeafResponse(val probability: Double, val accuracy: Double = 1.0, val confidence: Double=1.0) : TreeNode() {
+    constructor(items: InstanceSet): this(items.output, items.accuracy, items.confidence)
+    private val precomputed = accuracy * probability * confidence
     override fun score(features: FloatArray): Double = weight * precomputed
     override fun depth(): Int = 1
 }
@@ -73,7 +74,7 @@ data class LinearPerceptronLeaf(val fids: List<Int>, val weights: List<Double>):
     override fun depth(): Int = 1
 }
 
-data class QDoc(val label: Float, val qid: String, val features: FloatArray, val name: String) {
+data class QDoc(val label: Float, val qid: String, val features: FloatArray, val name: String, var judged: Boolean = false) {
     private val identity: String = "$qid:$name"
     private val idHash = identity.hashCode()
     override fun hashCode(): Int = idHash
@@ -111,14 +112,14 @@ data class RLDataset(val byQuery: Map<String, MutableList<QDoc>>)
 
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dataset = argp.get("dataset", "gov2")
-    val input = argp.get("input", "l2rf/$dataset.features.ranklib")
+    val dataset = argp.get("dataset", "trec-car-test200")
+    val input = argp.get("input", "l2rf/latest/$dataset.features.ranklib")
     val featureNames = Parameters.parseFile(argp.get("meta", "$input.meta.json"))
     val numFeatures = argp.get("numFeatures",
             featureNames.size)
     val numTrees = argp.get("numTrees", 100)
     val sampleRate = argp.get("srate", 0.25)
-    val featureSampleRate = argp.get("frate", 0.05)
+    val featureSampleRate = argp.get("frate", 0.3)
     val kSplits = argp.get("kcv", 5)
     val querySet = DataPaths.get(dataset)
     val queries = querySet.title_qs
@@ -178,6 +179,17 @@ fun main(args: Array<String>) {
         }
     }
 
+    byQuery.forEach { qid, docs ->
+        val judgments = qrels[qid]
+        if (judgments != null) {
+            docs.forEach {
+                if (judgments.isJudged(it.name)) {
+                    it.judged = true
+                }
+            }
+        }
+    }
+
     val splitPerf = splits.pmap { split ->
         val trainInsts = split.trainIds.flatMap { byQuery[it]!! }
         val trainFStats = (0 until numFeatures).map { StreamingStats() }
@@ -225,7 +237,7 @@ fun main(args: Array<String>) {
             //val valiAP = split.evaluate(valiSet, measure, qrels, tree)
             //println("\ttrain-AP: $trainAP, oob-AP: $oobAP, vali-AP: $valiAP")
 
-            tree.weight = oobAP
+            //tree.weight = oobAP
             outputTrees.add(tree)
 
             if (outputTrees.size >= 1) {
@@ -274,6 +286,7 @@ class InstanceSet() : MachineLearningInput {
     val perceptronLabel: Int get() = if (output >= 0) { 1 } else { -1 }
 
     val accuracy: Double get() = safeDiv(labelCounts[perceptronLabel], size)
+    val confidence: Double get() = safeDiv(instances.count { it.judged }, size)
 
     fun push(x: QDoc) {
         val label = x.perceptronLabel
@@ -319,6 +332,7 @@ class InstanceSet() : MachineLearningInput {
         return -plogp(p_correct) - plogp(p_mistake)
     }
 
+
 }
 
 data class FeatureSplitCandidate(
@@ -343,7 +357,7 @@ data class TreeLearningParams(
         val fStats: List<ComputedStats>,
         val numSplitsPerFeature: Int=4,
         val minLeafSupport: Int=30,
-        val maxDepth: Int = 9,
+        val maxDepth: Int = 10,
         val rankerLeaf: Boolean = false,
         val perceptronLeaf: Boolean = false,
         val perceptronMaxIters: Int = 100,
@@ -369,7 +383,7 @@ data class TreeLearningParams(
     fun makeOutputNode(elements: InstanceSet): TreeNode {
         val accuracy = elements.accuracy
         if (accuracy > 0.95) {
-            return LeafResponse(elements.output, accuracy)
+            return LeafResponse(elements)
         }
 
         if (rankerLeaf) {
@@ -377,7 +391,9 @@ data class TreeLearningParams(
             val ca = CoordinateAscentRanker(elements)
             val weights = ca.learn().copy()
             weights.normalizeL2()
-            return LinearRankingLeaf(features, weights.toList())
+            return LinearRankingLeaf(features, weights.toList()).apply {
+                weight = elements.accuracy * elements.confidence
+            }
         } else if (perceptronLeaf) {
             if (elements.labelStats.variance > 0 && accuracy < 0.8) {
                 elements.features = features
@@ -389,9 +405,9 @@ data class TreeLearningParams(
                     return LinearPerceptronLeaf(features, learned.weights.toList())
                 }
             }
-            return LeafResponse(elements.output, accuracy)
+            return LeafResponse(elements.output)
         } else {
-            return LeafResponse(elements.output, accuracy)
+            return LeafResponse(elements.output)
         }
     }
 
