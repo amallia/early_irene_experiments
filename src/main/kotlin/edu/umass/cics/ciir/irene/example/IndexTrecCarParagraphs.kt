@@ -23,7 +23,8 @@ fun main(args: Array<String>) {
 
     val msg = Debouncer()
     // Seven million paragraphs (as described in paper)
-    val total = argp.get("total", 7_000_000L)
+    // much more in actual 16GB dump
+    val total = argp.get("total", 29678241L)
 
     IreneIndexer.build {
         withPath(indexPath)
