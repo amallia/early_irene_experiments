@@ -20,8 +20,13 @@ open class KeyedMeasure<K> {
 }
 class NamedMeasures : KeyedMeasure<String>() {
     override fun means(): TreeMap<String, Double> = measures.mapValuesTo(TreeMap()) { (_,arr) -> arr.mean() }
+
+    override fun toString(): String {
+        return means().entries.joinToString(separator = "\t") { (k,v) -> "%s=%1.3f".format(k, v) }
+    }
 }
 
+fun getEvaluators(vararg metricNames: String) = getEvaluators(metricNames.toList())
 fun getEvaluators(metricNames: List<String>) = metricNames.associate { Pair(it, QueryEvaluatorFactory.create(it, Parameters.create())!!) }
 
 fun getEvaluator(name: String): QueryEvaluator =

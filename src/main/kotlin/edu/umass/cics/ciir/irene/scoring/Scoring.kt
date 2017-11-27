@@ -87,6 +87,8 @@ interface QueryEvalNode {
     // Move forward to (docID() >= target) don't bother checking for match.
     fun advance(target: Int): Int
 
+    fun setHeapMinimum(target: Float) {}
+
     // The following movements should never be overridden.
     // They may be used as convenient to express other operators, i.e. call nextMatching on your children instead of advance().
 
@@ -124,6 +126,7 @@ interface PositionsEvalNode : CountEvalNode {
 }
 
 class ConstTrueNode(val numDocs: Int) : QueryEvalNode {
+    override fun setHeapMinimum(target: Float) { }
     var current = 0
     override fun docID(): Int = current
     override fun score(doc: Int): Float = 1f
@@ -147,6 +150,7 @@ class ConstEvalNode(val count: Int, val score: Float) : QueryEvalNode {
     constructor(count: Int) : this(count, count.toFloat())
     constructor(score: Float) : this(1, score)
 
+    override fun setHeapMinimum(target: Float) { }
     override fun docID(): Int = NO_MORE_DOCS
     override fun score(doc: Int): Float = score
     override fun count(doc: Int): Int = count
@@ -164,6 +168,7 @@ private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val
     override fun explain(doc: Int): Explanation {
         TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
+    override fun setHeapMinimum(target: Float) { score.setHeapMinimum(target) }
     override fun estimateDF(): Long = minOf(score.estimateDF(), cond.estimateDF())
     override fun docID(): Int = cond.docID()
     override fun advance(target: Int): Int = cond.advance(target)
@@ -275,16 +280,59 @@ private class MaxEval(children: List<QueryEvalNode>) : OrEval<QueryEvalNode>(chi
         }
         return sum
     }
+    // Getting over the "min" is the same for any child of a max node.
+    override fun setHeapMinimum(target: Float) {
+        children.forEach { it.setHeapMinimum(target) }
+    }
 }
+
+data class WeightedChild(val weight: Double, val max: Double, val child: QueryEvalNode) {
+    val impact: Double = weight * max
+    // higher weighted, less-frequent first.
+    val staticPriority = impact / child.estimateDF()
+    fun score(doc: Int): Double = child.score(doc) * weight
+}
+
+private class PruningWeightedSumEval(children: List<QueryEvalNode>, val weights: DoubleArray, val childMaximums: DoubleArray) : OrEval<QueryEvalNode>(children) {
+    val impactFirst =  children.mapIndexed { i, c -> WeightedChild(weights[i], childMaximums[i], c) }.sortedByDescending { it.staticPriority }
+    val maxRemaining = (0 until weights.size).map { i ->
+        impactFirst.subList(i, weights.size).map { it.impact }.sum()
+    }.toDoubleArray()
+
+    override fun score(doc: Int): Float {
+        var sum = 0.0
+        for (i in (0 until impactFirst.size)) {
+            sum += impactFirst[i].score(doc)
+
+            // Early termination if possible.
+            if (sum + maxRemaining[i] < heapMinimumScore)
+                return -Float.MAX_VALUE
+        }
+        return sum.toFloat()
+    }
+
+    override fun explain(doc: Int): Explanation {
+        val expls = children.map { it.explain(doc) }
+        if (matches(doc)) {
+            return Explanation.match(score(doc), "$className.Match ${weights.toList()}", expls)
+        }
+        return Explanation.noMatch("$className.Miss ${weights.toList()}", expls)
+    }
+
+    override fun count(doc: Int): Int = error("Calling counts on WeightedSumEval is nonsense.")
+
+    var heapMinimumScore = -Float.MAX_VALUE
+    override fun setHeapMinimum(target: Float) {
+        heapMinimumScore = target
+    }
+}
+
 // Also known as #combine for you galago/indri folks.
 private class WeightedSumEval(children: List<QueryEvalNode>, val weights: DoubleArray) : OrEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float {
-        var sum = 0.0
-        children.forEachIndexed { i, child ->
-            child.syncTo(doc)
-            sum += weights[i] * child.score(doc)
-        }
-        return sum.toFloat()
+        return (0 until children.size).sumByDouble {
+            weights[it] * children[it].score(doc)
+        }.toFloat()
     }
 
     override fun explain(doc: Int): Explanation {
@@ -311,6 +359,12 @@ private abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
 }
 
 private class WeightedEval(override val child: QueryEvalNode, val weight: Float): SingleChildEval<QueryEvalNode>() {
+    override fun setHeapMinimum(target: Float) {
+        // e.g., if this is 2*child, and target is 5
+        // child target is 5 / 2
+        child.setHeapMinimum(target / weight)
+    }
+
     override fun score(doc: Int): Float = weight * child.score(doc)
     override fun count(doc: Int): Int = error("Weighted($weight).count()")
     override fun explain(doc: Int): Explanation {
