@@ -7,6 +7,7 @@ import edu.umass.cics.ciir.chai.smartPrint
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
+import org.lemurproject.galago.core.eval.QuerySetJudgments
 import org.lemurproject.galago.utility.Parameters
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -14,16 +15,21 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * @author jfoley
  */
-private fun forEachSDMPoolQuery(tokenizer: GenericTokenizer, dsName: String, doFn: (LTRQuery) -> Unit) {
-    File("$dsName.irene-sdm.qlpool.jsonl.gz").smartDoLines { line ->
-        val qjson = Parameters.parseStringOrDie(line)
-        val qid = qjson.getStr("qid")
-        val qtext = qjson.getStr("qtext")
-        val qterms = qjson.getAsList("qterms", String::class.java)
+private fun forEachSDMPoolQuery(tokenizer: GenericTokenizer, input: File, doFn: (LTRQuery) -> Unit) {
+    input.smartDoLines { line ->
+        try {
+            val qjson = Parameters.parseString(line)
+            val qid = qjson.getStr("qid")
+            val qtext = qjson.getStr("qtext")
+            val qterms = qjson.getAsList("qterms", String::class.java)
 
-        val docs = qjson.getAsList("docs", Parameters::class.java).map { LTRDocOfCAR(tokenizer, it) }
+            val docs = qjson.getAsList("docs", Parameters::class.java).map { LTRDocOfCAR(tokenizer, it) }
 
-        doFn(LTRQuery(qid, qtext, qterms, docs))
+            doFn(LTRQuery(qid, qtext, qterms, docs))
+        } catch (e: Exception) {
+            // Error, probably parsing json..
+            println("forEachQuery: $e")
+        }
     }
 }
 
@@ -64,21 +70,26 @@ fun main(args: Array<String>) {
     val dataset = DataPaths.get(dsName)
     val evals = getEvaluators(listOf("ap", "ndcg"))
     val ms = NamedMeasures()
-    val qrels = dataset.getQueryJudgments()
+    //val qrels = dataset.getQueryJudgments()
+    val qrels = QuerySetJudgments("data/merged.qrels.gz")
     val qid = argp.get("qid")?.toString()
-    val qidBit = if (qid == null) "" else ".$qid"
     val statsField = argp.get("statsField", "text")
     val onlyEmitJudged = argp.get("onlyJudged", false)
-    val judgedBit = if (onlyEmitJudged) ".judged" else ""
     val outDir = argp.get("output-dir", "l2rf/latest/")
 
-    File("$outDir/$dsName$judgedBit$qidBit.features.jsonl.gz").smartPrint { out ->
+    val inputF = File("trec-car-train-10k.jsonl.gz")
+    //val qidBit = if (qid == null) "" else ".$qid"
+    //val judgedBit = if (onlyEmitJudged) ".judged" else ""
+    //val outputF = File("$outDir/$dsName$judgedBit$qidBit.features.jsonl.gz")
+    val outputF = File("$outDir/trec-car-train-10k.features.jsonl.gz")
+
+    outputF.smartPrint { out ->
         dataset.getIreneIndex().use { index ->
             val env = index.getRREnv()
             env.estimateStats = "min"
 
-            val msg = CountingDebouncer(qrels.size.toLong())
-            forEachSDMPoolQuery(LuceneTokenizer(IreneEnglishAnalyzer()), dsName) { q ->
+            val msg = CountingDebouncer(Math.min(10000,qrels.size).toLong())
+            forEachSDMPoolQuery(LuceneTokenizer(IreneEnglishAnalyzer()), inputF) { q ->
                 if (qid != null && qid != q.qid) {
                     // skip all but qid if specified.
                     return@forEachSDMPoolQuery
@@ -86,6 +97,12 @@ fun main(args: Array<String>) {
                 val queryJudgments = qrels[q.qid] ?: QueryJudgments(q.qid, emptyMap())
                 val feature_exprs = HashMap<String, RRExpr>()
                 val query_features = HashMap<String, Double>()
+
+                val numJudged = q.docs.count { queryJudgments.isJudged(it.name) }
+                if (numJudged == 0) {
+                    //println("Skip -- no judged in pool.")
+                    return@forEachSDMPoolQuery
+                }
 
                 val qdf = StreamingStats().apply {
                     q.qterms.forEach { push(env.getStats(it, statsField).binaryProbability()) }
@@ -99,7 +116,7 @@ fun main(args: Array<String>) {
 
                 CARFields.forEach { fieldName ->
                     val qterms = index.tokenize(q.qtext, fieldName)
-                    println("\t$fieldName: $qterms")
+                    //println("\t$fieldName: $qterms")
                     q.docs.forEach { doc ->
                         doc.features["$fieldName:qlen"] = qterms.size.toDouble()
                         doc.features["$fieldName:qstop"] = qterms.count { inqueryStop.contains(it) }.toDouble()

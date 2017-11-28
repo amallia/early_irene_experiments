@@ -17,7 +17,7 @@ fun shouldNormalize(f: String): Boolean = f.startsWith("norm:")
  */
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args);
-    val dataset = argp.get("dataset", "trec-car-test200")
+    val dataset = argp.get("dataset", "trec-car-train-10k")
     val input = argp.get("input", "l2rf/latest/$dataset.features.jsonl.gz")
     val docInput = File("html_raw/$dataset.features.jsonl.gz")
     val output = argp.get("output", "l2rf/latest/$dataset.features.ranklib")
