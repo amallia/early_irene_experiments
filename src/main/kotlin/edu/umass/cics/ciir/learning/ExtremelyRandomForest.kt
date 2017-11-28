@@ -5,7 +5,7 @@ import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.fasterxml.jackson.module.kotlin.readValue
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
-import edu.umass.cics.ciir.sprf.DataPaths
+import edu.umass.cics.ciir.irene.example.loadTrecCarDataset
 import edu.umass.cics.ciir.sprf.getEvaluator
 import gnu.trove.map.hash.TIntIntHashMap
 import org.lemurproject.galago.core.eval.QueryJudgments
@@ -113,17 +113,21 @@ data class RLDataset(val byQuery: Map<String, MutableList<QDoc>>)
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val dataset = argp.get("dataset", "trec-car-test200")
-    val input = argp.get("input", "l2rf/latest/$dataset.features.ranklib")
+    val input = argp.get("input", "l2rf/latest/trec-car-train-10k.features.ranklib")
     val featureNames = Parameters.parseFile(argp.get("meta", "$input.meta.json"))
     val numFeatures = argp.get("numFeatures",
             featureNames.size)
     val numTrees = argp.get("numTrees", 100)
-    val sampleRate = argp.get("srate", 0.25)
-    val featureSampleRate = argp.get("frate", 0.3)
+    val sampleRate = argp.get("srate", 0.15)
+    val featureSampleRate = argp.get("frate", 0.15)
     val kSplits = argp.get("kcv", 5)
-    val querySet = DataPaths.get(dataset)
-    val queries = querySet.title_qs
-    val qrels = querySet.qrels
+    val kFeatures = argp.get("numFeatures", (featureSampleRate * numFeatures).toInt())
+
+    //val querySet = DataPaths.get(dataset)
+    //val queries = querySet.title_qs
+    //val qrels = querySet.qrels
+
+    val (queries, qrels) = loadTrecCarDataset(File("data/trec-car-train-10k.qrels"))
     val measure = getEvaluator("ap")
     val strategy = getTreeSplitSelectionStrategy(argp.get("strategy", "variance"))
 
@@ -190,24 +194,24 @@ fun main(args: Array<String>) {
         }
     }
 
-    val splitPerf = splits.pmap { split ->
-        val trainInsts = split.trainIds.flatMap { byQuery[it]!! }
+    val splitPerf = splits.take(1).map { split ->
+        val trainInsts = split.trainIds.flatMap { byQuery[it]?.toList() ?: emptyList() }
         val trainFStats = (0 until numFeatures).map { StreamingStats() }
+        val kSamples = argp.get("numSamples", (sampleRate * trainInsts.size).toInt())
+        println("${split.id} kSamples=$kSamples kFeatures=$kFeatures")
 
         trainInsts.forEach { doc ->
             doc.features.forEachIndexed { fid, fval -> trainFStats[fid].push(fval.toDouble()) }
         }
         val learningParams = TreeLearningParams(trainFStats.map { it.toComputedStats() }, strategy = strategy)
 
-        val kFeatures = argp.get("numFeatures", (featureSampleRate * numFeatures).toInt())
-        val kSamples = argp.get("numSamples", (sampleRate * trainInsts.size).toInt())
         if (kSamples <= 1) {
             error("Cannot function with few samples. Only selects $kSamples in practice.")
         }
 
         val trainSet = trainInsts.groupBy { it.qid }
-        val testSet = split.testIds.flatMap { byQuery[it]!! }.groupBy { it.qid }
-        val valiSet = split.valiIds.flatMap { byQuery[it]!! }.groupBy { it.qid }
+        val testSet = split.testIds.flatMap { byQuery[it]?.toList() ?: emptyList() }.groupBy { it.qid }
+        val valiSet = split.valiIds.flatMap { byQuery[it]?.toList() ?: emptyList() }.groupBy { it.qid }
 
         val outputTrees = ArrayList<TreeNode>()
         val rand = Random(13)
@@ -237,7 +241,7 @@ fun main(args: Array<String>) {
             //val valiAP = split.evaluate(valiSet, measure, qrels, tree)
             //println("\ttrain-AP: $trainAP, oob-AP: $oobAP, vali-AP: $valiAP")
 
-            //tree.weight = oobAP
+            tree.weight = oobAP
             outputTrees.add(tree)
 
             if (outputTrees.size >= 1) {
@@ -357,7 +361,7 @@ data class TreeLearningParams(
         val fStats: List<ComputedStats>,
         val numSplitsPerFeature: Int=4,
         val minLeafSupport: Int=30,
-        val maxDepth: Int = 10,
+        val maxDepth: Int = 8,
         val rankerLeaf: Boolean = false,
         val perceptronLeaf: Boolean = false,
         val perceptronMaxIters: Int = 100,
