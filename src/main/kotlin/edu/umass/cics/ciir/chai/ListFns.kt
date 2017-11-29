@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.chai
 
 import edu.umass.cics.ciir.sprf.incr
 import java.util.*
+import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.TimeUnit
 import kotlin.streams.toList
 
@@ -84,8 +85,7 @@ fun <T> Collection<T>.pforIndividual(doFn: (T)->Unit) {
 fun <I,O> Collection<I>.pmap(mapper: (I)->O): List<O> {
     return this.parallelStream().map { mapper(it) }.toList()
 }
-fun <I,O> Collection<I>.pmapIndividual(mapper: (I)->O): List<O> {
-    val pool = java.util.concurrent.ForkJoinPool.commonPool()!!
+fun <I,O> Collection<I>.pmapIndividual(pool: ForkJoinPool = ForkJoinPool.commonPool(), mapper: (I)->O): List<O> {
     val output = Vector<O>()
     this.forEach { input ->
         pool.submit({

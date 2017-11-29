@@ -70,6 +70,11 @@ class CountingDebouncer(val total: Long, delay: Long = 1000) {
             } else null
         //}
     }
+
+    fun final(): RateEstimate {
+        val x = count.get()
+        return msg.estimate(x, x)
+    }
 }
 
 

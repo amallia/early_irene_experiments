@@ -7,10 +7,15 @@ from keras.layers import Dense, Dropout, Subtract
 from keras.optimizers import SGD, Adagrad, RMSprop, Adam
 import keras.backend as K
 
-def smart_open(f):
+def smart_lines(f):
     if f.endswith('.gz'):
-        return gzip.GzipFile(f)
-    return open(f)
+        with gzip.GzipFile(f) as gzfp:
+            for line in gzfp:
+                yield line.decode('utf-8').strip()
+            return
+    with open(f) as fp:
+        for line in fp:
+            yield line.strip()
 
 def build_model(input_dim,widths=[64,32,1],opt='adam',loss='mean_absolute_error', dropout=True, dropoutValue=0.5, activation='relu', lr=0.002):
     input_lhs = keras.layers.Input(shape=(input_dim,))
@@ -60,48 +65,53 @@ def after_str(string, prefix):
 
 meta_features = {}
 query_data = defaultdict(dict)
+num_rel = Counter()
+with open('/home/jfoley/code/queries/gov2/gov2.qrels') as fp:
+    for line in fp:
+        [qid, unused, doc, j] = line.strip().split()
+        if int(j) > 0:
+            num_rel[qid]+=1
 
 def load_ranklib_input(ranklib_file):
     global query_data
     global meta_features
 
-    with smart_open("%s.meta.json" % before_str(ranklib_file, ".gz")) as fp:
+    with open("%s.meta.json" % before_str(ranklib_file, ".gz")) as fp:
         meta_features = dict((v-1, k) for k,v in json.loads(fp.read()).items())
     print(meta_features)
 
     NF = len(meta_features)
-    ND = 100
-    with smart_open(ranklib_file) as fp:
-        for line in fp:
-            cols = line.decode('utf-8').split()
-            qid = after_str(cols[1], "qid:")
-            docid = after_str(cols[-1], "#")
+    ND = 1000
+    for line in smart_lines(ranklib_file):
+        cols = line.split()
+        qid = after_str(cols[1], "qid:")
+        docid = after_str(cols[-1], "#")
 
-            for_qid = query_data[qid]
-            if not for_qid:
-                sys.stdout.write('.')
-                sys.stdout.flush()
-                for_qid['x'] = np.zeros((ND,NF))
-                for_qid['y'] = np.zeros(ND)
-                for_qid['pos'] = []
-                for_qid['neg'] = []
-                for_qid['ids'] = []
-            
-            i = len(for_qid['ids'])
-            for_qid['ids'].append(docid)
-            truth = int(cols[0])
-            for_qid['y'][i] = truth
-            if truth > 0:
-                for_qid['pos'].append(i)
-            else:
-                for_qid['neg'].append(i)
-            
-            qiX = for_qid['x'][i]
-            for col in cols[2:-1]:
-                kv = col.split(":")
-                fid = int(kv[0])-1
-                fval = float(kv[1])
-                qiX[fid] = fval
+        for_qid = query_data[qid]
+        if not for_qid:
+            sys.stdout.write('.')
+            sys.stdout.flush()
+            for_qid['x'] = np.zeros((ND,NF))
+            for_qid['y'] = np.zeros(ND)
+            for_qid['pos'] = []
+            for_qid['neg'] = []
+            for_qid['ids'] = []
+        
+        i = len(for_qid['ids'])
+        for_qid['ids'].append(docid)
+        truth = int(cols[0])
+        for_qid['y'][i] = truth
+        if truth > 0:
+            for_qid['pos'].append(i)
+        else:
+            for_qid['neg'].append(i)
+        
+        qiX = for_qid['x'][i]
+        for col in cols[2:-1]:
+            kv = col.split(":")
+            fid = int(kv[0])-1
+            fval = float(kv[1])
+            qiX[fid] = fval
     print("\nDone loading %s." % (ranklib_file))
 
 #load_ranklib_input('../l2rf/gov2.features.ranklib')
@@ -118,15 +128,18 @@ def computeAP(model, ids):
         truth = data['y']
         qn = len(truth)
         pqy = model.predict(data['x'])
-        numRel = np.sum(truth)
+        numRel = np.sum(truth > 0)
         if numRel == 0:
             aps.append(0)
             continue
+        if qid in num_rel:
+            numRel = num_rel[qid]
         recallPointCount = 0.0
         sumPrecision = 0.0
-        ranked = sorted(zip(pqy, truth), reverse=True)
+        ranked = sorted(zip([-yi.tolist()[0] for yi in pqy], truth))
         for j, (pred, actual) in enumerate(ranked):
             if (actual > 0):
+                #print(pred, actual)
                 rank = j+1.0
                 recallPointCount += 1
                 sumPrecision += (recallPointCount / rank)
@@ -136,11 +149,13 @@ def computeAP(model, ids):
 
 
 
+#load_ranklib_input('../l2rf/gov2.features.ranklib.gz')
 load_ranklib_input('../l2rf/latest/trec-car-train-10k.features.ranklib.gz')
 ekeys = list(enumerate(query_data.keys()))
-train_ids = [x for i, x in ekeys if i % 5 < 3]
-vali_ids = [x for i, x in ekeys if i % 5 == 3]
-test_ids = [x for i, x in ekeys if i % 5 == 4]
+kSplits = 10
+train_ids = [x for i, x in ekeys if i % kSplits < kSplits-2]
+vali_ids = [x for i, x in ekeys if i % kSplits == kSplits-2]
+test_ids = [x for i, x in ekeys if i % kSplits == kSplits-1]
 
 def sample_query_pairs(train_ids, kq=10, kneg=10):
     y = []
@@ -153,7 +168,10 @@ def sample_query_pairs(train_ids, kq=10, kneg=10):
         if not qdata:
             continue
         xs = qdata['x']
-        pos = np.random.choice(qdata['pos'], 1)[0]
+        pos_items = qdata['pos']
+        if not pos_items:
+            continue
+        pos = np.random.choice(pos_items, 1)[0]
         neg = np.random.choice(qdata['neg'], kneg)
 
         # put instances in for both directions
@@ -173,7 +191,9 @@ def train(cmp_model, scorer_model, train_ids, samples=1000, kq=150, kneg=50):
         cmp_model.train_on_batch(x=[lX, rX], y=y)
         if s % 10 == 0:
             print("%d. loss: %s" % (s, cmp_model.evaluate(x=[lX,rX], y=y)))
-            print("%d. mAP: %1.3f" % (s, np.mean(computeAP(scorer_model, train_ids))))
+            #print("%d. TRAIN mAP: %1.3f" % (s, np.mean(computeAP(scorer_model, train_ids))))
+            print("%d. VALI mAP: %1.3f" % (s, np.mean(computeAP(scorer_model, vali_ids))))
+            #print("%d. TEST mAP: %1.3f" % (s, np.mean(computeAP(scorer_model, test_ids))))
 
 cmp_model, scorer_model = build_model(len(meta_features), activation='sigmoid')
 train(cmp_model, scorer_model, train_ids)
