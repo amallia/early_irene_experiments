@@ -7,6 +7,7 @@ import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.getEvaluator
+import edu.umass.cics.ciir.sprf.pmake
 import gnu.trove.map.hash.TIntIntHashMap
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QueryResults
@@ -29,14 +30,33 @@ val mapper = ObjectMapper().registerModule(KotlinModule())
  *
  * @author jfoley.
  */
+
+fun Parameters.children(key: String): List<Parameters> = this.getAsList(key, Parameters::class.java)
+fun loadTreeNode(p: Parameters): TreeNode {
+    val tn: TreeNode = if (p.containsKey("ensemble")) {
+        EnsembleNode(p.children("ensemble").map { loadTreeNode(it) })
+    } else if (p.containsKey("point")) {
+        FeatureSplit(p.getInt("fid"), p.getDouble("point"),
+                loadTreeNode(p.getMap("lhs")), loadTreeNode(p.getMap("rhs")))
+    } else {
+        LeafResponse(p.getDouble("probability"), p.getDouble("accuracy"), p.getDouble("confidence"))
+    }
+    tn.apply { weight = p.get("weight", 1.0) }
+    return tn
+}
 sealed class TreeNode {
     var weight: Double = 1.0
     abstract fun score(features: FloatArray): Double
     abstract fun depth(): Int
+    abstract fun toParameters(): Parameters
 }
 data class EnsembleNode(val guesses: List<TreeNode>): TreeNode() {
     override fun depth(): Int = guesses.map { it.depth() }.max() ?: 0
     override fun score(features: FloatArray): Double = weight * guesses.meanByDouble { it.score(features) }
+    override fun toParameters() = pmake {
+        set("weight", weight)
+        set("ensemble", guesses.map { it.toParameters() })
+    }
 }
 data class FeatureSplit(val fid: Int, val point: Double, val lhs: TreeNode, val rhs: TreeNode): TreeNode() {
     override fun score(features: FloatArray): Double = if (features[fid] < point) {
@@ -45,13 +65,30 @@ data class FeatureSplit(val fid: Int, val point: Double, val lhs: TreeNode, val 
         weight * rhs.score(features)
     }
     override fun depth(): Int = 1 + maxOf(lhs.depth(), rhs.depth())
+    override fun toParameters() = pmake {
+        set("weight", weight)
+        set("fid", fid)
+        set("point", point)
+        set("lhs", lhs.toParameters())
+        set("rhs", rhs.toParameters())
+    }
 }
 
-data class LeafResponse(val probability: Double, val accuracy: Double = 1.0, val confidence: Double=1.0) : TreeNode() {
-    constructor(items: InstanceSet): this(items.output, items.accuracy, items.confidence)
+data class LeafResponse(val probability: Double, val accuracy: Double = 1.0, val confidence: Double=1.0, val items: InstanceSet? = null) : TreeNode() {
+    constructor(items: InstanceSet): this(items.output, items.accuracy, items.confidence, items)
     private val precomputed = accuracy * probability * confidence
     override fun score(features: FloatArray): Double = weight * precomputed
     override fun depth(): Int = 1
+    override fun toParameters() = pmake {
+        set("weight", weight)
+        set("accuracy", accuracy)
+        set("probability", probability)
+        set("confidence", confidence)
+        if (items != null) {
+            set("observed", items.size)
+            set("observed.labelCounts", items.labelCounts.toString())
+        }
+    }
 }
 data class LinearRankingLeaf(val fids: List<Int>, val weights: List<Double>): TreeNode() {
     override fun score(features: FloatArray): Double {
@@ -62,6 +99,7 @@ data class LinearRankingLeaf(val fids: List<Int>, val weights: List<Double>): Tr
         return weight * MathUtils.sigmoid(sum)
     }
     override fun depth(): Int = 1
+    override fun toParameters() = error("TODO")
 }
 data class LinearPerceptronLeaf(val fids: List<Int>, val weights: List<Double>): TreeNode() {
     override fun score(features: FloatArray): Double {
@@ -73,6 +111,7 @@ data class LinearPerceptronLeaf(val fids: List<Int>, val weights: List<Double>):
         return weight * pred
     }
     override fun depth(): Int = 1
+    override fun toParameters() = error("TODO")
 }
 
 data class QDoc(val label: Float, val qid: String, val features: FloatArray, val name: String, var judged: Boolean = false) {
@@ -111,17 +150,21 @@ data class CVSplit(val id: Int, val trainIds: Set<String>, val valiIds: Set<Stri
 
 data class RLDataset(val byQuery: Map<String, MutableList<QDoc>>)
 
+
+
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dataset = argp.get("dataset", "gov2")
+    val dataset = argp.get("dataset", "mq07")
+    val outputFile = File("${dataset}.rf.json")
+    if (outputFile.exists()) error("Output $outputFile already exists!")
     val input = argp.get("input", "l2rf/${dataset}.features.ranklib")
     val featureNames = Parameters.parseFile(argp.get("meta", "$input.meta.json"))
     val numFeatures = argp.get("numFeatures",
             featureNames.size)
-    val numTrees = argp.get("numTrees", 30)
+    val numTrees = argp.get("numTrees", 50)
     val sampleRate = argp.get("srate", 0.25)
     val featureSampleRate = argp.get("frate", 0.05)
-    val kSplits = argp.get("kcv", 10)
+    val kSplits = argp.get("kcv", 5)
     val kFeatures = argp.get("numFeatures", (featureSampleRate * numFeatures).toInt())
 
     val querySet = DataPaths.get(dataset)
@@ -139,12 +182,12 @@ fun main(args: Array<String>) {
     }
 
     val splits = (0 until kSplits).map { index ->
-        val trainId = index
+        val testId = index
         val valiId = (index+1) % kSplits
-        val testIds = (0 until kSplits).filter { it != trainId  && it != valiId }.toSet()
-        val trainQs = splitQueries[trainId]!!.toSet()
+        val trainIds = (0 until kSplits).filter { it != testId  && it != valiId }.toSet()
+        val testQs = splitQueries[testId]!!.toSet()
         val valiQs = splitQueries[valiId]!!.toSet()
-        val testQs = testIds.flatMap { splitQueries[it]!! }.toSet()
+        val trainQs = trainIds.flatMap { splitQueries[it]!! }.toSet()
 
         println("Train ${trainQs.size} Validate: ${valiQs.size} Test ${testQs.size}.")
         CVSplit(index, trainQs, valiQs, testQs)
@@ -222,9 +265,11 @@ fun main(args: Array<String>) {
             val x_sample = trainInsts.sample(kSamples, rand).toList()
             //println(f_sample)
 
-            val outOfBag = HashSet(trainInsts).apply { removeAll(x_sample) }.groupBy { it.qid }
+            //val outOfBag = HashSet(trainInsts).apply { removeAll(x_sample) }.groupBy { it.qid }
 
-            if (x_sample.none { it.label > 0 }) {
+            val positives = x_sample.count { it.perceptronLabel > 0 }
+            //println("Positives: $positives/${x_sample.size}")
+            if (positives == 0) {
                 println("Note: bad sample, no positive labels in sample.")
                 continue
             }
@@ -238,12 +283,13 @@ fun main(args: Array<String>) {
             //println("Learned tree $tree")
 
             //val trainAP = split.evaluate(trainSet, measure, qrels, tree)
-            val oobAP = split.evaluate(outOfBag, measure, qrels, tree)
+            //val oobAP = split.evaluate(outOfBag, measure, qrels, tree)
             //val valiAP = split.evaluate(valiSet, measure, qrels, tree)
             //println("\ttrain-AP: $trainAP, oob-AP: $oobAP, vali-AP: $valiAP")
 
-            tree.weight = oobAP
+            //tree.weight = oobAP
             outputTrees.add(tree)
+            //println(tree.toParameters().toPrettyString())
 
             if (outputTrees.size >= 1) {
                 val ensemble = EnsembleNode(outputTrees)
@@ -251,7 +297,7 @@ fun main(args: Array<String>) {
                 val valiAP = split.evaluate(valiSet, measure, qrels, ensemble)
                 val testAP = split.evaluate(testSet, measure, qrels, ensemble)
                 synchronized(System.out) {
-                    println("${split.id} ENSEMBLE[]%d.d=%d.w=%1.3f train-AP: %1.3f, vali-AP: %1.3f, test-AP: %1.3f".format(outputTrees.size, tree.depth(), oobAP, trainAP, valiAP, testAP))
+                    println("${split.id} ENSEMBLE[]%d.d=%d.w=%1.3f train-AP: %1.3f, vali-AP: %1.3f, test-AP: %1.3f".format(outputTrees.size, tree.depth(), tree.weight, trainAP, valiAP, testAP))
                 }
                 //println("ENSEMBLE[]${outputTrees.size} train-AP: $trainAP, vali-AP: $valiAP, test-AP: $testAP")
             }
@@ -261,12 +307,18 @@ fun main(args: Array<String>) {
         val testAP = split.evaluate(testSet, measure, qrels, ensemble)
 
         println("Split: ${split.id} Test-AP: ${"%1.3f".format(testAP)}")
-        Pair(split.id, testAP)
+        Pair(split.id, Pair(ensemble, testAP))
     }.associate { it }
 
-    val overallTestAP = splitPerf.values.toList().mean()
+    val overallTestAP = splitPerf.values.map { it.second }.toList().mean()
     println("Overall Test-AP: ${"%1.3f".format(overallTestAP)}")
-    println(splitPerf)
+    println(splitPerf.mapValues { (_,v) -> v.second })
+
+    // Only use this if you have another, true test set.
+    val overallEnsemble = EnsembleNode(splitPerf.values.flatMap { it.first.guesses })
+    outputFile.smartPrint { writer ->
+        writer.println(overallEnsemble.toParameters())
+    }
 }
 
 data class QDocFeatureView(val doc: QDoc, val features: List<Int>) : Vector {
@@ -274,7 +326,7 @@ data class QDocFeatureView(val doc: QDoc, val features: List<Int>) : Vector {
     override fun get(i: Int): Double = doc.features[features[i]].toDouble()
 }
 
-class InstanceSet() : MachineLearningInput {
+class InstanceSet : MachineLearningInput {
     lateinit var features: List<Int>
     val forLearning: ArrayList<QDocFeatureView> by lazy { instances.mapTo(ArrayList()) { QDocFeatureView(it, features) } }
     override val numInstances: Int get() = instances.size
@@ -288,10 +340,17 @@ class InstanceSet() : MachineLearningInput {
     val size: Int get() = instances.size
     val output: Double get() = safeDiv(labelCounts[1], size)
     val labelCounts = TIntIntHashMap()
-    val perceptronLabel: Int get() = if (output >= 0) { 1 } else { -1 }
+    val perceptronLabel: Int get() = if (output > 0) { 1 } else { -1 }
 
     val accuracy: Double get() = safeDiv(labelCounts[perceptronLabel], size)
     val confidence: Double get() = safeDiv(instances.count { it.judged }, size)
+
+    override fun equals(other: Any?): Boolean {
+        if (other is InstanceSet) {
+            return instances == other.instances
+        }
+        return false
+    }
 
     fun push(x: QDoc) {
         val label = x.perceptronLabel
@@ -347,7 +406,7 @@ data class FeatureSplitCandidate(
     var cachedImportance: Double? = null
     fun consider(instances: Collection<QDoc>) {
         for (inst in instances) {
-            if (inst.features[fid] >= split) {
+            if (inst.features[fid] > split) {
                 rhs.push(inst)
             } else {
                 lhs.push(inst)
@@ -360,14 +419,14 @@ data class FeatureSplitCandidate(
 
 data class TreeLearningParams(
         val fStats: List<ComputedStats>,
-        val numSplitsPerFeature: Int=4,
-        val minLeafSupport: Int=30,
+        val numSplitsPerFeature: Int=3,
+        val minLeafSupport: Int=10,
         val maxDepth: Int = 8,
         val rankerLeaf: Boolean = false,
         val perceptronLeaf: Boolean = false,
         val perceptronMaxIters: Int = 100,
         val useFeaturesOnlyOnce: Boolean = false,
-        val splitter: SplitGenerationStrategy = ExtraRandomForestSplitGenerator(),
+        val splitter: SplitGenerationStrategy = EvenSplitGenerator(),
         val strategy: TreeSplitSelectionStrategy = TrueVarianceReduction()
 ) {
     var bagInstances: Set<QDoc> = emptySet()
@@ -410,9 +469,9 @@ data class TreeLearningParams(
                     return LinearPerceptronLeaf(features, learned.weights.toList())
                 }
             }
-            return LeafResponse(elements.output)
+            return LeafResponse(elements)
         } else {
-            return LeafResponse(elements.output)
+            return LeafResponse(elements)
         }
     }
 
@@ -435,12 +494,10 @@ data class RecursionTreeParams(val features: Set<Int>, val instances: Set<QDoc>,
 }
 
 interface SplitGenerationStrategy {
-    fun reset()
     fun generateSplits(params: TreeLearningParams, stats: ComputedStats, fid: Int, instances: Collection<QDoc>): List<FeatureSplitCandidate>
     fun rand(min: Double, max: Double) = ThreadLocalRandom.current().nextDouble(min, max)
 }
 class ExtraRandomForestSplitGenerator : SplitGenerationStrategy {
-    override fun reset() { }
     override fun generateSplits(params: TreeLearningParams, stats: ComputedStats, fid: Int, instances: Collection<QDoc>): List<FeatureSplitCandidate> {
         val actualStats = StreamingStats().pushAll(instances.map { it.features[fid].toDouble() })
         if (actualStats.min == actualStats.max) return emptyList()
@@ -452,44 +509,25 @@ class ExtraRandomForestSplitGenerator : SplitGenerationStrategy {
     }
 }
 class EvenSplitGenerator : SplitGenerationStrategy {
-    val bucketed = HashMap<Int, List<Pair<Double, List<QDoc>>>>()
-    override fun reset() {
-        bucketed.clear()
-    }
-    override fun generateSplits(params: TreeLearningParams, stats: ComputedStats, fid: Int, instances: Collection<QDoc>): List<FeatureSplitCandidate> {
-        if (!bucketed.containsKey(fid)) {
-            val sorted = LinkedList(instances.sortedBy { it.features[fid] })
+    override fun generateSplits(params: TreeLearningParams, fidStats: ComputedStats, fid: Int, instances: Collection<QDoc>): List<FeatureSplitCandidate> {
+        val stats = StreamingStats()
+        instances.forEach() { stats.push(it.features[fid]) }
+        val k = params.numSplitsPerFeature
 
-            val range = stats.max - stats.min
-            val k = params.numSplitsPerFeature
-            val splits = (0 until k).map { i ->
-                val frac = safeDiv(i, k-1)
-                val split = frac * range + stats.min
+        val range = stats.max - stats.min
+        return (0 until k).map { i ->
+            val frac = safeDiv(i, k-1)
+            val split = frac * range + stats.min
 
-                val bucket = ArrayList<QDoc>()
-                while(true) {
-                    val head = sorted.peek() ?: break
-                    if (head.features[fid] < split) {
-                        bucket.add(sorted.pop())
-                    } else break
-                }
-                Pair(split, bucket)
-            }.filter { it.second.isNotEmpty() }
-            bucketed[fid] = splits
-        }
-
-        val bucketSplits = bucketed[fid]!!
-        return bucketSplits.mapIndexed { i, split ->
-            val splitPoint = split.first
-            val lhs = bucketSplits.subList(0, i).flatMap { it.second }
-            val rhs = bucketSplits.subList(i, bucketSplits.size).flatMap { it.second }
-
-            FeatureSplitCandidate(fid, splitPoint, InstanceSet().pushAll(lhs), InstanceSet().pushAll(rhs))
+            FeatureSplitCandidate(fid, split).apply { consider(instances) }
         }
     }
 }
 
 fun trainTreeRecursive(params: TreeLearningParams, step: RecursionTreeParams): TreeNode? {
+    //val indent = (0 until step.depth).joinToString(separator="") { "\t" }
+    //println("${indent}TTR: ${step.depth}, N=${step.instances.size}")
+
     // Limit recursion depth according to parameters.
     if (step.depth >= params.maxDepth) return null
     // Stop if we run out of features in this sample.
