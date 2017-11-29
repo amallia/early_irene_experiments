@@ -1,9 +1,10 @@
 import json, sys, gzip
 import numpy as np
 from collections import defaultdict, Counter
-from keras.models import Sequential
-from keras.layers import Dense, Dropout
-from keras.optimizers import SGD, Adagrad, RMSprop
+import keras
+from keras.models import Sequential, Model
+from keras.layers import Dense, Dropout, Subtract
+from keras.optimizers import SGD, Adagrad, RMSprop, Adam
 import keras.backend as K
 
 def smart_open(f):
@@ -11,22 +12,40 @@ def smart_open(f):
         return gzip.GzipFile(f)
     return open(f)
 
-def build_model(input_dim,widths=[256,256,1],opt='sgd',loss='mean_absolute_error', dropout=True, dropoutValue=0.5, activation='relu', lr=0.001):
-    model = Sequential()
+def build_model(input_dim,widths=[64,32,1],opt='adam',loss='mean_absolute_error', dropout=True, dropoutValue=0.5, activation='relu', lr=0.002):
+    input_lhs = keras.layers.Input(shape=(input_dim,))
+    input_rhs = keras.layers.Input(shape=(input_dim,))
+
+    tower = Sequential()
     for idx,w in enumerate(widths):
         idim = input_dim
         if idx > 0:
             idim = widths[idx-1]
-        model.add(Dense(units=w, activation=activation, input_dim=idim))
+        act = activation
+        if w == 1:
+            act = "linear"
+        tower.add(Dense(units=w, activation=act, input_dim=idim))
         if dropout:
-            model.add(Dropout(dropoutValue))
+            tower.add(Dropout(dropoutValue))
+
+    score_lhs = tower(input_lhs)
+    score_rhs = tower(input_rhs)
+
+    comparison = keras.layers.Subtract()([score_lhs, score_rhs])
+
+    model = Model(inputs=[input_lhs, input_rhs], outputs=comparison)
+    pred_model = Model(inputs=input_lhs, outputs=score_lhs)
+
     opt_fn = SGD(lr=lr)
     if opt == 'adagrad':
         opt_fn = Adagrad(lr=lr)
     elif opt == 'rmsprop':
         opt_fn = RMSprop(lr=lr)
-    model.compile(optimizer=opt_fn,loss=loss,metrics=['accuracy'])
-    return model
+    elif opt == 'adam':
+        opt_fn = Adam(lr=lr)
+    model.compile(opt_fn,loss,metrics=['accuracy'])
+    pred_model.compile(opt_fn, loss, metrics=['accuracy'])
+    return model, pred_model
 
 def before_str(string, suffix):
     if string.endswith(suffix):
@@ -64,11 +83,18 @@ def load_ranklib_input(ranklib_file):
                 sys.stdout.flush()
                 for_qid['x'] = np.zeros((ND,NF))
                 for_qid['y'] = np.zeros(ND)
+                for_qid['pos'] = []
+                for_qid['neg'] = []
                 for_qid['ids'] = []
             
             i = len(for_qid['ids'])
             for_qid['ids'].append(docid)
-            for_qid['y'][i] = int(cols[0])
+            truth = int(cols[0])
+            for_qid['y'][i] = truth
+            if truth > 0:
+                for_qid['pos'].append(i)
+            else:
+                for_qid['neg'].append(i)
             
             qiX = for_qid['x'][i]
             for col in cols[2:-1]:
@@ -83,16 +109,15 @@ def load_ranklib_input(ranklib_file):
 #vali_ids = [x for x in query_data.keys() if int(x) < 825 and int(x) >= 800]
 #test_ids = [x for x in query_data.keys() if int(x) >= 825]
 
-def computeAP(model, X, y, ids):
-    py = model.predict(X)
-    i = 0
+def computeAP(model, ids):
     aps = []
     for qid in ids:
         data = query_data[qid]
+        if not data:
+            continue
         truth = data['y']
         qn = len(truth)
-        pqy = py[i:i+qn]
-        i += qn
+        pqy = model.predict(data['x'])
         numRel = np.sum(truth)
         if numRel == 0:
             aps.append(0)
@@ -117,13 +142,39 @@ train_ids = [x for i, x in ekeys if i % 5 < 3]
 vali_ids = [x for i, x in ekeys if i % 5 == 3]
 test_ids = [x for i, x in ekeys if i % 5 == 4]
 
-trainX = np.concatenate([query_data[x]['x'] for x in train_ids])
-trainY = np.concatenate([query_data[y]['y'] for y in train_ids])
-valiX = np.concatenate([query_data[x]['x'] for x in vali_ids])
-valiY = np.concatenate([query_data[y]['y'] for y in vali_ids])
-testX = np.concatenate([query_data[x]['x'] for x in test_ids])
-testY = np.concatenate([query_data[y]['y'] for y in test_ids])
+def sample_query_pairs(train_ids, kq=10, kneg=10):
+    y = []
+    lhs = []
+    rhs = []
 
-model = build_model(trainX.shape[1], activation='sigmoid')
-model.fit(trainX, trainY, shuffle=True, epochs=2, batch_size=2048)
+    # choose a query:
+    for qid in np.random.choice(train_ids, kq):
+        qdata = query_data[qid]
+        if not qdata:
+            continue
+        xs = qdata['x']
+        pos = np.random.choice(qdata['pos'], 1)[0]
+        neg = np.random.choice(qdata['neg'], kneg)
+
+        # put instances in for both directions
+        for ni in neg:
+            y.append(1)
+            lhs.append(xs[pos])
+            rhs.append(xs[ni])
+            y.append(-1)
+            lhs.append(xs[ni])
+            rhs.append(xs[pos])
+
+    return np.array(y), np.array(lhs), np.array(rhs)
+
+def train(cmp_model, scorer_model, train_ids, samples=1000, kq=150, kneg=50):
+    for s in range(samples):
+        y, lX, rX = sample_query_pairs(train_ids, kq, kneg)
+        cmp_model.train_on_batch(x=[lX, rX], y=y)
+        if s % 10 == 0:
+            print("%d. loss: %s" % (s, cmp_model.evaluate(x=[lX,rX], y=y)))
+            print("%d. mAP: %1.3f" % (s, np.mean(computeAP(scorer_model, train_ids))))
+
+cmp_model, scorer_model = build_model(len(meta_features), activation='sigmoid')
+train(cmp_model, scorer_model, train_ids)
 
