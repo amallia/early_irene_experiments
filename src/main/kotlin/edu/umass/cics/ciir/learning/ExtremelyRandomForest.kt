@@ -150,7 +150,87 @@ data class CVSplit(val id: Int, val trainIds: Set<String>, val valiIds: Set<Stri
 
 data class RLDataset(val byQuery: Map<String, MutableList<QDoc>>)
 
+fun loadRLDataset(input: String, qrels: QuerySetJudgments, numFeatures: Int): RLDataset {
+    val byQuery = HashMap<String, MutableList<QDoc>>()
 
+    val inputF = File(input)
+    val cborInput = File("$input.cbor.gz")
+    if (cborInput.exists()) {
+        cborInput.smartReader().use { br ->
+            byQuery.putAll(mapper.readValue<RLDataset>(br).byQuery)
+        }
+    } else {
+        inputF.smartDoLines(true, total = 150_000L) { line ->
+            val (ftrs, doc) = line.splitAt('#') ?: error("Can't find doc!")
+            val row = ftrs.trim().split(SpacesRegex)
+            val label = row[0].toFloatOrNull() ?: error("Can't parse label as float.")
+            val qid = row[1].substringAfter("qid:")
+            if (qid.isBlank()) {
+                error("Can't find qid: $row")
+            }
+
+            val fvec = FloatArray(numFeatures)
+            (3 until row.size).forEach { i ->
+                val (fid, fval) = row[i].splitAt(':') ?: error("Feature must have : split ${row[i]}.")
+                fvec[fid.toInt() - 1] = fval.toFloat()
+            }
+
+            byQuery.push(qid, QDoc(label, qid, fvec, doc))
+        }
+
+        cborInput.smartWriter().use { ow ->
+            mapper.writeValue(ow, RLDataset(byQuery))
+        }
+    }
+
+    byQuery.forEach { qid, docs ->
+        val judgments = qrels[qid]
+        if (judgments != null) {
+            docs.forEach {
+                if (judgments.isJudged(it.name)) {
+                    it.judged = true
+                }
+            }
+        }
+    }
+
+    return RLDataset(byQuery)
+}
+
+object TestModel {
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val dataset = argp.get("dataset", "gov2")
+        val modelFile = File("mq07.rf.json")
+        if (!modelFile.exists()) error("Need input $modelFile!")
+        val tree = loadTreeNode(Parameters.parseFile(modelFile))
+
+        val input = argp.get("input", "l2rf/${dataset}.features.ranklib")
+
+        val featureNames = Parameters.parseFile(argp.get("meta", "$input.meta.json"))
+        val numFeatures = argp.get("numFeatures",
+                featureNames.size)
+        val querySet = DataPaths.get(dataset)
+        val queries = querySet.title_qs
+        val qrels = querySet.qrels
+        val measure = getEvaluator("ap")
+
+        val byQuery = loadRLDataset(input, qrels, numFeatures).byQuery
+
+        val meanMeasure = byQuery.toList().meanByDouble { (qid, inputList) ->
+            val ranked = inputList.mapTo(ArrayList()) {
+                val pred = tree.score(it.features)
+                ScoredDocument(it.name, -1, pred)
+            }
+            Ranked.setRanksByScore(ranked)
+            val score = measure.evaluate(QueryResults(ranked), qrels[qid] ?: QueryJudgments(qid, emptyMap()))
+            println("%s %1.3f".format(qid, score))
+            score
+        }
+
+        println("Overall %1.3f".format(meanMeasure))
+    }
+}
 
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
@@ -194,49 +274,7 @@ fun main(args: Array<String>) {
     }
 
     println("numFeatures: $numFeatures numSplits: $kSplits")
-
-    val byQuery = HashMap<String, MutableList<QDoc>>()
-
-    val inputF = File(input)
-    val cborInput = File("$input.cbor.gz")
-    if (cborInput.exists()) {
-        cborInput.smartReader().use { br ->
-            byQuery.putAll(mapper.readValue<RLDataset>(br).byQuery)
-        }
-    } else {
-        inputF.smartDoLines(true, total = 150_000L) { line ->
-            val (ftrs, doc) = line.splitAt('#') ?: error("Can't find doc!")
-            val row = ftrs.trim().split(SpacesRegex)
-            val label = row[0].toFloatOrNull() ?: error("Can't parse label as float.")
-            val qid = row[1].substringAfter("qid:")
-            if (qid.isBlank()) {
-                error("Can't find qid: $row")
-            }
-
-            val fvec = FloatArray(numFeatures)
-            (3 until row.size).forEach { i ->
-                val (fid, fval) = row[i].splitAt(':') ?: error("Feature must have : split ${row[i]}.")
-                fvec[fid.toInt() - 1] = fval.toFloat()
-            }
-
-            byQuery.push(qid, QDoc(label, qid, fvec, doc))
-        }
-
-        cborInput.smartWriter().use { ow ->
-            mapper.writeValue(ow, RLDataset(byQuery))
-        }
-    }
-
-    byQuery.forEach { qid, docs ->
-        val judgments = qrels[qid]
-        if (judgments != null) {
-            docs.forEach {
-                if (judgments.isJudged(it.name)) {
-                    it.judged = true
-                }
-            }
-        }
-    }
+    val byQuery = loadRLDataset(input, qrels, numFeatures).byQuery
 
     val splitPerf = splits.pmapIndividual(ForkJoinPool(kSplits+1)) { split ->
         val trainInsts = split.trainIds.flatMap { byQuery[it]?.toList() ?: emptyList() }
@@ -554,3 +592,4 @@ fun trainTree(params: TreeLearningParams, features: Collection<Int>, instances: 
     params.reset(instances.toSet())
     return trainTreeRecursive(params, RecursionTreeParams(params.validFeatures(features).toSet(), instances.toSet()))
 }
+
