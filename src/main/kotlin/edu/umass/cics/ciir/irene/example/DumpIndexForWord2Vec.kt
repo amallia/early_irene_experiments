@@ -17,8 +17,10 @@ import java.io.File
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val field = argp.get("field", "text")
+    val normalize = argp.get("normalize", true)
 
     val output = argp.get("output", "w2v.input")
+    argp.set("dataset", "trec-car")
 
     File(output).smartPrint { writer ->
         if (argp.isString("dataset")) {
@@ -35,7 +37,11 @@ fun main(args: Array<String>) {
                 msg.incr()?.let { upd ->
                     println(upd)
                 }
-                result.replace(SpacesRegex, " ")
+                if (normalize) {
+                    index.tokenize(result, field).joinToString(separator = " ")
+                } else {
+                    result.replace(SpacesRegex, " ")
+                }
             }.sequential().forEach { text ->
                 if (text.isNotBlank()) {
                     writer.print(text)

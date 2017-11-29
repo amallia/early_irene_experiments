@@ -77,11 +77,11 @@ fun main(args: Array<String>) {
     val onlyEmitJudged = argp.get("onlyJudged", false)
     val outDir = argp.get("output-dir", "l2rf/latest/")
 
-    val inputF = File("trec-car-train-10k.jsonl.gz")
+    val inputF = File("trec-car-100k.jsonl.gz")
     //val qidBit = if (qid == null) "" else ".$qid"
     //val judgedBit = if (onlyEmitJudged) ".judged" else ""
     //val outputF = File("$outDir/$dsName$judgedBit$qidBit.features.jsonl.gz")
-    val outputF = File("$outDir/trec-car-train-10k.features.jsonl.gz")
+    val outputF = File("$outDir/trec-car-100k.features.jsonl.gz")
 
     outputF.smartPrint { out ->
         dataset.getIreneIndex().use { index ->
@@ -95,14 +95,15 @@ fun main(args: Array<String>) {
                     return@forEachSDMPoolQuery
                 }
                 val queryJudgments = qrels[q.qid] ?: QueryJudgments(q.qid, emptyMap())
-                val feature_exprs = HashMap<String, RRExpr>()
-                val query_features = HashMap<String, Double>()
 
                 val numJudged = q.docs.count { queryJudgments.isJudged(it.name) }
                 if (numJudged == 0) {
                     //println("Skip -- no judged in pool.")
                     return@forEachSDMPoolQuery
                 }
+
+                val feature_exprs = HashMap<String, RRExpr>()
+                val query_features = HashMap<String, Double>()
 
                 val qdf = StreamingStats().apply {
                     q.qterms.forEach { push(env.getStats(it, statsField).binaryProbability()) }
