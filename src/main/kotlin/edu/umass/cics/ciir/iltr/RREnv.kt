@@ -67,6 +67,7 @@ abstract class RREnv {
         is ConstScoreExpr -> RRConst(this, q.x)
         is ConstCountExpr -> RRConst(this, q.x.toDouble())
         is ConstBoolExpr -> RRConst(this, if (q.x) 1.0 else 0.0)
+        is MultiExpr -> TODO()
     }
 
 

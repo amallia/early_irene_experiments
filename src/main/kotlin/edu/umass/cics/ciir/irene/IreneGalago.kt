@@ -87,6 +87,7 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
         is CountToScoreExpr -> TODO()
         is ConstScoreExpr, is ConstCountExpr, is ConstBoolExpr -> error("Galago does not support constants in its queries.")
         is LuceneExpr -> error("Can never support LuceneExpr -> Galago Query.")
+        is MultiExpr -> error("Can not support MultiExpr as Galago Query without custom ProcessingModel.")
         is AbsoluteDiscountingQLExpr -> TODO()
     }
 }

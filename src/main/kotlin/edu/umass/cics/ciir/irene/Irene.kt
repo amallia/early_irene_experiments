@@ -178,8 +178,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
         }
     }
     fun terms(doc: Int, field: String): List<String> {
-        val text = getField(doc, field)?.stringValue()
-        if (text == null) return emptyList()
+        val text = getField(doc, field)?.stringValue() ?: return emptyList()
         return tokenize(text, field)
     }
 
@@ -214,7 +213,12 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
     }
 
     override fun search(q: QExpr, n: Int): TopDocs {
-        return searcher.search(prepare(q), n)!!
+        return searcher.search(prepare(q), TopKCollectorManager(n))!!
+    }
+
+    fun pool(qs: Map<String, QExpr>, depth: Int): Map<String, TopDocs> {
+        val multiExpr = MultiExpr(qs)
+        return searcher.search(prepare(multiExpr), PoolingCollectorManager(multiExpr, depth))
     }
 
     fun explain(q: QExpr, doc: Int): Explanation = searcher.explain(prepare(q), doc)
@@ -231,7 +235,7 @@ fun main(args: Array<String>) {
     })
 
     IreneIndexer.build {
-        withPath(File("robust.irene2"))
+        withPath(File("/mnt/scratch/jfoley/robust.irene2"))
         create()
     }.use { writer ->
         while(true) {

@@ -28,9 +28,20 @@ fun simplify(q: QExpr): QExpr {
     return pq
 }
 
+fun SmartStop(terms: List<String>, stopwords: Set<String>): List<String> {
+    val nonStop = terms.filter { !stopwords.contains(it) }
+    if (nonStop.isEmpty()) {
+        return terms
+    }
+    return nonStop
+}
+
 // Easy "model"-based constructor.
 fun QueryLikelihood(terms: List<String>, field: String?=null, statsField: String?=null, mu: Double? = null): QExpr {
     return UnigramRetrievalModel(terms, {DirQLExpr(it, mu)}, field, statsField)
+}
+fun BM25Model(terms: List<String>, field: String?=null, statsField: String?=null, b: Double? = null, k: Double? = null): QExpr {
+    return UnigramRetrievalModel(terms, { BM25Expr(it, b, k) }, field, statsField)
 }
 fun UnigramRetrievalModel(terms: List<String>, scorer: (TextExpr)->QExpr, field: String?=null, statsField: String?=null): QExpr {
     return MeanExpr(terms.map { scorer(TextExpr(it, field, statsField)) })
@@ -138,6 +149,11 @@ sealed class QExpr {
     // Get a weighted version of this node if weight is non-null.
     fun weighted(x: Double?) = if(x != null) WeightExpr(this, x) else this
 }
+data class MultiExpr(val namedExprs: Map<String, QExpr>): QExpr() {
+    val names = namedExprs.keys.toList()
+    override val children = names.map { namedExprs[it]!! }.toList()
+    override fun copy() = MultiExpr(namedExprs.mapValues { (_, v) -> v.copy() })
+}
 sealed class LeafExpr : QExpr() {
     override val children: List<QExpr> get() = emptyList()
 }
@@ -186,6 +202,7 @@ data class LuceneExpr(val rawQuery: String, var query: LuceneQuery? = null ) : L
         } ?: error("Could not parse lucene expression: ``${rawQuery}''"))
     override fun copy() = LuceneExpr(rawQuery, query)
 }
+
 
 data class AndExpr(override val children: List<QExpr>) : OpExpr() {
     override fun copy() = AndExpr(copyChildren())
@@ -296,6 +313,8 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
             childNeeds
         }
         is AndExpr, is OrExpr -> DataNeeded.DOCS
+        // Pass through whatever at this point.
+        is MultiExpr -> childNeeds
         is LuceneExpr, is SynonymExpr -> childNeeds
         is WeightExpr, is CombineExpr, is MultExpr, is MaxExpr -> {
             DataNeeded.SCORES

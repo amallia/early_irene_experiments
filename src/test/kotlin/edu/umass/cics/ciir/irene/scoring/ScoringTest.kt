@@ -276,6 +276,19 @@ class ScoringTest {
         }
     }
 
+
+    @Test
+    fun testBM25EquivWithMissing() {
+        val index = resource.index!!
+
+        index.forEachTermPair { t1, t2 ->
+            val t3 = "NEVER_GONNA_HAPPEN"
+            val iq = UnigramRetrievalModel(listOf(t1, t2, t3), {BM25Expr(it)})
+            val gq = iq.toGalago(index.env)
+            cmpResults("$t1, $t2, NULL", gq, iq, index)
+        }
+    }
+
     @Test
     fun testEquivSDMMissing() {
         val index = resource.index!!

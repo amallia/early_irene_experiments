@@ -50,7 +50,7 @@ private class IQModelWeight(val q: QExpr, val iqm: IreneQueryModel) : Weight(iqm
 
     override fun scorer(context: LeafReaderContext?): Scorer {
         val ctx = IQContext(iqm, context!!)
-        return IreneQueryScorer(exprToEval(q, ctx))
+        return IreneQueryScorer(q, exprToEval(q, ctx))
     }
 }
 
@@ -72,7 +72,7 @@ class QueryEvalNodeIter(val node: QueryEvalNode) : DocIdSetIterator() {
     override fun cost(): Long = node.estimateDF()
 }
 
-class IreneQueryScorer(val eval: QueryEvalNode) : Scorer(null) {
+class IreneQueryScorer(val q: QExpr, val eval: QueryEvalNode) : Scorer(null) {
     private val iter = QueryEvalNodeIter(eval)
     override fun docID(): Int = eval.docID()
     override fun iterator(): DocIdSetIterator = iter
