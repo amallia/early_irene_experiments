@@ -28,9 +28,20 @@ fun simplify(q: QExpr): QExpr {
     return pq
 }
 
+fun SmartStop(terms: List<String>, stopwords: Set<String>): List<String> {
+    val nonStop = terms.filter { !stopwords.contains(it) }
+    if (nonStop.isEmpty()) {
+        return terms
+    }
+    return nonStop
+}
+
 // Easy "model"-based constructor.
 fun QueryLikelihood(terms: List<String>, field: String?=null, statsField: String?=null, mu: Double? = null): QExpr {
     return UnigramRetrievalModel(terms, {DirQLExpr(it, mu)}, field, statsField)
+}
+fun BM25Model(terms: List<String>, field: String?=null, statsField: String?=null, b: Double? = null, k: Double? = null): QExpr {
+    return UnigramRetrievalModel(terms, { BM25Expr(it, b, k) }, field, statsField)
 }
 fun UnigramRetrievalModel(terms: List<String>, scorer: (TextExpr)->QExpr, field: String?=null, statsField: String?=null): QExpr {
     return MeanExpr(terms.map { scorer(TextExpr(it, field, statsField)) })

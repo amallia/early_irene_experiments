@@ -2,8 +2,10 @@ package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.chai.safeDiv
 import edu.umass.cics.ciir.chai.smartPrint
+import edu.umass.cics.ciir.irene.BM25Model
 import edu.umass.cics.ciir.irene.QueryLikelihood
 import edu.umass.cics.ciir.irene.SequentialDependenceModel
+import edu.umass.cics.ciir.irene.SmartStop
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
@@ -23,16 +25,21 @@ fun main(args: Array<String>) {
     File("$dsName.irene.pool.jsonl.gz").smartPrint { output ->
         dataset.getIreneIndex().use { index ->
             index.env.estimateStats = "min"
-            dataset.getTitleQueries().entries.stream().map { (qid, qtext) ->
+            dataset.getTitleQueries().entries.parallelStream().map { (qid, qtext) ->
                 val queryJudgments = qrels[qid] ?: QueryJudgments(qid, emptyMap())
                 val relDocs = queryJudgments.filterValues { it > 0 }.keys.filterNotNullTo(HashSet())
                 val qterms = index.tokenize(qtext)
 
-                val poolingQueries = mapOf(
-                        "sdm" to SequentialDependenceModel(qterms, stopwords = inqueryStop),
-                        "ql" to QueryLikelihood(qterms)
-                        //"bm25" to UnigramRetrievalModel(qterms, scorer = {BM25Expr(it)})
+                val poolingQueries = hashMapOf(
+                        "sdm-stop" to SequentialDependenceModel(qterms, stopwords = inqueryStop),
+                        "ql" to QueryLikelihood(qterms),
+                        "bm25" to BM25Model(qterms)
                 )
+                val sterms = SmartStop(qterms, inqueryStop)
+                if (sterms.size != qterms.size) {
+                    poolingQueries["ql-stop"] = QueryLikelihood(sterms)
+                    poolingQueries["bm25-stop"] = BM25Model(sterms)
+                }
 
                 val results = index.pool(poolingQueries, depth)
                 val inPool = results.values.flatMapTo(HashSet()) { it.scoreDocs.map { it.doc } }
