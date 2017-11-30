@@ -25,7 +25,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is MaxExpr -> MaxEval(q.children.map { exprToEval(it, ctx) })
     is WeightExpr -> WeightedEval(exprToEval(q.child, ctx), q.weight.toFloat())
     is DirQLExpr -> DirichletSmoothingEval(exprToEval(q.child, ctx) as CountEvalNode, q.mu!!)
-    is BM25Expr -> TODO()
+    is BM25Expr -> BM25ScoringEval(exprToEval(q.child, ctx) as CountEvalNode, q.b!!, q.k!!)
     is CountToScoreExpr -> TODO()
     is BoolToScoreExpr -> TODO()
     is CountToBoolExpr -> TODO()
@@ -385,6 +385,32 @@ private class WeightedEval(override val child: QueryEvalNode, val weight: Float)
     }
 }
 
+// TODO, someday re-implement idf as transform to WeightedExpr() and have BM25InnerEval()
+private class BM25ScoringEval(override val child: CountEvalNode, val b: Double, val k: Double): SingleChildEval<CountEvalNode>() {
+    private val stats = child.getCountStats()
+    private val avgDL = stats.avgDL()
+    private val idf = Math.log(stats.dc / (stats.df + 0.5))
+
+    override fun score(doc: Int): Float {
+        val count = child.count(doc).toDouble()
+        val length = child.length(doc).toDouble()
+        val num = count * (k+1.0)
+        val denom = count + (k * (1.0 - b + (b * length / avgDL)))
+        return (idf * (num / denom)).toFloat()
+    }
+
+    override fun count(doc: Int): Int = error("count() not implemented for ScoreNode")
+    override fun explain(doc: Int): Explanation {
+        val c = child.count(doc)
+        val length = child.length(doc)
+        if (c > 0) {
+            return Explanation.match(score(doc), "$c/$length with b=$b, k=$k with BM25. ${stats}", listOf(child.explain(doc)))
+        } else {
+            return Explanation.noMatch("score=${score(doc)} or $c/$length with b=$b, k=$k with BM25. ${stats}", listOf(child.explain(doc)))
+        }
+    }
+}
+
 private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
     val background = mu * child.getCountStats().nonzeroCountProbability()
     override fun score(doc: Int): Float {
@@ -397,9 +423,9 @@ private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: 
         val c = child.count(doc)
         val length = child.length(doc)
         if (c > 0) {
-            return Explanation.match(score(doc), "$c/$length with defaultDirichletMu=$mu, bg=$background dirichlet smoothing. ${child.getCountStats()}", listOf(child.explain(doc)))
+            return Explanation.match(score(doc), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. ${child.getCountStats()}", listOf(child.explain(doc)))
         } else {
-            return Explanation.noMatch("score=${score(doc)} or $c/$length with defaultDirichletMu=$mu, bg=$background dirichlet smoothing ${child.getCountStats()} ${child.getCountStats().nonzeroCountProbability()}.", listOf(child.explain(doc)))
+            return Explanation.noMatch("score=${score(doc)} or $c/$length with mu=$mu, bg=$background dirichlet smoothing ${child.getCountStats()} ${child.getCountStats().nonzeroCountProbability()}.", listOf(child.explain(doc)))
         }
     }
 }
