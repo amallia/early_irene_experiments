@@ -99,28 +99,32 @@ class CountStatsCollectorManager(val start: CountStats) : CollectorManager<Count
         return out
     }
 
-    override fun newCollector(): CountStatsCollector = CountStatsCollector()
-    class CountStatsLeafCollector(val docBase: Int, val accum: CountStats) : LeafCollector {
-        lateinit var scoreFn: Scorer
-        override fun setScorer(scorer: Scorer?) { scoreFn = scorer!! }
-
-        override fun collect(doc: Int) {
-            val score = scoreFn.score()
-            val count = score.toInt()
-            assert(score - count < 1e-10, {"Collecting count stats but got float score: ${docBase+doc} -> $score -> $count"})
-
-            if (count > 0) {
-                accum.cf += count
-                accum.df += 1
-            }
-        }
-
-    }
     class CountStatsCollector : Collector {
         val stats = CountStats("tmp:CountStatsCollector")
         override fun needsScores(): Boolean = false
-        override fun getLeafCollector(context: LeafReaderContext?): LeafCollector = CountStatsLeafCollector(context!!.docBase, stats)
+        override fun getLeafCollector(context: LeafReaderContext): LeafCollector {
+            val docBase = context.docBase
+            return object : LeafCollector {
+                lateinit var scoreFn: Scorer
+                override fun setScorer(scorer: Scorer?) {
+                    scoreFn = scorer!!
+                }
+
+                override fun collect(doc: Int) {
+                    val score = scoreFn.score()
+                    val count = score.toInt()
+                    assert(score - count < 1e-10, { "Collecting count stats but got float score: ${docBase + doc} -> $score -> $count" })
+
+                    if (count > 0) {
+                        stats.cf += count
+                        stats.df += 1
+                    }
+                }
+            }
+        }
     }
+
+    override fun newCollector(): CountStatsCollector = CountStatsCollector()
 }
 
 
@@ -138,7 +142,7 @@ object CalculateStatistics {
     }
 
     inline fun computeQueryStats(searcher: IndexSearcher, query: IreneQueryModel, cachedFieldStats: (String)->(CountStats?)): CountStats {
-        println("Computing: ${query.exec}")
+        //println("Computing: ${query.exec}")
         val fields = query.exec.getStatsFields()
 
         val fieldBasedStats = CountStats("expr:${query.exec}")
