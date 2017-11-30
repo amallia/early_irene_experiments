@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.irene.scoring.IreneQueryModel
+import edu.umass.cics.ciir.sprf.pmake
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper
 import org.apache.lucene.benchmark.byTask.feeds.DocData
@@ -105,9 +106,9 @@ interface IIndex : Closeable {
     val defaultField: String
     val totalDocuments: Int
     fun getRREnv(): RREnv
-    fun getStats(expr: QExpr): CountStats?
-    fun getStats(text: String, field: String = defaultField): CountStats? = getStats(Term(field, text))
-    fun getStats(term: Term): CountStats?
+    fun getStats(expr: QExpr): CountStats
+    fun getStats(text: String, field: String = defaultField): CountStats = getStats(Term(field, text))
+    fun getStats(term: Term): CountStats
     fun tokenize(text: String, field: String=defaultField) = tokenizer.tokenize(text, field)
     fun toTextExprs(text: String, field: String = defaultField): List<TextExpr> = tokenize(text, field).map { TextExpr(it, field) }
     fun search(q: QExpr, n: Int): TopDocs
@@ -150,6 +151,16 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
     fun getDocumentName(doc: Int): String? {
         return getField(doc, idFieldName)?.stringValue()
     }
+    fun docAsParameters(doc: Int): Parameters? {
+        val ldoc = document(doc) ?: return null
+        val fields = pmake {}
+        ldoc.fields.forEach { field ->
+            val name = field.name()!!
+            fields.putIfNotNull(name, field.stringValue())
+            fields.putIfNotNull(name, field.numericValue())
+        }
+        return fields
+    }
     fun document(doc: Int): LDoc? {
         return lucene_try { searcher.doc(doc) }
     }
@@ -180,15 +191,17 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
         })
     }
 
-    override fun getStats(term: Term): CountStats? {
+    override fun getStats(term: Term): CountStats {
         //println("getStats($term)")
-        return termStatsCache.get(term, {CalculateStatistics.lookupTermStatistics(searcher, it)}) ?: fieldStats(term.field())
+        return termStatsCache.get(term, {CalculateStatistics.lookupTermStatistics(searcher, it)})
+                ?: fieldStats(term.field())
+                ?: error("No such field ${term.field()}.")
     }
-    override fun getStats(expr: QExpr): CountStats? {
+    override fun getStats(expr: QExpr): CountStats {
         if (expr is TextExpr) {
             return expr.stats ?: getStats(expr.text, expr.statsField())
         }
-        return getExprStats(expr)?.join()
+        return getExprStats(expr)!!.join()
     }
 
     private fun prepare(expr: QExpr): IreneQueryModel = IreneQueryModel(this, this.env, expr)
