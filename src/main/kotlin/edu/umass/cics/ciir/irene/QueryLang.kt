@@ -138,6 +138,11 @@ sealed class QExpr {
     // Get a weighted version of this node if weight is non-null.
     fun weighted(x: Double?) = if(x != null) WeightExpr(this, x) else this
 }
+data class MultiExpr(val namedExprs: Map<String, QExpr>): QExpr() {
+    val names = namedExprs.keys.toList()
+    override val children = names.map { namedExprs[it]!! }.toList()
+    override fun copy() = MultiExpr(namedExprs.mapValues { (_, v) -> v.copy() })
+}
 sealed class LeafExpr : QExpr() {
     override val children: List<QExpr> get() = emptyList()
 }
@@ -186,6 +191,7 @@ data class LuceneExpr(val rawQuery: String, var query: LuceneQuery? = null ) : L
         } ?: error("Could not parse lucene expression: ``${rawQuery}''"))
     override fun copy() = LuceneExpr(rawQuery, query)
 }
+
 
 data class AndExpr(override val children: List<QExpr>) : OpExpr() {
     override fun copy() = AndExpr(copyChildren())
@@ -296,6 +302,8 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
             childNeeds
         }
         is AndExpr, is OrExpr -> DataNeeded.DOCS
+        // Pass through whatever at this point.
+        is MultiExpr -> childNeeds
         is LuceneExpr, is SynonymExpr -> childNeeds
         is WeightExpr, is CombineExpr, is MultExpr, is MaxExpr -> {
             DataNeeded.SCORES

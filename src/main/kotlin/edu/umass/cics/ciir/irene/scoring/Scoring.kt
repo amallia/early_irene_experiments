@@ -40,6 +40,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is ConstCountExpr -> ConstEvalNode(q.x)
     is ConstBoolExpr -> if(q.x) ConstTrueNode(ctx.numDocs()) else ConstEvalNode(0)
     is AbsoluteDiscountingQLExpr -> error("No efficient way to implement AbsoluteDiscountingQLExpr in Irene backend.")
+    is MultiExpr -> MultiEvalNode(q.children.map { exprToEval(it, ctx) }, q.names)
 }
 
 fun approxStats(q: QExpr, method: String): CountStatsStrategy {
@@ -185,6 +186,13 @@ abstract class RecursiveEval<out T : QueryEvalNode>(val children: List<T>) : Que
         return Explanation.noMatch("$className.Miss", expls)
     }
 }
+
+class MultiEvalNode(children: List<QueryEvalNode>, val names: List<String>) : OrEval<QueryEvalNode>(children) {
+    val primary: Int = Math.max(0, names.indexOf("primary"))
+    override fun count(doc: Int): Int = children[primary].count(doc)
+    override fun score(doc: Int): Float = children[primary].score(doc)
+}
+
 abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
     var current = children.map { it.nextMatching(0) }.min()!!
     val cost = children.map { it.estimateDF() }.max() ?: 0L
