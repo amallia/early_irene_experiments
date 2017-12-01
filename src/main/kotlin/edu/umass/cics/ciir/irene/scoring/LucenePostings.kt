@@ -8,7 +8,7 @@ import org.apache.lucene.index.Term
 import org.apache.lucene.search.Explanation
 
 /**
- *
+ * Created from [TextExpr] via [exprToEval]
  * @author jfoley.
  */
 data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths: NumericDocValues) : PositionsEvalNode, QueryEvalNode {
@@ -75,9 +75,9 @@ abstract class LuceneTermFeature(val stats: CountStats, val postings: PostingsEn
 
     override fun explain(doc: Int): Explanation {
         if (matches(doc)) {
-            return Explanation.match(count(doc).toFloat(), "@doc=$doc")
+            return Explanation.match(count(doc).toFloat(), "${this.javaClass.simpleName} @doc=$doc")
         } else {
-            return Explanation.noMatch("@doc=${postings.docID()} doc=$doc")
+            return Explanation.noMatch("${this.javaClass.simpleName} @doc=${postings.docID()} doc=$doc")
         }
     }
 
@@ -106,15 +106,6 @@ open class LuceneTermCounts(stats: CountStats, postings: PostingsEnum, val lengt
         }
         return 0;
     }
-
-    override fun explain(doc: Int): Explanation {
-        if (matches(doc)) {
-            return Explanation.match(count(doc).toFloat(), "@doc=$doc, lengths@${lengths.docID()}")
-        } else {
-            return Explanation.noMatch("@doc=${postings.docID()} doc=$doc, lengths@=${lengths.docID()}")
-        }
-    }
-
 }
 class LuceneTermPositions(stats: CountStats, postings: PostingsEnum, lengths: NumericDocValues) : LuceneTermCounts(stats, postings, lengths), PositionsEvalNode {
     var posDoc = -1
@@ -128,8 +119,12 @@ class LuceneTermPositions(stats: CountStats, postings: PostingsEnum, lengths: Nu
             if (count == 0) error("Don't ask for positions when count is zero.")
 
             (0 until count).forEach {
-                positions.push(postings.nextPosition())
-                println("ERROR: req=$doc at=${postings.docID()}")
+                try {
+                    positions.push(postings.nextPosition())
+                } catch (aerr: AssertionError) {
+                    println("ASSERTION: $aerr")
+                    throw aerr;
+                }
             }
         }
         return PositionsIter(positions.unsafeArray(), positions.fill)

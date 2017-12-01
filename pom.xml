@@ -15,6 +15,7 @@
         <galagoVersion>3.13-SNAPSHOT</galagoVersion>
         <luceneVersion>7.1.0</luceneVersion>
         <mainClass>edu.umass.cics.ciir.sprf.MainKt</mainClass>
+        <kotlin.version>1.2.0</kotlin.version>
     </properties>
 
     <repositories>
@@ -34,17 +35,6 @@
     </repositories>
 
     <dependencies>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-stdlib-jre8</artifactId>
-            <version>${kotlinVersion}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-reflect</artifactId>
-            <version>${kotlinVersion}</version>
-        </dependency>
-
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
@@ -118,11 +108,23 @@
             <version>2.7.4</version>
         </dependency>
 
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-stdlib-jdk8</artifactId>
+        <version>${kotlin.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-test</artifactId>
+        <version>${kotlin.version}</version>
+        <scope>test</scope>
+      </dependency>
+
     </dependencies>
 
         <build>
-          <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
-    <testSourceDirectory>${project.basedir}/src/test/kotlin</testSourceDirectory>
+          <sourceDirectory>src/main/kotlin</sourceDirectory>
+    <testSourceDirectory>src/test/kotlin</testSourceDirectory>
 
         <plugins>
             <!-- build a jar with relative classpath -->
@@ -143,16 +145,21 @@
 
             <plugin>
                 <artifactId>kotlin-maven-plugin</artifactId>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <version>${kotlinVersion}</version>
+              <configuration>
+                <jvmTarget>1.8</jvmTarget>
+              </configuration>
+              <groupId>org.jetbrains.kotlin</groupId>
+                <version>${kotlin.version}</version>
             <executions>
                 <execution>
                     <id>compile</id>
-                    <goals><goal>compile</goal></goals>
+                  <phase>compile</phase>
+                  <goals><goal>compile</goal></goals>
                 </execution>
                 <execution>
                     <id>test-compile</id>
-                    <goals><goal>test-compile</goal></goals>
+                  <phase>test-compile</phase>
+                  <goals><goal>test-compile</goal></goals>
                 </execution>
             </executions>
             </plugin>
@@ -214,6 +221,26 @@
                     </filters>
                 </configuration>
             </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>compile</id>
+                <phase>compile</phase>
+                <goals>
+                  <goal>compile</goal>
+                </goals>
+              </execution>
+              <execution>
+                <id>testCompile</id>
+                <phase>test-compile</phase>
+                <goals>
+                  <goal>testCompile</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
 
         </plugins>
     </build>
