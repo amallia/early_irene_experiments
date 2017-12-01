@@ -110,4 +110,35 @@ class IreneQueryLanguageTest {
         val map = combine.entries.associate { Pair( (it.first as TextExpr).text, it.second) }
         assertEquals(mapOf("a" to 5.0, "b" to 2.0), map)
     }
+
+    fun or(vararg qs: QExpr) = OrExpr(qs.toList())
+    fun or(vararg xs: String) = OrExpr(xs.map { TextExpr(it) })
+    fun and(vararg xs: String) = AndExpr(xs.map { TextExpr(it) })
+    fun and(vararg qs: QExpr) = AndExpr(qs.toList())
+
+    @Test
+    fun testBooleanSimplification() {
+        val redundantOr = or("a", "b", "a")
+        val justAB = simplify(redundantOr)
+        assertEquals(setOf("a", "b"), justAB.children.map { (it as TextExpr).text }.toSet())
+    }
+
+    @Test
+    fun testNestedSimplification() {
+        val nestedRedundantOr = or(TextExpr("a"), or("a", "b"))
+        val justAB = simplify(nestedRedundantOr)
+        assertEquals(setOf("a", "b"), justAB.children.map { (it as TextExpr).text }.toSet())
+    }
+
+    @Test
+    fun testSDMSimplification() {
+        val sdmLike = or(
+                // unigrams:
+                or("a", "b", "c"),
+                // bigrams:
+                and("a", "b"), and("b", "c"),
+                // overall:
+                and("a", "b", "c"))
+        assertEquals(setOf("a", "b", "c"), simplify(sdmLike).children.map { (it as TextExpr).text }.toSet())
+    }
 }

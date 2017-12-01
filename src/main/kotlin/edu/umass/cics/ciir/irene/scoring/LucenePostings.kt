@@ -120,6 +120,7 @@ class LuceneTermPositions(stats: CountStats, postings: PostingsEnum, lengths: Nu
     var posDoc = -1
     var positions = IntList()
     override fun positions(doc: Int): PositionsIter {
+        assert(postings.docID() != NO_MORE_DOCS) { "Requested positions from term that is finished!" }
         if (posDoc != doc) {
             posDoc = doc
             positions.clear()
@@ -128,6 +129,7 @@ class LuceneTermPositions(stats: CountStats, postings: PostingsEnum, lengths: Nu
 
             (0 until count).forEach {
                 positions.push(postings.nextPosition())
+                println("ERROR: req=$doc at=${postings.docID()}")
             }
         }
         return PositionsIter(positions.unsafeArray(), positions.fill)

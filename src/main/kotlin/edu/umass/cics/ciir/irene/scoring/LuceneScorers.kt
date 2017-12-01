@@ -43,67 +43,115 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
     }
 }
 
-private class IQModelWeight(val q: QExpr, val iqm: IreneQueryModel) : Weight(iqm) {
-    override fun extractTerms(terms: MutableSet<Term>?) {
+private class IQModelWeight(val q: QExpr, val m: QExpr, val iqm: IreneQueryModel) : Weight(iqm) {
+    override fun extractTerms(terms: MutableSet<Term>) {
         TODO("not implemented")
     }
 
-    override fun explain(context: LeafReaderContext?, doc: Int): Explanation {
-        val ctx = IQContext(iqm, context!!)
+    override fun explain(context: LeafReaderContext, doc: Int): Explanation {
+        val ctx = IQContext(iqm, context)
         return exprToEval(q, ctx).explain(doc)
     }
 
-    override fun scorer(context: LeafReaderContext?): Scorer {
-        val ctx = IQContext(iqm, context!!)
-        return IreneQueryScorer(q, exprToEval(q, ctx))
+    override fun scorer(context: LeafReaderContext): Scorer {
+        val ctx = IQContext(iqm, context)
+        val qExpr = exprToEval(q, ctx)
+        if (q === m) {
+            return IreneQueryScorer(q, QueryEvalNodeIter(qExpr))
+        } else {
+            val mExpr = exprToEval(m, ctx)
+            val iter = OptimizedMovementIter(mExpr, qExpr)
+            return IreneQueryScorer(q, iter)
+        }
     }
 }
 
-class QueryEvalNodeIter(val node: QueryEvalNode) : DocIdSetIterator() {
-    init {
+open class QueryEvalNodeIter(val node: QueryEvalNode) : DocIdSetIterator() {
+    open val score: QueryEvalNode = node
+    open fun start() {
         node.nextMatching(0)
     }
     override fun advance(target: Int): Int = node.nextMatching(target)
-    override fun nextDoc(): Int = node.nextMatching(docID() + 1)
+    override fun nextDoc(): Int = advance(docID() + 1)
     override fun docID() = node.docID()
-    fun score(doc: Int): Float {
+    open fun score(doc: Int): Float {
         node.syncTo(doc)
         return node.score(doc)
     }
-    fun count(doc: Int): Int {
+    open fun count(doc: Int): Int {
         node.syncTo(doc)
         return node.count(doc)
     }
     override fun cost(): Long = node.estimateDF()
 }
 
-class IreneQueryScorer(val q: QExpr, val eval: QueryEvalNode) : Scorer(null) {
-    private val iter = QueryEvalNodeIter(eval)
-    override fun docID(): Int = eval.docID()
+
+class OptimizedMovementIter(val movement: QueryEvalNode, override val score: QueryEvalNode): QueryEvalNodeIter(movement) {
+    override fun start() {
+        advance(0)
+    }
+    override fun advance(target: Int): Int {
+        var dest = target
+        while (!score.done) {
+            val nextMatch = movement.nextMatching(dest)
+            if (nextMatch == NO_MORE_DOCS) break
+            if (score.matches(nextMatch)) {
+                return nextMatch
+            } else {
+                dest++
+            }
+        }
+        return NO_MORE_DOCS
+    }
+    override fun score(doc: Int): Float {
+        node.syncTo(doc)
+        score.syncTo(doc)
+        return score.score(doc)
+    }
+    override fun count(doc: Int): Int {
+        node.syncTo(doc)
+        score.syncTo(doc)
+        return score.count(doc)
+    }
+}
+
+class IreneQueryScorer(val q: QExpr, val iter: QueryEvalNodeIter) : Scorer(null) {
+    init {
+        iter.start()
+    }
+    val eval: QueryEvalNode = iter.score
+    override fun docID(): Int = iter.docID()
     override fun iterator(): DocIdSetIterator = iter
     override fun score(): Float {
-        val returned = eval.score(eval.docID())
+        val returned = iter.score(docID())
         if (java.lang.Float.isInfinite(returned)) {
-            throw RuntimeException("Infinite response for document: ${eval.docID()} ${eval.explain(eval.docID())}")
+            throw RuntimeException("Infinite response for document: ${eval.docID()} ${eval.explain(iter.docID())}")
             //return -Float.MAX_VALUE
         }
         return returned
     }
-    override fun freq(): Int = eval.count(eval.docID())
+    override fun freq(): Int = iter.count(docID())
 }
 
 class IreneQueryModel(val index: IreneIndex, val env: IreneQueryLanguage, q: QExpr) : LuceneQuery() {
     val exec = env.prepare(q)
+    var movement = if (env.optimizeMovement) {
+        val m = env.prepare(createOptimizedMovementExpr(exec))
+        println(m)
+        m
+    } else {
+        exec
+    }
 
     override fun createWeight(searcher: IndexSearcher?, needsScores: Boolean, boost: Float): Weight {
-        return IQModelWeight(exec, this)
+        return IQModelWeight(exec, movement, this)
     }
     override fun hashCode(): Int {
         return exec.hashCode()
     }
     override fun equals(other: Any?): Boolean {
         if (other is IreneQueryModel) {
-            return exec.equals(other.exec)
+            return exec == other.exec
         }
         return false
     }

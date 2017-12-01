@@ -8,10 +8,9 @@ import org.apache.lucene.search.Explanation
 import java.io.File
 
 /**
- * This class translates the public-facing query language (QExpr and subclasses) to a set of private-facing operators (QueryEvalNode and subclasses).
+ * This function translates the public-facing query language ([QExpr] and subclasses) to a set of private-facing operators ([QueryEvalNode] and subclasses).
  * @author jfoley.
  */
-
 fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is TextExpr -> ctx.create(Term(q.countsField(), q.text), q.needed, q.stats ?: error("Missed computeQExprStats pass."))
     is LuceneExpr -> TODO()
@@ -42,7 +41,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is ConstScoreExpr -> ConstEvalNode(q.x.toFloat())
     is ConstCountExpr -> ConstCountEvalNode(q.x, exprToEval(q.lengths, ctx) as CountEvalNode)
     is ConstBoolExpr -> if(q.x) ConstTrueNode(ctx.numDocs()) else ConstEvalNode(0)
-    is AbsoluteDiscountingQLExpr -> error("No efficient way to implement AbsoluteDiscountingQLExpr in Irene backend.")
+    is AbsoluteDiscountingQLExpr -> error("No efficient method to implement AbsoluteDiscountingQLExpr in Irene backend; needs numUniqWords per document.")
     is MultiExpr -> MultiEvalNode(q.children.map { exprToEval(it, ctx) }, q.names)
     is LengthsExpr -> ctx.createLengths(q.statsField!!, q.stats!!)
 }
@@ -167,6 +166,9 @@ class ConstTrueNode(val numDocs: Int) : QueryEvalNode {
 
 }
 
+/**
+ * Created from [ConstScoreExpr] via [exprToEval]
+ */
 class ConstEvalNode(val count: Int, val score: Float) : QueryEvalNode {
     constructor(count: Int) : this(count, count.toFloat())
     constructor(score: Float) : this(1, score)
@@ -182,12 +184,24 @@ class ConstEvalNode(val count: Int, val score: Float) : QueryEvalNode {
     override fun advance(target: Int): Int = NO_MORE_DOCS
 }
 
+/**
+ * Created from [RequireExpr] via [exprToEval]
+ */
 private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val miss: Float=-Float.MAX_VALUE): QueryEvalNode {
     override fun score(doc: Int): Float = if (cond.matches(doc)) { score.score(doc) } else miss
     override fun count(doc: Int): Int = if (cond.matches(doc)) { score.count(doc) } else 0
-    override fun matches(doc: Int): Boolean = cond.matches(doc) && score.matches(doc)
+    /**
+     * Note: Galago semantics, don't look at whether score matches.
+     * @see createOptimizedMovementExpr
+     */
+    override fun matches(doc: Int): Boolean = cond.matches(doc)
     override fun explain(doc: Int): Explanation {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        val expls = listOf(cond, score).map { it.explain(doc) }
+        return if (cond.matches(doc)) {
+            Explanation.match(score.score(doc), "require-match", expls)
+        } else {
+            Explanation.noMatch("${score.score(doc)} for require-miss", expls)
+        }
     }
     override fun setHeapMinimum(target: Float) { score.setHeapMinimum(target) }
     override fun estimateDF(): Long = minOf(score.estimateDF(), cond.estimateDF())
@@ -431,6 +445,9 @@ private class BM25ScoringEval(override val child: CountEvalNode, val b: Double, 
     }
 }
 
+/**
+ * Created from [DirQLExpr] via [exprToEval]
+ */
 private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
     val background = mu * child.getCountStats().nonzeroCountProbability()
     init {

@@ -25,8 +25,19 @@ class IreneQueryLanguage(val index: IIndex = EmptyIndex()) : RREnv() {
 
 fun simplify(q: QExpr): QExpr {
     val pq = q.copy()
-    // combine weights until query stops changing.
-    while(combineWeights(pq)) { }
+
+    // combine weights and boolean nodes until query stops changing.
+    var changed = true
+    while(changed) {
+        changed = false
+        while (combineWeights(pq)) {
+            changed = true
+        }
+        while (simplifyBooleanExpr(pq)) {
+            changed = true
+        }
+    }
+
     return pq
 }
 
@@ -121,9 +132,23 @@ fun FullDependenceModel(terms: List<String>, field: String?=null, statsField: St
 
 
 sealed class QExpr {
+    val trySingleChild: QExpr get() {
+        if (children.size != 1) error("Looked for a child on a node with children: $this")
+        return children[0]
+    }
     abstract val children: List<QExpr>
     abstract fun copy(): QExpr
     fun copyChildren() = children.map { it.copy() }
+
+    fun findTextNodes(): List<TextExpr> {
+        val out = ArrayList<TextExpr>()
+        visit {
+            if (it is TextExpr) {
+                out.add(it)
+            }
+        }
+        return out
+    }
 
     fun visit(each: (QExpr)->Unit) {
         each(this)
@@ -179,11 +204,13 @@ data class LengthsExpr(var statsField: String?, var stats: CountStats? = null) :
     override fun copy() = LengthsExpr(statsField, stats)
 }
 sealed class OpExpr : QExpr() {
+    abstract override var children: List<QExpr>
 }
 sealed class SingleChildExpr : QExpr() {
     abstract var child: QExpr
     override val children: List<QExpr> get() = listOf(child)
 }
+/** Sync this class to Galago semantics. Consider every doc that has a match IFF cond has a match, using value, regardless of whether value also has a match. */
 data class RequireExpr(var cond: QExpr, var value: QExpr): QExpr() {
     override fun copy()  = RequireExpr(cond.copy(), value.copy())
     override val children: List<QExpr> get() = arrayListOf(cond, value)
@@ -203,7 +230,7 @@ data class TextExpr(var text: String, private var field: String? = null, private
     fun countsField(): String = field ?: error("No primary field for $this")
     fun statsField(): String = statsField ?: field ?: error("No stats field for $this")
 }
-data class SynonymExpr(override val children: List<QExpr>): OpExpr() {
+data class SynonymExpr(override var children: List<QExpr>): OpExpr() {
     override fun copy() = SynonymExpr(copyChildren())
 }
 data class LuceneExpr(val rawQuery: String, var query: LuceneQuery? = null ) : LeafExpr() {
@@ -215,10 +242,10 @@ data class LuceneExpr(val rawQuery: String, var query: LuceneQuery? = null ) : L
 }
 
 
-data class AndExpr(override val children: List<QExpr>) : OpExpr() {
+data class AndExpr(override var children: List<QExpr>) : OpExpr() {
     override fun copy() = AndExpr(copyChildren())
 }
-data class OrExpr(override val children: List<QExpr>) : OpExpr() {
+data class OrExpr(override var children: List<QExpr>) : OpExpr() {
     override fun copy() = OrExpr(copyChildren())
 }
 fun SumExpr(vararg children: QExpr) = SumExpr(children.toList())
@@ -229,10 +256,10 @@ data class CombineExpr(override var children: List<QExpr>, var weights: List<Dou
     override fun copy() = CombineExpr(copyChildren(), weights)
     val entries: List<Pair<QExpr, Double>> get() = children.zip(weights)
 }
-data class MultExpr(override val children: List<QExpr>) : OpExpr() {
+data class MultExpr(override var children: List<QExpr>) : OpExpr() {
     override fun copy() = MultExpr(copyChildren())
 }
-data class MaxExpr(override val children: List<QExpr>) : OpExpr() {
+data class MaxExpr(override var children: List<QExpr>) : OpExpr() {
     override fun copy() = MaxExpr(copyChildren())
 }
 
@@ -376,7 +403,7 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
             return
         }
         is ConstScoreExpr -> return assert(needed == DataNeeded.SCORES)
-        is ConstCountExpr -> return assert(needed == DataNeeded.COUNTS)
+        is ConstCountExpr -> return assert(needed == DataNeeded.COUNTS || needed == DataNeeded.DOCS)
         is ConstBoolExpr -> return assert(needed == DataNeeded.DOCS)
     }
     q.children.forEach { analyzeDataNeededRecursive(it, childNeeds) }

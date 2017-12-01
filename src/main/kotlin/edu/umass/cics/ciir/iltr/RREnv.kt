@@ -13,6 +13,7 @@ abstract class RREnv {
     open var defaultBM25k = 1.2
     open var absoluteDiscountingDelta = 0.7
     open var estimateStats: String? = "min"
+    open var optimizeMovement = true
 
     // nullable so it can be used to determine if this index has the given field.
     abstract fun fieldStats(field: String): CountStats
@@ -71,6 +72,7 @@ abstract class RREnv {
         is ConstBoolExpr -> RRConst(this, if (q.x) 1.0 else 0.0)
         is MultiExpr -> TODO()
         is MinCountExpr -> TODO()
+        is LengthsExpr -> RRDocLength(this, q.statsField!!)
     }
 
 
