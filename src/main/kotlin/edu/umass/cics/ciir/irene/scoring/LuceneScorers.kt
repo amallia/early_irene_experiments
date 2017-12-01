@@ -37,12 +37,14 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
         }
     }
     private fun termSeek(term: Term, needed: DataNeeded): Optional<PostingsEnum> {
-        println("termSeek $term $needed")
         val termContext = TermContext.build(searcher.topReaderContext, term)!!
         val state = termContext[context.ord] ?: return Optional.empty()
         val termIter = context.reader().terms(term.field()).iterator()
         termIter.seekExact(term.bytes(), state)
-        return Optional.ofNullable(termIter.postings(null, needed.textFlags()))
+        val postings = termIter.postings(null, needed.textFlags())
+        // Lucene requires we call nextDoc() before doing anything else.
+        postings.nextDoc()
+        return Optional.ofNullable(postings)
     }
 
     fun create(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): QueryEvalNode {
@@ -117,9 +119,12 @@ private class IQModelWeight(val q: QExpr, val m: QExpr, val iqm: IreneQueryModel
 open class QueryEvalNodeIter(val node: QueryEvalNode) : DocIdSetIterator() {
     open val score: QueryEvalNode = node
     open fun start() {
-        node.nextMatching(0)
+        val match = node.nextMatching(0)
     }
-    override fun advance(target: Int): Int = node.nextMatching(target)
+    override fun advance(target: Int): Int {
+        val nextMatch = node.nextMatching(target)
+        return nextMatch
+    }
     override fun nextDoc(): Int = advance(docID() + 1)
     override fun docID() = node.docID()
     open fun score(doc: Int): Float {
@@ -137,10 +142,11 @@ open class QueryEvalNodeIter(val node: QueryEvalNode) : DocIdSetIterator() {
 class OptimizedMovementIter(val movement: QueryEvalNode, override val score: QueryEvalNode): QueryEvalNodeIter(movement) {
     override fun start() {
         advance(0)
+        //val match = movement.nextMatching(0)
     }
     override fun advance(target: Int): Int {
         var dest = target
-        while (!score.done) {
+        while (!score.done && !movement.done) {
             val nextMatch = movement.nextMatching(dest)
             if (nextMatch == NO_MORE_DOCS) break
             if (score.matches(nextMatch)) {
@@ -185,7 +191,7 @@ class IreneQueryModel(val index: IreneIndex, val env: IreneQueryLanguage, q: QEx
     val exec = env.prepare(q)
     var movement = if (env.optimizeMovement) {
         val m = env.prepare(createOptimizedMovementExpr(exec))
-        println(m)
+        //println(m)
         m
     } else {
         exec

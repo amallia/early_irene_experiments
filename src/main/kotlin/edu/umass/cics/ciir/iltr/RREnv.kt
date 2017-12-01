@@ -13,8 +13,9 @@ abstract class RREnv {
     open var defaultBM25k = 1.2
     open var absoluteDiscountingDelta = 0.7
     open var estimateStats: String? = "min"
-    open var optimizeMovement = false
-    open var shareIterators: Boolean = true
+    open var optimizeMovement = true
+    // And movement is currently unsafe for sharing.
+    open var shareIterators: Boolean = false
 
     // nullable so it can be used to determine if this index has the given field.
     abstract fun fieldStats(field: String): CountStats

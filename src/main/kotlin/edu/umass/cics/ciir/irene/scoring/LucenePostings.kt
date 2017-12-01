@@ -57,9 +57,6 @@ data class LuceneDocLengths(val stats: CountStats, val lengths: NumericDocValues
 }
 
 abstract class LuceneTermFeature(val stats: CountStats, val postings: PostingsEnum) : QueryEvalNode {
-    // Lucene requires we call nextDoc() before doing anything else.
-    init { postings.nextDoc() }
-
     override fun docID(): Int = postings.docID()
     override fun advance(target: Int): Int {
         if (postings.docID() < target) {

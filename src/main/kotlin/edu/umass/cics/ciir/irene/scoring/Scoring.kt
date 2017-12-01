@@ -106,7 +106,7 @@ interface QueryEvalNode {
         var id = maxOf(doc, docID());
         while(id < NO_MORE_DOCS) {
             if (matches(id)) {
-                assert(docID() == id)
+                assert(docID() >= id)
                 return id
             }
             id = advance(id+1)
@@ -237,7 +237,7 @@ abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<
         for (child in moveChildren) {
             var where = child.docID()
             if (where < target) {
-                where = child.nextMatching(target)
+                where = child.advance(target)
             }
             assert(where >= target)
             newMin = minOf(newMin, where)
@@ -254,6 +254,7 @@ abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<
     }
 }
 
+// TODO, eager vs. lazy
 abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
     private var current: Int = 0
     val cost = children.map { it.estimateDF() }.min() ?: 0L

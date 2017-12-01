@@ -143,6 +143,7 @@ object CalculateStatistics {
 
     inline fun computeQueryStats(searcher: IndexSearcher, query: IreneQueryModel, cachedFieldStats: (String)->(CountStats?)): CountStats {
         //println("Computing: ${query.exec}")
+        //query.movement = query.exec
         val fields = query.exec.getStatsFields()
 
         val fieldBasedStats = CountStats("expr:${query.exec}")
