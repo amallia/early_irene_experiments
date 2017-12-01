@@ -114,7 +114,7 @@ data class DirET(val access: IteratorAccess, val iter: Int, val mu: Double) : Ex
 
 data class ManualInlineDirichlet(val access: IteratorAccess, val mu: Double) {
     val bgs = (0 until numTerms).map { access.bg(it) }.toDoubleArray()
-    fun eval(access: IteratorAccess): Double {
+    fun eval(): Double {
         var sum = 0.0
         (0 until numTerms).forEach { term ->
             val top = access.count(term) + bgs[term]
@@ -190,8 +190,11 @@ fun main(args: Array<String>) {
         // VM... {mean=1.880797492200052E-6, variance=4.2239663644248974E-11, stddev=6.499204847075446E-6, max=0.012018822, min=1.519E-6, total=28.211962384168316, count=1.5E7}
         // execDynamic is 2x as slow as exec
         // VM... {mean=3.4690132921333955E-6, variance=3.138518663244094E-11, stddev=5.60224835511966E-6, max=0.008321525, min=2.83E-6, total=52.03519938215575, count=1.5E7}
-        val vmScore = vm.exec(dirichletProgram, access)
-        //val vmScore = compiled.eval(access)
+        //val vmScore = vm.exec(dirichletProgram, access)
+
+        // Compilation appears to close the gap, but flattened appears not-as-good as other setup. Maybe only for more complex programs?
+        // VM... {mean=1.2791449622001782E-6, variance=2.647106701126952E-10, stddev=1.6269931472280245E-5, max=0.02598772, min=1.137E-6, total=19.187174433356162, count=1.5E7}
+        val vmScore = compiled.eval()
         val end_time = System.nanoTime()
 
         val t0 = System.nanoTime()
