@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.irene
 
+import junit.framework.Assert.assertEquals
 import org.junit.Assert
 import org.junit.Test
 
@@ -100,4 +101,13 @@ class IreneQueryLanguageTest {
         Assert.assertEquals(DataNeeded.COUNTS, b.needed)
     }
 
+    @Test
+    fun testRedundantSimplify() {
+        val sum = SumExpr(TextExpr("a").weighted(3.0), TextExpr("b").weighted(2.0), TextExpr("a").weighted(2.0))
+        val simpl = simplify(sum)
+
+        val combine = simpl as? CombineExpr ?: error("Should simplify to combine expr.")
+        val map = combine.entries.associate { Pair( (it.first as TextExpr).text, it.second) }
+        assertEquals(mapOf("a" to 5.0, "b" to 2.0), map)
+    }
 }

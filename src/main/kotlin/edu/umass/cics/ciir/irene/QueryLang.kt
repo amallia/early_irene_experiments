@@ -3,6 +3,7 @@ package edu.umass.cics.ciir.irene
 import edu.umass.cics.ciir.chai.forAllPairs
 import edu.umass.cics.ciir.chai.forEachSeqPair
 import edu.umass.cics.ciir.iltr.RREnv
+import edu.umass.cics.ciir.sprf.incr
 import org.apache.lucene.index.Term
 import org.apache.lucene.queryparser.classic.QueryParser
 import java.util.*
@@ -226,6 +227,7 @@ fun MeanExpr(vararg children: QExpr) = MeanExpr(children.toList())
 fun MeanExpr(children: List<QExpr>) = CombineExpr(children, children.map { 1.0 / children.size.toDouble() })
 data class CombineExpr(override var children: List<QExpr>, var weights: List<Double>) : OpExpr() {
     override fun copy() = CombineExpr(copyChildren(), weights)
+    val entries: List<Pair<QExpr, Double>> get() = children.zip(weights)
 }
 data class MultExpr(override val children: List<QExpr>) : OpExpr() {
     override fun copy() = MultExpr(copyChildren())
@@ -284,7 +286,7 @@ fun combineWeights(q: QExpr): Boolean {
         is CombineExpr -> {
             val newChildren = arrayListOf<QExpr>()
             val newWeights = arrayListOf<Double>()
-            q.children.zip(q.weights).forEach { (c, w) ->
+            q.entries.forEach { (c, w) ->
                 if (c is CombineExpr) {
                     // flatten combine(combine(...))
                     c.children.zip(c.weights).forEach { (cc, cw) ->
@@ -307,6 +309,25 @@ fun combineWeights(q: QExpr): Boolean {
         }
         else -> {}
     }
+
+    // Statically-combine any now-redundant-children in CombineExpr:
+    if (q is CombineExpr && q.children.toSet().size < q.children.size) {
+        val weights = HashMap<QExpr, Double>()
+        q.entries.forEach { (child, weight) ->
+            weights.incr(child, weight)
+        }
+
+        val newChildren = arrayListOf<QExpr>()
+        val newWeights = arrayListOf<Double>()
+        weights.forEach { c,w ->
+            newChildren.add(c)
+            newWeights.add(w)
+        }
+        q.children = newChildren
+        q.weights = newWeights
+        changed = true
+    }
+
     q.children.forEach {
         changed = changed || combineWeights(it)
     }
