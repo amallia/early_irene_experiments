@@ -37,28 +37,28 @@ class StreamingStats() {
         clear()
     }
 
-    fun push(x: Int) = push(x.toDouble())
-    fun push(x: Float) = push(x.toDouble())
-    fun push(x: Long) = push(x.toDouble())
-    fun push(x: Double) {
+    fun push(i: Int) = push(i.toDouble())
+    fun push(f: Float) = push(f.toDouble())
+    fun push(l: Long) = push(l.toDouble())
+    fun push(d: Double) {
         n++
 
         // set up for next iteration
         val oldMean = mean
         val oldS = sValue
 
-        max = Math.max(max, x)
-        min = Math.min(min, x)
-        total += x
+        max = Math.max(max, d)
+        min = Math.min(min, d)
+        total += d
 
         // See Knuth TAOCP vol 2, 3rd edition, page 232
         if (n == 1L) {
-            mean = x
+            mean = d
             return
         }
 
-        mean = oldMean + (x - oldMean) / n.toDouble()
-        sValue = oldS + (x - oldMean) * (x - mean)
+        mean = oldMean + (d - oldMean) / n.toDouble()
+        sValue = oldS + (d - oldMean) * (d - mean)
     }
 
     /**
