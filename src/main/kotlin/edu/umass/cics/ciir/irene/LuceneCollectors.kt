@@ -88,8 +88,7 @@ class PoolingCollectorManager(val mq: MultiExpr, val poolSize: Int): CollectorMa
             return object : LeafCollector {
                 lateinit var eval: MultiEvalNode
                 override fun setScorer(scorer: Scorer) {
-                    val query = scorer as IreneQueryScorer
-                    eval = query.eval as MultiEvalNode
+                    eval = (scorer as IreneQueryScorer).eval as MultiEvalNode
                 }
                 override fun collect(doc: Int) {
                     val gdoc = doc + docBase

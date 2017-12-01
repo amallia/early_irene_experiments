@@ -164,7 +164,7 @@ class ScoringHeap<T: ScoredForHeap>(val maxSize: Int): kotlin.collections.Abstra
     }
 
     // Return bottom or worst.
-    val min: Float = peek()?.score ?: -Float.MAX_VALUE
+    val min: Float get() = peek()?.score ?: -Float.MAX_VALUE
 
     /**
      * Adds an item to the heap IFF the heaps is small OR the min-item is worse than this item.

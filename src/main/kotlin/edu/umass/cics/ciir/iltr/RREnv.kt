@@ -14,6 +14,8 @@ abstract class RREnv {
     open var absoluteDiscountingDelta = 0.7
     open var estimateStats: String? = "min"
 
+    // nullable so it can be used to determine if this index has the given field.
+    abstract fun fieldStats(field: String): CountStats
     abstract fun computeStats(q: QExpr): CountStats
     abstract fun getStats(term: String, field: String? =null): CountStats
     fun statsComputation(q: QExpr): CountStatsStrategy {
@@ -68,6 +70,7 @@ abstract class RREnv {
         is ConstCountExpr -> RRConst(this, q.x.toDouble())
         is ConstBoolExpr -> RRConst(this, if (q.x) 1.0 else 0.0)
         is MultiExpr -> TODO()
+        is MinCountExpr -> TODO()
     }
 
 

@@ -106,6 +106,7 @@ interface IIndex : Closeable {
     val defaultField: String
     val totalDocuments: Int
     fun getRREnv(): RREnv
+    fun fieldStats(field: String): CountStats?
     fun getStats(expr: QExpr): CountStats
     fun getStats(text: String, field: String = defaultField): CountStats = getStats(Term(field, text))
     fun getStats(term: Term): CountStats
@@ -116,6 +117,7 @@ interface IIndex : Closeable {
 class EmptyIndex(override val tokenizer: GenericTokenizer = WhitespaceTokenizer()) : IIndex {
     override val defaultField: String = "missing"
     override val totalDocuments: Int = 0
+    override fun fieldStats(field: String): CountStats? = null
     override fun getStats(expr: QExpr): CountStats = CountStats("EmptyIndex($expr)")
     override fun getStats(term: Term): CountStats = CountStats("EmptyIndex($term)")
     override fun close() { }
@@ -184,7 +186,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
 
     fun getAverageDL(field: String): Double = fieldStats(field)?.avgDL() ?: error("No such field $field.")
 
-    fun fieldStats(field: String): CountStats? {
+    override fun fieldStats(field: String): CountStats? {
         return fieldStatsCache.computeIfAbsent(field, {
             CalculateStatistics.fieldStats(searcher, field)
         })
@@ -203,7 +205,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
         return getExprStats(expr)!!.join()
     }
 
-    private fun prepare(expr: QExpr): IreneQueryModel = IreneQueryModel(this, this.env, expr)
+    fun prepare(expr: QExpr): IreneQueryModel = IreneQueryModel(this, this.env, expr)
 
     private fun getExprStats(expr: QExpr): ForkJoinTask<CountStats>? {
         return exprStatsCache.get(expr, { missing ->

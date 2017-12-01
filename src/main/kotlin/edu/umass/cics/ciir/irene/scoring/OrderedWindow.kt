@@ -145,3 +145,23 @@ class UnorderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNod
         return count
     }
 }
+
+// For estimating the ceiling of UnorderedWindow and OrderedWindow nodes.
+class MinCountWindow(val stats: CountStatsStrategy, children: List<CountEvalNode>) : AndEval<CountEvalNode>(children), CountEvalNode {
+    init {
+        assert(children.size > 1)
+    }
+    override fun count(doc: Int): Int {
+        if (!matches(doc)) return 0
+        var min = Integer.MAX_VALUE
+        for (c in children) {
+            val x = c.count(doc)
+            if (x == 0) return 0
+            if (x < min) min = x
+        }
+        return min
+    }
+    override fun getCountStats(): CountStats = stats.get()
+    override fun length(doc: Int): Int = children[0].length(doc)
+}
+

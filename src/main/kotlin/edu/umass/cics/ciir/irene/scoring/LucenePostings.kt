@@ -31,6 +31,31 @@ data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths:
     }
 }
 
+data class LuceneDocLengths(val stats: CountStats, val lengths: NumericDocValues): CountEvalNode {
+    override fun docID(): Int = lengths.docID()
+    override fun count(doc: Int): Int = 0
+    override fun matches(doc: Int): Boolean = lengths.docID() == doc
+    override fun explain(doc: Int): Explanation = Explanation.match(length(doc).toFloat(), "lengths: $stats")
+    override fun estimateDF(): Long = lengths.cost()
+
+    override fun advance(target: Int): Int {
+        if (docID() < target) {
+            return lengths.advance(target)
+        }
+        return docID()
+    }
+    override fun getCountStats(): CountStats = stats
+    override fun length(doc: Int): Int {
+        if (lengths.docID() < doc) {
+            lengths.advance(doc)
+        }
+        if (lengths.docID() == doc) {
+            return lengths.longValue().toInt()
+        }
+        return 0
+    }
+}
+
 abstract class LuceneTermFeature(val stats: CountStats, val postings: PostingsEnum) : QueryEvalNode {
     // Lucene requires we call nextDoc() before doing anything else.
     init { postings.nextDoc() }

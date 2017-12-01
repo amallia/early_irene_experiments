@@ -17,10 +17,12 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
     val searcher = iqm.index.searcher
     val lengths = HashMap<String, NumericDocValues>()
 
+    private fun getLengths(field: String) = lengths.computeIfAbsent(field, { missing ->
+        lucene_try { context.reader().getNormValues(missing) } ?: error("Couldn't find norms for ``$missing''.")
+    })
+
     fun create(term: Term, needed: DataNeeded, stats: CountStats): QueryEvalNode {
-        return create(term, needed, stats, lengths.computeIfAbsent(term.field(), { field ->
-            lucene_try { context.reader().getNormValues(field) } ?: error("Couldn't find norms for ``$field''.")
-        }))
+        return create(term, needed, stats, getLengths(term.field()))
     }
     fun create(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): QueryEvalNode {
         val termContext = TermContext.build(searcher.topReaderContext, term)!!
@@ -36,6 +38,9 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
         }
     }
     fun numDocs(): Int = context.reader().numDocs()
+    fun createLengths(field: String, countStats: CountStats): QueryEvalNode {
+        return LuceneDocLengths(countStats, getLengths(field))
+    }
 }
 
 private class IQModelWeight(val q: QExpr, val iqm: IreneQueryModel) : Weight(iqm) {

@@ -21,6 +21,11 @@ class RRGalagoEnv(val retr: LocalRetrieval) : RREnv() {
         return lengthsInfo.computeIfAbsent(field, {retr.getCollectionStatistics(GExpr("lengths", field))})
     }
 
+    override fun fieldStats(field: String): CountStats {
+        val fstats = getFieldStats(field)
+        return CountStats("field=$field", cf=0, df=0, dc=fstats.documentCount, cl=fstats.collectionLength)
+    }
+
     override fun computeStats(q: QExpr): CountStats {
         val field = q.getSingleStatsField(defaultField)
         val stats = retr.getNodeStatistics(retr.transformQuery(q.toGalago(this), Parameters.create()))

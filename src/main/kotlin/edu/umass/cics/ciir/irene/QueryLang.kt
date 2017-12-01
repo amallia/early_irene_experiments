@@ -14,8 +14,9 @@ typealias LuceneQuery = org.apache.lucene.search.Query
  * @author jfoley.
  */
 class IreneQueryLanguage(val index: IIndex = EmptyIndex()) : RREnv() {
-    override fun computeStats(q: QExpr): CountStats = index.getStats(q)!!
-    override fun getStats(term: String, field: String?): CountStats = index.getStats(term, field ?: defaultField)!!
+    override fun fieldStats(field: String): CountStats = index.fieldStats(field) ?: error("Requested field $field does not exist.")
+    override fun computeStats(q: QExpr): CountStats = index.getStats(q)
+    override fun getStats(term: String, field: String?): CountStats = index.getStats(term, field ?: defaultField)
     val luceneQueryParser: QueryParser
         get() = QueryParser(defaultField, (index as IreneIndex).analyzer)
     override var estimateStats: String? = null
@@ -161,11 +162,20 @@ sealed class ConstExpr : LeafExpr()
 data class ConstScoreExpr(var x: Double): ConstExpr() {
     override fun copy(): QExpr = ConstScoreExpr(x)
 }
-data class ConstCountExpr(var x: Int): ConstExpr() {
-    override fun copy(): QExpr = ConstCountExpr(x)
+data class ConstCountExpr(var x: Int, val lengths: LengthsExpr): ConstExpr() {
+    override fun copy(): QExpr = ConstCountExpr(x, lengths)
 }
 data class ConstBoolExpr(var x: Boolean): ConstExpr() {
     override fun copy(): QExpr = ConstBoolExpr(x)
+}
+
+data class LengthsExpr(var statsField: String?, var stats: CountStats? = null) : LeafExpr() {
+    fun applyEnvironment(env: RREnv) {
+        if (statsField == null) {
+            statsField = env.defaultField
+        }
+    }
+    override fun copy() = LengthsExpr(statsField, stats)
 }
 sealed class OpExpr : QExpr() {
 }
@@ -224,6 +234,9 @@ data class MaxExpr(override val children: List<QExpr>) : OpExpr() {
     override fun copy() = MaxExpr(copyChildren())
 }
 
+data class MinCountExpr(override var children: List<QExpr>): OpExpr() {
+    override fun copy() = MinCountExpr(copyChildren())
+}
 data class OrderedWindowExpr(override var children: List<QExpr>, var step: Int=1) : OpExpr() {
     override fun copy() = OrderedWindowExpr(copyChildren(), step)
 }
@@ -312,12 +325,19 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
             q.needed = childNeeds
             childNeeds
         }
+        is LengthsExpr -> return
         is AndExpr, is OrExpr -> DataNeeded.DOCS
         // Pass through whatever at this point.
         is MultiExpr -> childNeeds
         is LuceneExpr, is SynonymExpr -> childNeeds
         is WeightExpr, is CombineExpr, is MultExpr, is MaxExpr -> {
             DataNeeded.SCORES
+        }
+        is MinCountExpr -> {
+            if (q.children.size <= 1) {
+                throw TypeCheckError("Need more than 1 child for an count summary Expr, e.g. $q")
+            }
+            DataNeeded.COUNTS
         }
         is UnorderedWindowExpr, is OrderedWindowExpr -> {
             if (q.children.size <= 1) {
@@ -344,6 +364,7 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
 fun applyEnvironment(env: RREnv, root: QExpr) {
     root.visit { q ->
         when(q) {
+            is LengthsExpr -> q.applyEnvironment(env)
             is TextExpr -> q.applyEnvironment(env)
             is LuceneExpr -> q.parse(env as? IreneQueryLanguage ?: error("LuceneExpr in environment without LuceneParser."))
             is DirQLExpr -> if (q.mu == null) {
@@ -363,17 +384,14 @@ fun applyEnvironment(env: RREnv, root: QExpr) {
 
 fun computeQExprStats(index: RREnv, root: QExpr) {
     root.visit { q ->
-        if (q is TextExpr) {
-            val field = q.statsField()
-            q.stats = index.getStats(q.text, field)
-            // Warning, q is missing.
-            if (q.stats == null) {
-                error("Query uses field ``$field'' for stats which does not exist in index, via $q")
+        when (q) {
+            is TextExpr -> {
+                q.stats = index.getStats(q.text, q.statsField())
             }
-        } else if (q is UnorderedWindowExpr) {
-
-        } else if (q is OrderedWindowExpr) {
-
+            is LengthsExpr -> {
+                q.stats = index.fieldStats(q.statsField!!)
+            }
+            else -> { }
         }
     }
 }

@@ -36,17 +36,26 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is UnorderedWindowExpr -> UnorderedWindow(
             computeCountStats(q, ctx),
             q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.width)
+    is MinCountExpr -> MinCountWindow(
+            computeCountStats(q, ctx),
+            q.children.map { exprToEval(it, ctx) as CountEvalNode })
     is ConstScoreExpr -> ConstEvalNode(q.x.toFloat())
-    is ConstCountExpr -> ConstEvalNode(q.x)
+    is ConstCountExpr -> ConstCountEvalNode(q.x, exprToEval(q.lengths, ctx) as CountEvalNode)
     is ConstBoolExpr -> if(q.x) ConstTrueNode(ctx.numDocs()) else ConstEvalNode(0)
     is AbsoluteDiscountingQLExpr -> error("No efficient way to implement AbsoluteDiscountingQLExpr in Irene backend.")
     is MultiExpr -> MultiEvalNode(q.children.map { exprToEval(it, ctx) }, q.names)
+    is LengthsExpr -> ctx.createLengths(q.statsField!!, q.stats!!)
 }
 
+
 fun approxStats(q: QExpr, method: String): CountStatsStrategy {
-    if (q is OrderedWindowExpr || q is UnorderedWindowExpr) {
+    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is MinCountExpr) {
         val cstats = q.children.map { c ->
             if (c is TextExpr) {
+                c.stats!!
+            } else if (c is ConstCountExpr) {
+                c.lengths.stats!!
+            } else if (c is LengthsExpr) {
                 c.stats!!
             } else {
                 error("Can't estimate stats with non-TextExpr children. $c")
@@ -63,7 +72,7 @@ fun approxStats(q: QExpr, method: String): CountStatsStrategy {
 }
 
 fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
-    if (q is OrderedWindowExpr || q is UnorderedWindowExpr) {
+    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is MinCountExpr) {
         val method = ctx.env.estimateStats ?: return LazyCountStats(q.copy(), ctx.env)
         return approxStats(q, method)
     } else {
@@ -124,6 +133,17 @@ interface CountEvalNode : QueryEvalNode {
 }
 interface PositionsEvalNode : CountEvalNode {
     fun positions(doc: Int): PositionsIter
+}
+
+class ConstCountEvalNode(val count: Int, val lengths: CountEvalNode) : CountEvalNode {
+    override fun docID(): Int = lengths.docID()
+    override fun count(doc: Int): Int = count
+    override fun matches(doc: Int): Boolean = lengths.matches(doc)
+    override fun explain(doc: Int): Explanation = Explanation.match(count.toFloat(), "ConstCountEvalNode", listOf(lengths.explain(doc)))
+    override fun estimateDF(): Long = lengths.estimateDF()
+    override fun advance(target: Int): Int = lengths.advance(target)
+    override fun getCountStats(): CountStats = lengths.getCountStats()
+    override fun length(doc: Int): Int = lengths.length(doc)
 }
 
 class ConstTrueNode(val numDocs: Int) : QueryEvalNode {
@@ -413,6 +433,11 @@ private class BM25ScoringEval(override val child: CountEvalNode, val b: Double, 
 
 private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
     val background = mu * child.getCountStats().nonzeroCountProbability()
+    init {
+        assert(java.lang.Double.isFinite(background)) {
+            "child.stats=${child.getCountStats()}"
+        }
+    }
     override fun score(doc: Int): Float {
         val c = child.count(doc).toDouble()
         val length = child.length(doc).toDouble()
