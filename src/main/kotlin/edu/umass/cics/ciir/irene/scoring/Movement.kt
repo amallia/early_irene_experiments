@@ -17,7 +17,7 @@ fun createMover(q: QExpr, ctx: IQContext): QueryMover {
 
 private fun createMoverRec(q: QExpr, ctx: IQContext) : QueryMover = when(q) {
     // OR nodes:
-    is SynonymExpr, is OrExpr, is CombineExpr, is MultExpr, is MaxExpr, is MultiExpr -> OrMover(q.children.map { createMoverRec(it, ctx) })
+    is SynonymExpr, is OrExpr, is CombineExpr, is MultExpr, is MaxExpr, is MultiExpr -> createOrMover(q.children.map { createMoverRec(it, ctx) })
 
     // Leaves:
     is TextExpr -> ctx.termMover(Term(q.countsField(), q.text))
@@ -25,7 +25,7 @@ private fun createMoverRec(q: QExpr, ctx: IQContext) : QueryMover = when(q) {
     is LengthsExpr, is ConstCountExpr, is ConstBoolExpr, is ConstScoreExpr -> AlwaysMatchMover(q.toString(), ctx.numDocs())
 
 // AND nodes:
-    is AndExpr, is MinCountExpr, is OrderedWindowExpr, is UnorderedWindowExpr -> AndMover(q.children.map { createMoverRec(it, ctx) })
+    is AndExpr, is MinCountExpr, is OrderedWindowExpr, is UnorderedWindowExpr -> createAndMover(q.children.map { createMoverRec(it, ctx) }, ctx.numDocs())
 
 // Transformers are straight-forward:
     is CountToScoreExpr, is BoolToScoreExpr, is CountToBoolExpr, is AbsoluteDiscountingQLExpr, is BM25Expr, is WeightExpr, is DirQLExpr -> createMoverRec(q.trySingleChild, ctx)
@@ -116,6 +116,58 @@ data class AndMover(val children: List<QueryMover>) : QueryMover {
         if (current == doc) return true
         return advance(doc) == doc
     }
+}
+
+/**
+ * Create an [OrMover] if need be, optimizing based on actual understanding of children.
+ * If any child is an [AlwaysMatchMover], return that instead.
+ * Skip any children that are [NeverMatchMover]s.
+ * If there's only one child left, return that. Otherwise, construct an [OrMover] of the rest.
+ */
+fun createOrMover(children: List<QueryMover>): QueryMover {
+    val keep = ArrayList<QueryMover>(children.size)
+    for (c in children) {
+        if (c is AlwaysMatchMover) {
+            return c
+        }
+        if (c is NeverMatchMover) {
+            continue
+        }
+        keep.add(c)
+    }
+    if (keep.isEmpty()) {
+        return NeverMatchMover("Empty-Or")
+    }
+    if (keep.size == 1) {
+        return keep[0]
+    }
+    return OrMover(keep)
+}
+
+/**
+ * Create an [AndMover] if need be, optimizing based on actual understanding of children.
+ * If any child is an [NeverMatchMover], return that instead.
+ * Skip any children that are [AlwaysMatchMover]s.
+ * If there's only one child left, return that. Otherwise, construct an [AndMover] of the rest.
+ */
+fun createAndMover(children: List<QueryMover>, numDocs: Int): QueryMover {
+    val keep = ArrayList<QueryMover>(children.size)
+    for (c in children) {
+        if (c is AlwaysMatchMover) {
+            continue
+        }
+        if (c is NeverMatchMover) {
+            return c
+        }
+        keep.add(c)
+    }
+    if (keep.isEmpty()) {
+        return AlwaysMatchMover("Empty-And", numDocs)
+    }
+    if (keep.size == 1) {
+        return keep[0]
+    }
+    return AndMover(keep)
 }
 
 /** Implements [QueryMover] which is basically a lucene document iterator */
