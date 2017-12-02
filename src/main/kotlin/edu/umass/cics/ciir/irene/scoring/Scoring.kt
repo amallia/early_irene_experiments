@@ -81,7 +81,6 @@ fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
 
 const val NO_MORE_DOCS = DocIdSetIterator.NO_MORE_DOCS
 interface QueryEvalNode {
-    fun docID(): Int
     // Return a score for a document.
     fun score(doc: Int): Float
     // Return an count for a document.
@@ -93,37 +92,7 @@ interface QueryEvalNode {
 
     // Used to accelerate AND and OR matching if accurate.
     fun estimateDF(): Long
-    // Move forward to (docID() >= target) don't bother checking for match.
-    fun advance(target: Int): Int
-
     fun setHeapMinimum(target: Float) {}
-
-    // The following movements should never be overridden.
-    // They may be used as convenient to express other operators, i.e. call nextMatching on your children instead of advance().
-
-    // Use advance to move forward until match.
-    fun nextMatching(doc: Int): Int {
-        var id = maxOf(doc, docID());
-        while(id < NO_MORE_DOCS) {
-            if (matches(id)) {
-                assert(docID() >= id)
-                return id
-            }
-            id = advance(id+1)
-        }
-        return id;
-    }
-    // Step to the next matching document.
-    fun nextDoc(): Int = nextMatching(docID()+1)
-    // True if iterator is exhausted.
-    val done: Boolean get() = docID() == NO_MORE_DOCS
-    // Safe interface to advance. Only moves forward if need be.
-    fun syncTo(target: Int) {
-        if (docID() < target) {
-            advance(target)
-            assert(docID() >= target)
-        }
-    }
 }
 interface CountEvalNode : QueryEvalNode {
     override fun score(doc: Int) = count(doc).toFloat()
@@ -135,35 +104,21 @@ interface PositionsEvalNode : CountEvalNode {
 }
 
 class ConstCountEvalNode(val count: Int, val lengths: CountEvalNode) : CountEvalNode {
-    override fun docID(): Int = lengths.docID()
     override fun count(doc: Int): Int = count
     override fun matches(doc: Int): Boolean = lengths.matches(doc)
     override fun explain(doc: Int): Explanation = Explanation.match(count.toFloat(), "ConstCountEvalNode", listOf(lengths.explain(doc)))
     override fun estimateDF(): Long = lengths.estimateDF()
-    override fun advance(target: Int): Int = lengths.advance(target)
     override fun getCountStats(): CountStats = lengths.getCountStats()
     override fun length(doc: Int): Int = lengths.length(doc)
 }
 
 class ConstTrueNode(val numDocs: Int) : QueryEvalNode {
     override fun setHeapMinimum(target: Float) { }
-    var current = 0
-    override fun docID(): Int = current
     override fun score(doc: Int): Float = 1f
     override fun count(doc: Int): Int = 1
     override fun matches(doc: Int): Boolean = true
     override fun explain(doc: Int): Explanation = Explanation.match(1f, "ConstTrueNode")
     override fun estimateDF(): Long = numDocs.toLong()
-    override fun advance(target: Int): Int {
-        if (current < target) {
-            current = target
-            if (current >= numDocs) {
-                current = NO_MORE_DOCS
-            }
-        }
-        return current
-    }
-
 }
 
 /**
@@ -174,14 +129,12 @@ class ConstEvalNode(val count: Int, val score: Float) : QueryEvalNode {
     constructor(score: Float) : this(1, score)
 
     override fun setHeapMinimum(target: Float) { }
-    override fun docID(): Int = NO_MORE_DOCS
     override fun score(doc: Int): Float = score
     override fun count(doc: Int): Int = count
     override fun matches(doc: Int): Boolean = false
 
     override fun explain(doc: Int): Explanation = Explanation.noMatch("ConstEvalNode(count=$count, score=$score)")
     override fun estimateDF(): Long = 0L
-    override fun advance(target: Int): Int = NO_MORE_DOCS
 }
 
 /**
@@ -205,8 +158,6 @@ private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val
     }
     override fun setHeapMinimum(target: Float) { score.setHeapMinimum(target) }
     override fun estimateDF(): Long = minOf(score.estimateDF(), cond.estimateDF())
-    override fun docID(): Int = cond.docID()
-    override fun advance(target: Int): Int = cond.advance(target)
 }
 
 abstract class RecursiveEval<out T : QueryEvalNode>(val children: List<T>) : QueryEvalNode {
@@ -228,74 +179,21 @@ class MultiEvalNode(children: List<QueryEvalNode>, val names: List<String>) : Or
 }
 
 abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
-    var current = children.map { it.nextMatching(0) }.min()!!
     val cost = children.map { it.estimateDF() }.max() ?: 0L
     val moveChildren = children.sortedByDescending { it.estimateDF() }
-    override fun docID(): Int = current
-    override fun advance(target: Int): Int {
-        var newMin = NO_MORE_DOCS
-        for (child in moveChildren) {
-            var where = child.docID()
-            if (where < target) {
-                where = child.advance(target)
-            }
-            assert(where >= target)
-            newMin = minOf(newMin, where)
-        }
-        current = newMin
-        return current
-    }
     override fun estimateDF(): Long = cost
-
     override fun matches(doc: Int): Boolean {
-        syncTo(doc)
-        assert(docID() >= doc)
-        return children.any { it.matches(doc) }
+        return moveChildren.any { it.matches(doc) }
     }
 }
 
 // TODO, eager vs. lazy
 abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
-    private var current: Int = 0
     val cost = children.map { it.estimateDF() }.min() ?: 0L
     val moveChildren = children.sortedBy { it.estimateDF() }
-    init {
-        advanceToMatch()
-    }
-    override fun docID(): Int = current
-    fun advanceToMatch(): Int {
-        while(current < NO_MORE_DOCS) {
-            var match = true
-            for (child in moveChildren) {
-                var pos = child.docID()
-                if (pos < current) {
-                    pos = child.nextMatching(current)
-                }
-                if (pos > current) {
-                    current = pos
-                    match = false
-                    break
-                }
-            }
-
-            if (match) return current
-        }
-        return current
-    }
-
-    override fun advance(target: Int): Int {
-        if (current < target) {
-            current = target
-            return advanceToMatch()
-        }
-        return current
-    }
     override fun estimateDF(): Long = cost
-
     override fun matches(doc: Int): Boolean {
-        if (current > doc) return false
-        if (current == doc) return true
-        return advance(doc) == doc
+        return moveChildren.all { it.matches(doc) }
     }
 }
 
@@ -392,11 +290,8 @@ private class WeightedSumEval(children: List<QueryEvalNode>, val weights: Double
 
 private abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
     abstract val child: T
-    override fun docID(): Int = child.docID()
-    override fun advance(target: Int): Int = child.advance(target)
     override fun estimateDF(): Long = child.estimateDF()
     override fun matches(doc: Int): Boolean {
-        child.syncTo(doc)
         return child.matches(doc)
     }
 }

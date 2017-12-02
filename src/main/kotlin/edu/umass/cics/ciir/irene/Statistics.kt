@@ -91,9 +91,9 @@ class ProbEstimatedCountStats(expr: QExpr, cstats: List<CountStats>): CountStats
 }
 
 class CountStatsCollectorManager(val start: CountStats) : CollectorManager<CountStatsCollectorManager.CountStatsCollector, CountStats> {
-    override fun reduce(collectors: MutableCollection<CountStatsCollector>?): CountStats {
+    override fun reduce(collectors: Collection<CountStatsCollector>): CountStats {
         val out = start.copy()
-        collectors?.forEach {
+        collectors.forEach {
             out += it.stats
         }
         return out
@@ -106,8 +106,8 @@ class CountStatsCollectorManager(val start: CountStats) : CollectorManager<Count
             val docBase = context.docBase
             return object : LeafCollector {
                 lateinit var scoreFn: Scorer
-                override fun setScorer(scorer: Scorer?) {
-                    scoreFn = scorer!!
+                override fun setScorer(scorer: Scorer) {
+                    scoreFn = scorer
                 }
 
                 override fun collect(doc: Int) {

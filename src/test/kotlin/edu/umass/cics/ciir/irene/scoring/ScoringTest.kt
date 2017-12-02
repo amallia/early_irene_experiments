@@ -210,6 +210,7 @@ class ScoringTest {
         val index = resource.index!!
 
         index.forEachTermPair { t1, t2 ->
+            if (t1 != "over" && t2 != "quick") return@forEachTermPair
             val odi = DirQLExpr(OrderedWindowExpr(listOf(TextExpr(t1), TextExpr(t2))))
             val odg = odi.toGalago(index.env)
             cmpResults("dirichlet.od($t1,$t2)", odg, odi, index)
@@ -227,8 +228,8 @@ class ScoringTest {
 
         if (search.totalHits != gTruth.size.toLong()) {
             val found = search.scoreDocs.map { it.doc }.toSet()
-            println(found)
-            println(gTruth.keys)
+            println("Irene Found: ${found}")
+            println("Galago Found: ${gTruth.keys}")
             gTruth.values.forEach { sdoc ->
                 val id = index.irene.documentById(sdoc.name)!!
                 if (!found.contains(id)) {

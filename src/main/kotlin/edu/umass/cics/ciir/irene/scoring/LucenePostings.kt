@@ -13,8 +13,6 @@ import org.apache.lucene.search.Explanation
  */
 data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths: NumericDocValues) : PositionsEvalNode, QueryEvalNode {
     override fun positions(doc: Int): PositionsIter = error("Don't ask for positions if count is zero!")
-    override fun docID(): Int = NO_MORE_DOCS
-    override fun advance(target: Int): Int = NO_MORE_DOCS
     override fun count(doc: Int) = 0
     override fun matches(doc: Int) = false
     override fun explain(doc: Int) = Explanation.match(0.0f, "MissingTerm-$term length=${length(doc)}")
@@ -32,18 +30,10 @@ data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths:
 }
 
 data class LuceneDocLengths(val stats: CountStats, val lengths: NumericDocValues): CountEvalNode {
-    override fun docID(): Int = lengths.docID()
     override fun count(doc: Int): Int = 0
     override fun matches(doc: Int): Boolean = lengths.docID() == doc
     override fun explain(doc: Int): Explanation = Explanation.match(length(doc).toFloat(), "lengths: $stats")
     override fun estimateDF(): Long = lengths.cost()
-
-    override fun advance(target: Int): Int {
-        if (docID() < target) {
-            return lengths.advance(target)
-        }
-        return docID()
-    }
     override fun getCountStats(): CountStats = stats
     override fun length(doc: Int): Int {
         if (lengths.docID() < doc) {
@@ -57,8 +47,8 @@ data class LuceneDocLengths(val stats: CountStats, val lengths: NumericDocValues
 }
 
 abstract class LuceneTermFeature(val stats: CountStats, val postings: PostingsEnum) : QueryEvalNode {
-    override fun docID(): Int = postings.docID()
-    override fun advance(target: Int): Int {
+    fun docID(): Int = postings.docID()
+    fun syncTo(target: Int): Int {
         if (postings.docID() < target) {
             return postings.advance(target)
         }
