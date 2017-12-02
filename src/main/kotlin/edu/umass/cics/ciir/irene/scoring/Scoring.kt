@@ -94,6 +94,36 @@ interface QueryEvalNode {
     fun estimateDF(): Long
     fun setHeapMinimum(target: Float) {}
 }
+
+// Going to execute this many times per document? Takes a while? Optimize that.
+private class CachedQueryEvalNode(override val child: QueryEvalNode) : SingleChildEval<QueryEvalNode>() {
+    var cachedScore = -Float.MAX_VALUE
+    var cachedScoreDoc = -1
+    var cachedCount = 0
+    var cachedCountDoc = -1
+
+    override fun score(doc: Int): Float {
+        if (doc == cachedScoreDoc) {
+            cachedScoreDoc = doc
+            cachedScore = child.score(doc)
+        }
+        return cachedScore
+    }
+
+    override fun count(doc: Int): Int {
+        if (doc == cachedCountDoc) {
+            cachedCountDoc = doc
+            cachedCount = child.count(doc)
+        }
+        return cachedCount
+    }
+
+    override fun explain(doc: Int): Explanation {
+        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+    }
+
+}
+
 interface CountEvalNode : QueryEvalNode {
     override fun score(doc: Int) = count(doc).toFloat()
     fun getCountStats(): CountStats
@@ -160,6 +190,9 @@ private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val
     override fun estimateDF(): Long = minOf(score.estimateDF(), cond.estimateDF())
 }
 
+/**
+ * Helper class to generate Lucene's [Explanation] for subclasses of [AndEval] and  [OrEval] like [WeightedSumEval] or even [OrderedWindow].
+ */
 abstract class RecursiveEval<out T : QueryEvalNode>(val children: List<T>) : QueryEvalNode {
     val className = this.javaClass.simpleName
     val N = children.size
@@ -172,12 +205,18 @@ abstract class RecursiveEval<out T : QueryEvalNode>(val children: List<T>) : Que
     }
 }
 
+/**
+ * Created from [MultiExpr] via [exprToEval].
+ */
 class MultiEvalNode(children: List<QueryEvalNode>, val names: List<String>) : OrEval<QueryEvalNode>(children) {
     val primary: Int = Math.max(0, names.indexOf("primary"))
     override fun count(doc: Int): Int = children[primary].count(doc)
     override fun score(doc: Int): Float = children[primary].score(doc)
 }
 
+/**
+ * Abstract class that knows how to match a set of children, optimized on their expected DF. Most useful query models are subclasses, e.g. [WeightedSumEval].
+ */
 abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
     val cost = children.map { it.estimateDF() }.max() ?: 0L
     val moveChildren = children.sortedByDescending { it.estimateDF() }
@@ -187,7 +226,7 @@ abstract class OrEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<
     }
 }
 
-// TODO, eager vs. lazy
+/** Note that unlike in Galago, [AndEval] nodes do not perform movement. They briefly optimize to answer matches(doc) faster on average, but movement comes from a different query-program, e.g., [AndMover] where all leaf iterators only have doc information and are cheap copies as a result. */
 abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval<T>(children) {
     val cost = children.map { it.estimateDF() }.min() ?: 0L
     val moveChildren = children.sortedBy { it.estimateDF() }
@@ -197,15 +236,24 @@ abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval
     }
 }
 
+/**
+ * Created from [OrExpr] using [exprToEval]
+ */
 private class BooleanOrEval(children: List<QueryEvalNode>): OrEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float = if (matches(doc)) { 1f } else { 0f }
     override fun count(doc: Int): Int = if (matches(doc)) { 1 } else { 0 }
 }
+/**
+ * Created from [AndExpr] using [exprToEval]
+ */
 private class BooleanAndEval(children: List<QueryEvalNode>): AndEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float = if (matches(doc)) { 1f } else { 0f }
     override fun count(doc: Int): Int = if (matches(doc)) { 1 } else { 0 }
 }
 
+/**
+ * Created from [MaxExpr] using [exprToEval]
+ */
 private class MaxEval(children: List<QueryEvalNode>) : OrEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float {
         var sum = 0f
@@ -268,7 +316,10 @@ private class PruningWeightedSumEval(children: List<QueryEvalNode>, val weights:
     }
 }
 
-// Also known as #combine for you galago/indri folks.
+/**
+ * Created from [CombineExpr] using [exprToEval]
+ * Also known as #combine for you galago/indri folks.
+ */
 private class WeightedSumEval(children: List<QueryEvalNode>, val weights: DoubleArray) : OrEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float {
         return (0 until children.size).sumByDouble {
@@ -288,6 +339,9 @@ private class WeightedSumEval(children: List<QueryEvalNode>, val weights: Double
     init { assert(weights.size == children.size, {"Weights provided to WeightedSumEval must exist for all children."}) }
 }
 
+/**
+ * Helper class to make scorers that will have one child (like [DirichletSmoothingEval] and [BM25ScoringEval]) easier to implement.
+ */
 private abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
     abstract val child: T
     override fun estimateDF(): Long = child.estimateDF()
@@ -316,6 +370,9 @@ private class WeightedEval(override val child: QueryEvalNode, val weight: Float)
 }
 
 // TODO, someday re-implement idf as transform to WeightedExpr() and have BM25InnerEval()
+/**
+ * Created from [BM25Expr] via [exprToEval]
+ */
 private class BM25ScoringEval(override val child: CountEvalNode, val b: Double, val k: Double): SingleChildEval<CountEvalNode>() {
     private val stats = child.getCountStats()
     private val avgDL = stats.avgDL()
