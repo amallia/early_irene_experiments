@@ -18,6 +18,10 @@ fun createOptimizedMovementExpr(q: QExpr): QExpr = when(q) {
 
     // NOTE: Galago semantics, only look at cond. This is not an AND like you might think.
     is RequireExpr -> createOptimizedMovementExpr(q.cond)
+
+    // Don't translate these subtrees, as their names give away their behavior! No point in instantiating them.
+    is AlwaysMatchExpr -> AlwaysMatchExpr(ConstBoolExpr(true))
+    is NeverMatchExpr -> NeverMatchExpr(ConstBoolExpr(false))
 }
 
 fun simplifyBooleans(q: QExpr): QExpr {

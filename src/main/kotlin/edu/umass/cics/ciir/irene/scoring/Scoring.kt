@@ -44,8 +44,9 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is AbsoluteDiscountingQLExpr -> error("No efficient method to implement AbsoluteDiscountingQLExpr in Irene backend; needs numUniqWords per document.")
     is MultiExpr -> MultiEvalNode(q.children.map { exprToEval(it, ctx) }, q.names)
     is LengthsExpr -> ctx.createLengths(q.statsField!!, q.stats!!)
+    is NeverMatchExpr -> FixedMatchEvalNode(false, exprToEval(q.trySingleChild, ctx))
+    is AlwaysMatchExpr -> FixedMatchEvalNode(true, exprToEval(q.trySingleChild, ctx))
 }
-
 
 fun approxStats(q: QExpr, method: String): CountStatsStrategy {
     if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is MinCountExpr) {
@@ -93,6 +94,17 @@ interface QueryEvalNode {
     // Used to accelerate AND and OR matching if accurate.
     fun estimateDF(): Long
     fun setHeapMinimum(target: Float) {}
+}
+
+private class FixedMatchEvalNode(val matchAnswer: Boolean, override val child: QueryEvalNode): SingleChildEval<QueryEvalNode>() {
+    override fun matches(doc: Int): Boolean = matchAnswer
+    override fun score(doc: Int): Float = child.score(doc)
+    override fun count(doc: Int): Int = child.count(doc)
+    override fun explain(doc: Int): Explanation = if (matchAnswer) {
+        Explanation.match(child.score(doc), "AlwaysMatchNode", child.explain(doc))
+    } else {
+        Explanation.noMatch("NeverMatchNode", child.explain(doc))
+    }
 }
 
 // Going to execute this many times per document? Takes a while? Optimize that.

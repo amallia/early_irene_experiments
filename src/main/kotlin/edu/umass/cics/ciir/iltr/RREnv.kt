@@ -75,6 +75,10 @@ abstract class RREnv {
         is MultiExpr -> TODO()
         is MinCountExpr -> TODO()
         is LengthsExpr -> RRDocLength(this, q.statsField!!)
+
+        // These movement hints mean nothing in RR context.
+        is AlwaysMatchExpr -> fromQExpr(q.child)
+        is NeverMatchExpr -> fromQExpr(q.child)
     }
 
 

@@ -184,7 +184,12 @@ data class MultiExpr(val namedExprs: Map<String, QExpr>): QExpr() {
 sealed class LeafExpr : QExpr() {
     override val children: List<QExpr> get() = emptyList()
 }
-sealed class ConstExpr : LeafExpr()
+
+/**
+ * We will never score a document just because of any constant.
+ * If you want that behavior, check out [AlwaysMatchExpr] that you can wrap these with.
+ */
+sealed class ConstExpr() : LeafExpr() { }
 data class ConstScoreExpr(var x: Double): ConstExpr() {
     override fun copy(): QExpr = ConstScoreExpr(x)
 }
@@ -193,6 +198,22 @@ data class ConstCountExpr(var x: Int, val lengths: LengthsExpr): ConstExpr() {
 }
 data class ConstBoolExpr(var x: Boolean): ConstExpr() {
     override fun copy(): QExpr = ConstBoolExpr(x)
+}
+/**
+ * For finding document candidates, consider this subtree to *always* cause a match.
+ * Hope you put in an And (e.g., [AndExpr] or [OrderedWindowExpr]), or this will be extremely expensive.
+ */
+data class AlwaysMatchExpr(override var child: QExpr) : SingleChildExpr() {
+    override fun copy(): QExpr = AlwaysMatchExpr(child.copy())
+}
+
+/**
+ * For finding document candidates, never consider this subtree as a match. This is the opposite of [AlwaysMatchExpr].
+ * Useful for "boost" style features that are expensive.
+ * Don't use this much, we should be able to infer it in many cases, see [createOptimizedMovementExpr] and [simplifyBooleanExpr].
+ */
+data class NeverMatchExpr(override var child: QExpr) : SingleChildExpr() {
+    override fun copy() = NeverMatchExpr(child.copy())
 }
 
 data class LengthsExpr(var statsField: String?, var stats: CountStats? = null) : LeafExpr() {
@@ -376,7 +397,7 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
         is LengthsExpr -> return
         is AndExpr, is OrExpr -> DataNeeded.DOCS
         // Pass through whatever at this point.
-        is MultiExpr -> childNeeds
+        is AlwaysMatchExpr, is NeverMatchExpr, is MultiExpr -> childNeeds
         is LuceneExpr, is SynonymExpr -> childNeeds
         is WeightExpr, is CombineExpr, is MultExpr, is MaxExpr -> {
             DataNeeded.SCORES

@@ -1,9 +1,6 @@
 package edu.umass.cics.ciir.irene.example
 
-import edu.umass.cics.ciir.chai.ScoredForHeap
-import edu.umass.cics.ciir.chai.ScoringHeap
-import edu.umass.cics.ciir.chai.forEachSeqPair
-import edu.umass.cics.ciir.chai.sample
+import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.irene.scoring.IreneQueryScorer
@@ -20,15 +17,21 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * @author jfoley
  */
+
+/**
+ * Imagine a [TextExpr] that you wanted to always return zero, for some reason. Used to estimate the lower-bound of SDM's dependencies.
+ */
 fun MissingTermScoreHack(t: String, env: RREnv): QExpr {
     return ConstCountExpr(0, LengthsExpr(env.defaultField, stats=env.getStats(t)))
 }
 fun main(args: Array<String>) {
-    val dataset = DataPaths.Gov2
+    val dataset = DataPaths.get("robust")
     val sdm_uw = 0.8
     val sdm_odw = 0.15
     val sdm_uww = 0.05
 
+    val totalOffered = StreamingStats()
+    val totalPlausible = StreamingStats()
     dataset.getIreneIndex().use { index ->
         index.env.estimateStats = "min"
         dataset.title_qs.forEach { qid, qtext ->
@@ -59,12 +62,16 @@ fun main(args: Array<String>) {
             val maxMinExpr = MultiExpr(mapOf("base" to ql, "best" to bestCase, "worst" to SumExpr(odEstBad, uwEstBad)))
 
             val lq = index.prepare(maxMinExpr)
-            // override with faster movement, since we can't yet analyze the [MissingTermScoreHack] above..
-            lq.movement = index.env.prepare(OrExpr(qterms.map { TextExpr(it) }))
             val poolTarget = 1000
             val results = index.searcher.search(lq, MaxMinCollectorManager(maxMinExpr, poolTarget))
             println("$qid $qterms ${results.totalHits} -> ${results.totalOffered} -> ${results.prunedHits.size} -> ${poolTarget}")
+            totalOffered.push(results.totalOffered)
+            totalPlausible.push(results.prunedHits.size)
         }
+
+        System.out.println("offered: ${totalOffered}")
+        System.out.println("plausible: ${totalPlausible}")
+        System.out.println("pl/off: ${totalPlausible.mean / totalOffered.mean}")
     }
 }
 
@@ -89,7 +96,7 @@ class MaxMinCollectorManager(val mq: MultiExpr, val poolSize: Int): CollectorMan
         val worst = heap.min
         println(heap.unsortedList.sample(10))
         println("Worst-case: $worst, total-plausible: ${plausible.size}")
-        return MaxMinResults(totalHits.get(), heap.totalSeen, plausible.filter { it.maxScore > worst })
+        return MaxMinResults(totalHits.get(), heap.totalSeen, plausible.filter { it.maxScore >= worst })
     }
     override fun newCollector(): MaxMinCollector = MaxMinCollector()
 

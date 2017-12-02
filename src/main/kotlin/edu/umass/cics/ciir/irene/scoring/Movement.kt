@@ -22,7 +22,15 @@ private fun createMoverRec(q: QExpr, ctx: IQContext) : QueryMover = when(q) {
     // Leaves:
     is TextExpr -> ctx.termMover(Term(q.countsField(), q.text))
     is LuceneExpr -> TODO("LuceneExpr")
-    is LengthsExpr, is ConstCountExpr, is ConstBoolExpr, is ConstScoreExpr -> AlwaysMatchMover(q.toString(), ctx.numDocs())
+
+    // Never score these subtrees.
+    is NeverMatchExpr,
+    // Never score a document just because of a constant or prior.
+    is ConstBoolExpr, is ConstScoreExpr, is ConstCountExpr -> NeverMatchMover(q.toString())
+
+    // Always match these subtrees rather than create sophisticated children.
+    is AlwaysMatchExpr,
+    is LengthsExpr -> AlwaysMatchMover(q.toString(), ctx.numDocs())
 
 // AND nodes:
     is AndExpr, is MinCountExpr, is OrderedWindowExpr, is UnorderedWindowExpr -> createAndMover(q.children.map { createMoverRec(it, ctx) }, ctx.numDocs())
