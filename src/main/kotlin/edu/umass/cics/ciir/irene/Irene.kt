@@ -3,8 +3,8 @@ package edu.umass.cics.ciir.irene
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.iltr.RREnv
+import edu.umass.cics.ciir.irene.indexing.LDocBuilder
 import edu.umass.cics.ciir.irene.scoring.IreneQueryModel
-import edu.umass.cics.ciir.sprf.pmake
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper
 import org.apache.lucene.benchmark.byTask.feeds.DocData
@@ -99,6 +99,12 @@ class IreneIndexer(val params: IndexParams) : Closeable {
         return processed.incrementAndGet()
     }
     fun open() = IreneIndex(dest, params)
+
+    fun doc(fn: LDocBuilder.()->Unit) {
+        val doc = LDocBuilder(params)
+        fn(doc)
+        push(doc.finish())
+    }
 }
 
 interface IIndex : Closeable {
@@ -155,7 +161,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
     }
     fun docAsParameters(doc: Int): Parameters? {
         val ldoc = document(doc) ?: return null
-        val fields = pmake {}
+        val fields = Parameters.create()
         ldoc.fields.forEach { field ->
             val name = field.name()!!
             fields.putIfNotNull(name, field.stringValue())

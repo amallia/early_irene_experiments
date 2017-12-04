@@ -51,9 +51,23 @@ fun File.smartDoLines(doProgress: Boolean=false, limit: Int? = null,  total: Lon
 fun File.smartWriter() = StreamCreator.openOutputStream(this).buffered()
 fun File.smartPrint(block: (PrintWriter)->Unit) = StreamCreator.openOutputStream(this).printer().use(block)
 
+/**
+ * This is an ugly hack because maven works but intellij doesn't right now.
+ */
+fun inputStreamOrNull(path: String): InputStream? {
+    val smr = File("src/main/resources/", path)
+    val str = File("src/test/resources/", path)
+    if (smr.exists()) {
+        return StreamCreator.openInputStream(smr)
+    } else if(str.exists()) {
+        return StreamCreator.openInputStream(str)
+    }
+    return null
+}
+
 fun openResource(path: String): InputStream {
     val target = if (path[0] != '/') { "/$path" } else { path }
-    return String::class.java.getResourceAsStream(target)
+    return String::class.java.getResourceAsStream(target) ?: inputStreamOrNull(path) ?: error("Couldn't find resource ``$target''.")
 }
 fun resourceLines(path: String, block: (String)->Unit) = openResource(path).reader().useLines{lines -> lines.forEach(block) }
 

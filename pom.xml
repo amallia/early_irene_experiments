@@ -124,8 +124,14 @@
 
         <build>
           <sourceDirectory>src/main/kotlin</sourceDirectory>
-    <testSourceDirectory>src/test/kotlin</testSourceDirectory>
-
+          <testSourceDirectory>src/test/kotlin</testSourceDirectory>
+            <resources>
+                <resource><directory>src/main/resources</directory></resource>
+            </resources>
+            <testResources>
+                <testResource><directory>src/main/resources</directory></testResource>
+                <testResource><directory>src/test/resources</directory></testResource>
+            </testResources>
         <plugins>
             <!-- build a jar with relative classpath -->
             <plugin>
@@ -221,26 +227,6 @@
                     </filters>
                 </configuration>
             </plugin>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-compiler-plugin</artifactId>
-            <executions>
-              <execution>
-                <id>compile</id>
-                <phase>compile</phase>
-                <goals>
-                  <goal>compile</goal>
-                </goals>
-              </execution>
-              <execution>
-                <id>testCompile</id>
-                <phase>test-compile</phase>
-                <goals>
-                  <goal>testCompile</goal>
-                </goals>
-              </execution>
-            </executions>
-          </plugin>
 
         </plugins>
     </build>
