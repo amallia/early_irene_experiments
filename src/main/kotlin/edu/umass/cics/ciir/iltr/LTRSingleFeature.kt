@@ -1,6 +1,9 @@
 package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.lang.IreneQueryLanguage
+import edu.umass.cics.ciir.irene.lang.QueryLikelihood
+import edu.umass.cics.ciir.irene.lang.SequentialDependenceModel
 import edu.umass.cics.ciir.sprf.*
 import gnu.trove.map.hash.TObjectIntHashMap
 import org.lemurproject.galago.core.eval.EvalDoc
@@ -176,7 +179,7 @@ fun main(args: Array<String>) {
                         Pair("LM-abs", env.mean(q.qterms.map { RRAbsoluteDiscounting(env, it) })),
                         Pair("docinfo", RRDocInfoQuotient(env)),
                         Pair("sdm", SequentialDependenceModel(q.qterms).toRRExpr(env)),
-                        Pair("sdm-stop", SequentialDependenceModel(q.qterms, stopwords=inqueryStop).toRRExpr(env)),
+                        Pair("sdm-stop", SequentialDependenceModel(q.qterms, stopwords = inqueryStop).toRRExpr(env)),
                         Pair("avgwl", RRAvgWordLength(env)),
                         Pair("docl", RRDocLength(env)),
                         Pair("meantp", env.mean(q.qterms.map { RRTermPosition(env, it) })),

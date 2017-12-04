@@ -5,6 +5,7 @@ import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.iltr.RRGalagoEnv
 import edu.umass.cics.ciir.iltr.toRRExpr
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.sprf.GDoc
 import edu.umass.cics.ciir.sprf.GExpr
 import edu.umass.cics.ciir.sprf.pmake
@@ -156,7 +157,7 @@ class ScoringTest {
         val index = resource.index!!
         val bgStats = index.galago.getCollectionStatistics(GExpr("lengths"))
         index.forEachTermPair { t1, t2 ->
-            val odi = OrderedWindowExpr(listOf(TextExpr(t1),TextExpr(t2)))
+            val odi = OrderedWindowExpr(listOf(TextExpr(t1), TextExpr(t2)))
             val odg = odi.toGalago(index.env)
             //val odg = galagoOd1(listOf(t1, t2));
             val istats = index.irene.getStats(odi)!!
@@ -191,7 +192,7 @@ class ScoringTest {
         val bgStats = index.galago.getCollectionStatistics(GExpr("lengths"))
         index.forEachTermPair { t1, t2 ->
             listOf(3,6,9).forEach { width ->
-                val udi = UnorderedWindowExpr(listOf(TextExpr(t1),TextExpr(t2)), width)
+                val udi = UnorderedWindowExpr(listOf(TextExpr(t1), TextExpr(t2)), width)
                 val udg = udi.toGalago(index.env)
                 val istats = index.irene.getStats(udi)!!
                 val gstats = index.galago.getNodeStatistics(index.galago.transformQuery(udg, Parameters.create()));
@@ -284,7 +285,7 @@ class ScoringTest {
 
         index.forEachTermPair { t1, t2 ->
             val t3 = "NEVER_GONNA_HAPPEN"
-            val iq = UnigramRetrievalModel(listOf(t1, t2, t3), {BM25Expr(it)})
+            val iq = UnigramRetrievalModel(listOf(t1, t2, t3), { BM25Expr(it) })
             val gq = iq.toGalago(index.env)
             cmpResults("$t1, $t2, NULL", gq, iq, index)
         }

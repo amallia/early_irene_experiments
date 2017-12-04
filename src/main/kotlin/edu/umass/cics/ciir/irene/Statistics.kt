@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.irene
 
 import edu.umass.cics.ciir.iltr.RREnv
+import edu.umass.cics.ciir.irene.lang.QExpr
 import edu.umass.cics.ciir.irene.scoring.IreneQueryModel
 import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.index.Term

@@ -2,8 +2,8 @@ package edu.umass.cics.ciir.iltr
 
 import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.chai.*
-import edu.umass.cics.ciir.irene.AndExpr
-import edu.umass.cics.ciir.irene.TextExpr
+import edu.umass.cics.ciir.irene.lang.AndExpr
+import edu.umass.cics.ciir.irene.lang.TextExpr
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.getEvaluators
 import org.lemurproject.galago.utility.Parameters

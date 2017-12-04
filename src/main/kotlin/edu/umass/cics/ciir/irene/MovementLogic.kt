@@ -1,5 +1,7 @@
 package edu.umass.cics.ciir.irene
 
+import edu.umass.cics.ciir.irene.lang.*
+
 /**
  * @author jfoley
  */

@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.dbpedia
 
 import edu.umass.cics.ciir.chai.normalize
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluators
@@ -77,7 +78,7 @@ fun main(args: Array<String>) {
                         if (stats == null) {
                             null
                         } else Pair(field, stats.nonzeroCountProbability())
-                    }.filterNotNull().associate {it}.normalize()
+                    }.filterNotNull().associate { it }.normalize()
 
                     MeanExpr(weights.map { (field, weight) ->
                         val mu = if (avgDLMu) fieldMu[field] else defaultMu
@@ -93,11 +94,11 @@ fun main(args: Array<String>) {
                     // ap=0.234, ndcg=0.464, p5=0.595
                     // w/estimateStats = "min" // ap=0.233 ndcg=0.459, p5=0.605
                     // w/estimateStats = "prob" // ap=0.230 ndcg=0.459, p5=0.589
-                    SequentialDependenceModel(qterms, field, statsField="body", makeScorer={ DirQLExpr(it, mu ?: defaultMu) }, stopwords=stopwords).weighted(weights[field])
+                    SequentialDependenceModel(qterms, field, statsField = "body", makeScorer = { DirQLExpr(it, mu ?: defaultMu) }, stopwords = stopwords).weighted(weights[field])
                 })
                 "sdm" -> CombineExpr(fields.map { field ->
                     val mu = if (avgDLMu) fieldMu[field] else defaultMu
-                    SequentialDependenceModel(qterms, field, makeScorer={ DirQLExpr(it, mu ?: defaultMu) }, stopwords=stopwords, fullProx = 0.1);
+                    SequentialDependenceModel(qterms, field, makeScorer = { DirQLExpr(it, mu ?: defaultMu) }, stopwords = stopwords, fullProx = 0.1);
                 }, paramWeights)
                 "mixture" -> {
                     val fieldExprs = listOf("body", "short_text").map { field ->

@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.irene
 
+import edu.umass.cics.ciir.irene.lang.*
 import junit.framework.Assert.assertEquals
 import org.junit.Assert
 import org.junit.Test
@@ -44,7 +45,7 @@ class IreneQueryLanguageTest {
         // 0.5 * a + 0.75 * b + 0.5 * c
         val out = simplify(input)
 
-        Assert.assertEquals(CombineExpr(listOf(a,b,c), listOf(0.5, 0.75, 0.5)), out)
+        Assert.assertEquals(CombineExpr(listOf(a, b, c), listOf(0.5, 0.75, 0.5)), out)
     }
 
     @Test

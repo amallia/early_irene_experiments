@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.sprf.*
 import gnu.trove.set.hash.TIntHashSet
 import org.apache.lucene.index.Term
@@ -39,7 +40,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is SmallerCountExpr -> SmallerCountWindow(
             computeCountStats(q, ctx),
             q.children.map { exprToEval(it, ctx) as CountEvalNode })
-    is edu.umass.cics.ciir.irene.UnorderedWindowCeilingExpr -> UnorderedWindowCeiling(
+    is UnorderedWindowCeilingExpr -> UnorderedWindowCeiling(
             computeCountStats(q, ctx),
             q.width,
             q.children.map { exprToEval(it, ctx) as CountEvalNode })
@@ -78,7 +79,7 @@ fun approxStats(q: QExpr, method: String): CountStatsStrategy {
 }
 
 fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
-    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is SmallerCountExpr || q is edu.umass.cics.ciir.irene.UnorderedWindowCeilingExpr) {
+    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is SmallerCountExpr || q is UnorderedWindowCeilingExpr) {
         val method = ctx.env.estimateStats ?: return LazyCountStats(q.copy(), ctx.env)
         return approxStats(q, method)
     } else {

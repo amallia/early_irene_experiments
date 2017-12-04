@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
@@ -109,9 +110,9 @@ fun main(args: Array<String>) {
                 query_features["q_wiki_max_df"] = wdf.max
                 query_features["q_wiki_stddev_df"] = wdf.standardDeviation
 
-                val wikiQ =  SumExpr(
-                        SequentialDependenceModel(q.qterms, field="short_text", statsField="body", stopwords=inqueryStop).weighted(fieldWeights["short_text"]),
-                        SequentialDependenceModel(q.qterms, field="body", statsField="body", stopwords=inqueryStop).weighted(fieldWeights["body"]))
+                val wikiQ = SumExpr(
+                        SequentialDependenceModel(q.qterms, field = "short_text", statsField = "body", stopwords = inqueryStop).weighted(fieldWeights["short_text"]),
+                        SequentialDependenceModel(q.qterms, field = "body", statsField = "body", stopwords = inqueryStop).weighted(fieldWeights["body"]))
                 val wikiTopDocs = wiki.search(wikiQ, 1000)
                 val wikiScoreInfo = wikiTopDocs.scoreDocs.map { it.score }.computeStats()
                 val logSumExp = wikiTopDocs.logSumExp()
@@ -172,11 +173,11 @@ fun main(args: Array<String>) {
 
                     // Retrieval models.
                     feature_exprs.putAll(hashMapOf<String, QExpr>(
-                            Pair("norm:$fieldName:bm25", UnigramRetrievalModel(qterms, {BM25Expr(it)}, fieldName, statsField)),
+                            Pair("norm:$fieldName:bm25", UnigramRetrievalModel(qterms, { BM25Expr(it) }, fieldName, statsField)),
                             Pair("norm:$fieldName:LM-dir", QueryLikelihood(qterms, fieldName, statsField)),
-                            Pair("norm:$fieldName:LM-abs", UnigramRetrievalModel(qterms, {AbsoluteDiscountingQLExpr(it)}, fieldName, statsField)),
-                            Pair("norm:$fieldName:fdm-stop", FullDependenceModel(qterms, field = fieldName, statsField=statsField, stopwords = inqueryStop)),
-                            Pair("norm:$fieldName:sdm-stop", SequentialDependenceModel(qterms, field = fieldName, statsField=statsField, stopwords = inqueryStop))
+                            Pair("norm:$fieldName:LM-abs", UnigramRetrievalModel(qterms, { AbsoluteDiscountingQLExpr(it) }, fieldName, statsField)),
+                            Pair("norm:$fieldName:fdm-stop", FullDependenceModel(qterms, field = fieldName, statsField = statsField, stopwords = inqueryStop)),
+                            Pair("norm:$fieldName:sdm-stop", SequentialDependenceModel(qterms, field = fieldName, statsField = statsField, stopwords = inqueryStop))
                     ).mapValues { (_,q) -> q.toRRExpr(env) })
 
                     feature_exprs.putAll(hashMapOf<String, RRExpr>(

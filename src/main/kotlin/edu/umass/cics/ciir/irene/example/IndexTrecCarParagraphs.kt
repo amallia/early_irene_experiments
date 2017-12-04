@@ -6,6 +6,7 @@ import edu.umass.cics.ciir.chai.smartDoLines
 import edu.umass.cics.ciir.chai.smartPrint
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.lang.SequentialDependenceModel
 import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluators
 import edu.umass.cics.ciir.sprf.inqueryStop

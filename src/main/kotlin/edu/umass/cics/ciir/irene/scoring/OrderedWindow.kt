@@ -2,8 +2,8 @@ package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.irene.CountStats
 import edu.umass.cics.ciir.irene.CountStatsStrategy
-import edu.umass.cics.ciir.irene.SmallerCountExpr
-import edu.umass.cics.ciir.irene.UnorderedWindowCeilingExpr
+import edu.umass.cics.ciir.irene.lang.SmallerCountExpr
+import edu.umass.cics.ciir.irene.lang.UnorderedWindowCeilingExpr
 
 /**
  *

@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.irene
 
 import edu.umass.cics.ciir.iltr.RREnv
+import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.sprf.GExpr
 import edu.umass.cics.ciir.sprf.setf
 import org.apache.lucene.search.TopDocs

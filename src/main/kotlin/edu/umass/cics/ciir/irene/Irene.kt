@@ -4,6 +4,10 @@ import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.irene.indexing.LDocBuilder
+import edu.umass.cics.ciir.irene.lang.IreneQueryLanguage
+import edu.umass.cics.ciir.irene.lang.MultiExpr
+import edu.umass.cics.ciir.irene.lang.QExpr
+import edu.umass.cics.ciir.irene.lang.TextExpr
 import edu.umass.cics.ciir.irene.scoring.IreneQueryModel
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper

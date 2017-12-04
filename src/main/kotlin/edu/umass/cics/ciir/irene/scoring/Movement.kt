@@ -1,7 +1,6 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.irene.*
-import edu.umass.cics.ciir.irene.UnorderedWindowCeilingExpr
+import edu.umass.cics.ciir.irene.lang.*
 import org.apache.lucene.index.Term
 import org.apache.lucene.search.DocIdSetIterator
 

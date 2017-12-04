@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.approxStats
 import edu.umass.cics.ciir.sprf.inqueryStop
 import gnu.trove.map.hash.TObjectDoubleHashMap
@@ -147,6 +148,6 @@ data class RelevanceModel(val weights: TObjectDoubleHashMap<String>, val sourceF
         return output
     }
     fun toTerms(k: Int): List<WeightedTerm> = toTerms().sorted().take(k).normalized()
-    fun toQExpr(k: Int, scorer: (TextExpr)->QExpr = {DirQLExpr(it)}, targetField: String? = null, statsField: String? = null) = SumExpr(toTerms(k).map { scorer(TextExpr(it.term, targetField ?: sourceField, statsField)).weighted(it.score) })
+    fun toQExpr(k: Int, scorer: (TextExpr)-> QExpr = { DirQLExpr(it) }, targetField: String? = null, statsField: String? = null) = SumExpr(toTerms(k).map { scorer(TextExpr(it.term, targetField ?: sourceField, statsField)).weighted(it.score) })
 }
 

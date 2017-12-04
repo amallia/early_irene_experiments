@@ -3,6 +3,7 @@ package edu.umass.cics.ciir.iltr
 import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.chai.mean
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.lang.QExpr
 import edu.umass.cics.ciir.irene.scoring.PositionsIter
 import edu.umass.cics.ciir.irene.scoring.countOrderedWindows
 import edu.umass.cics.ciir.irene.scoring.countUnorderedWindows

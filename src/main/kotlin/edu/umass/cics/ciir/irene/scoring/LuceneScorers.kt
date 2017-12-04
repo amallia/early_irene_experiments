@@ -2,6 +2,8 @@ package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.chai.IntList
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.lang.IreneQueryLanguage
+import edu.umass.cics.ciir.irene.lang.QExpr
 import org.apache.lucene.index.*
 import org.apache.lucene.search.*
 import java.util.*

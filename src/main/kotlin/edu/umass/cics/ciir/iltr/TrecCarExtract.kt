@@ -5,6 +5,7 @@ import edu.umass.cics.ciir.chai.StreamingStats
 import edu.umass.cics.ciir.chai.smartDoLines
 import edu.umass.cics.ciir.chai.smartPrint
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QuerySetJudgments
@@ -125,11 +126,11 @@ fun main(args: Array<String>) {
 
                     // Retrieval models.
                     feature_exprs.putAll(hashMapOf<String, QExpr>(
-                            Pair("norm:$fieldName:bm25", UnigramRetrievalModel(qterms, {BM25Expr(it)}, fieldName, statsField)),
+                            Pair("norm:$fieldName:bm25", UnigramRetrievalModel(qterms, { BM25Expr(it) }, fieldName, statsField)),
                             Pair("norm:$fieldName:LM-dir", QueryLikelihood(qterms, fieldName, statsField)),
-                            Pair("norm:$fieldName:LM-abs", UnigramRetrievalModel(qterms, {AbsoluteDiscountingQLExpr(it)}, fieldName, statsField)),
-                            Pair("norm:$fieldName:fdm-stop", FullDependenceModel(qterms, field = fieldName, statsField=statsField, stopwords = inqueryStop)),
-                            Pair("norm:$fieldName:sdm-stop", SequentialDependenceModel(qterms, field = fieldName, statsField=statsField, stopwords = inqueryStop))
+                            Pair("norm:$fieldName:LM-abs", UnigramRetrievalModel(qterms, { AbsoluteDiscountingQLExpr(it) }, fieldName, statsField)),
+                            Pair("norm:$fieldName:fdm-stop", FullDependenceModel(qterms, field = fieldName, statsField = statsField, stopwords = inqueryStop)),
+                            Pair("norm:$fieldName:sdm-stop", SequentialDependenceModel(qterms, field = fieldName, statsField = statsField, stopwords = inqueryStop))
                     ).mapValues { (_,q) -> q.toRRExpr(env) })
 
                     feature_exprs.putAll(hashMapOf<String, RRExpr>(

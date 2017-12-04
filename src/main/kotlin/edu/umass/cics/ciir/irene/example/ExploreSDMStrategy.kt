@@ -3,6 +3,7 @@ package edu.umass.cics.ciir.irene.example
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.IreneQueryScorer
 import edu.umass.cics.ciir.irene.scoring.MultiEvalNode
 import edu.umass.cics.ciir.irene.scoring.QueryEvalNode
@@ -19,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * Imagine a [TextExpr] that you wanted to always return zero, for some reason. Used to estimate the lower-bound of SDM's dependencies.
  */
 fun MissingTermScoreHack(t: String, env: RREnv): QExpr {
-    return ConstCountExpr(0, LengthsExpr(env.defaultField, stats=env.getStats(t)))
+    return ConstCountExpr(0, LengthsExpr(env.defaultField, stats = env.getStats(t)))
 }
 
 fun MakeCheapWorstQuery(q: QExpr): QExpr = when(q) {
@@ -45,8 +46,8 @@ fun MakeCheapWorstQuery(q: QExpr): QExpr = when(q) {
     is NeverMatchExpr -> NeverMatchExpr(MakeCheapWorstQuery(q.child))
     is DirQLExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
     is WeightExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
-    is AbsoluteDiscountingQLExpr-> q.copy(child=MakeCheapWorstQuery(q.child))
-    is BM25Expr  -> TODO()
+    is AbsoluteDiscountingQLExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
+    is BM25Expr -> TODO()
     is CountToScoreExpr -> TODO()
     is BoolToScoreExpr -> TODO()
     is CountToBoolExpr -> TODO()
