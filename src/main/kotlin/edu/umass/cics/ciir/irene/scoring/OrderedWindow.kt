@@ -2,6 +2,8 @@ package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.irene.CountStats
 import edu.umass.cics.ciir.irene.CountStatsStrategy
+import edu.umass.cics.ciir.irene.SmallerCountExpr
+import edu.umass.cics.ciir.irene.UnorderedWindowCeilingExpr
 
 /**
  *
@@ -51,10 +53,10 @@ fun countOrderedWindows(arrayIterators: List<PositionsIter>, step: Int): Int {
 fun countUnorderedWindows(iters: List<PositionsIter>, width: Int): Int {
     var hits = 0
 
-    var max = iters.get(0).position + 1
-    var min = iters.get(0).position
+    var max = iters[0].position + 1
+    var min = iters[0].position
     for (i in 1 until iters.size) {
-        val pos = iters.get(i).position
+        val pos = iters[i].position
         max = Math.max(max, pos + 1)
         min = Math.min(min, pos)
     }
@@ -62,6 +64,7 @@ fun countUnorderedWindows(iters: List<PositionsIter>, width: Int): Int {
     while (true) {
         val match = (max - min <= width) || width == -1
         if (match) {
+            //println("$min -> $max")
             hits++
         }
 
@@ -146,8 +149,8 @@ class UnorderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNod
     }
 }
 
-// For estimating the ceiling of UnorderedWindow and OrderedWindow nodes.
-class MinCountWindow(val stats: CountStatsStrategy, children: List<CountEvalNode>) : AndEval<CountEvalNode>(children), CountEvalNode {
+/** From [SmallerCountExpr], for estimating the ceiling of [OrderedWindow] nodes. */
+class SmallerCountWindow(val stats: CountStatsStrategy, children: List<CountEvalNode>) : AndEval<CountEvalNode>(children), CountEvalNode {
     init {
         assert(children.size > 1)
     }
@@ -165,3 +168,25 @@ class MinCountWindow(val stats: CountStatsStrategy, children: List<CountEvalNode
     override fun length(doc: Int): Int = children[0].length(doc)
 }
 
+/** From [UnorderedWindowCeilingExpr], for estimating the ceiling of [UnorderedWindow] nodes.
+ * Consider the terms (if two) as nodes in a bi-partite set, with counts p and q.
+ * Therefore, the maximum possible output is the maximum number of nodes, or p * q.
+ */
+class UnorderedWindowCeiling(val stats: CountStatsStrategy, val width: Int, children: List<CountEvalNode>) : AndEval<CountEvalNode>(children), CountEvalNode {
+    init {
+        assert(children.size > 1)
+    }
+    override fun count(doc: Int): Int {
+        if (!matches(doc)) return 0
+        var max = 0
+        var min = Integer.MAX_VALUE
+        for (c in children) {
+            val x = c.count(doc)
+            if (x > max) max = x
+            if (x < min) min = x
+        }
+        return max * minOf(min, width)
+    }
+    override fun getCountStats(): CountStats = stats.get()
+    override fun length(doc: Int): Int = children[0].length(doc)
+}

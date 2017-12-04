@@ -8,10 +8,10 @@ fun createOptimizedMovementExpr(q: QExpr): QExpr = when(q) {
     is SynonymExpr, is OrExpr, is CombineExpr, is MultExpr, is MaxExpr, is MultiExpr -> OrExpr(q.children.map { createOptimizedMovementExpr(it) })
 
     // Leaves:
-    is TextExpr, is LuceneExpr, is LengthsExpr, is ConstCountExpr, is ConstBoolExpr, is ConstScoreExpr -> q.copy()
+    is WhitelistMatchExpr, is TextExpr, is LuceneExpr, is LengthsExpr, is ConstCountExpr, is ConstBoolExpr, is ConstScoreExpr -> q.copy()
 
     // AND nodes:
-    is AndExpr, is MinCountExpr, is OrderedWindowExpr, is UnorderedWindowExpr -> AndExpr(q.children.map { createOptimizedMovementExpr(it) })
+    is AndExpr, is UnorderedWindowCeilingExpr, is SmallerCountExpr, is OrderedWindowExpr, is UnorderedWindowExpr -> AndExpr(q.children.map { createOptimizedMovementExpr(it) })
 
     // Transformers are
     is CountToScoreExpr, is BoolToScoreExpr, is CountToBoolExpr, is AbsoluteDiscountingQLExpr, is BM25Expr, is WeightExpr, is DirQLExpr -> createOptimizedMovementExpr(q.trySingleChild)
@@ -22,7 +22,6 @@ fun createOptimizedMovementExpr(q: QExpr): QExpr = when(q) {
     // Don't translate these subtrees, as their names give away their behavior! No point in instantiating them.
     is AlwaysMatchExpr -> AlwaysMatchExpr(ConstBoolExpr(true))
     is NeverMatchExpr -> NeverMatchExpr(ConstBoolExpr(false))
-    is WhitelistMatchExpr -> q.copy(child=ConstBoolExpr(true))
 }
 
 fun simplifyBooleans(q: QExpr): QExpr {
@@ -59,7 +58,7 @@ fun simplifyBooleanExpr(q: QExpr): Boolean {
     // And remove duplicates: X(a b c a a) -> X(a b c) for AND and OR.
     // (and a few other operators)
     when (q) {
-        is AndExpr, is OrExpr, is SynonymExpr, is MaxExpr, is MinCountExpr -> {
+        is AndExpr, is OrExpr, is SynonymExpr, is MaxExpr, is SmallerCountExpr -> {
             val uniq= q.children.toSet()
             if (uniq.size < q.children.size) {
                 changed = true

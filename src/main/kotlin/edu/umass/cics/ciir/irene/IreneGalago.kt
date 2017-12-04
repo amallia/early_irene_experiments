@@ -89,7 +89,7 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
         is LuceneExpr -> error("Can never support LuceneExpr -> Galago Query.")
         is MultiExpr -> error("Can not support MultiExpr as Galago Query without custom ProcessingModel.")
         is AbsoluteDiscountingQLExpr -> TODO()
-        is MinCountExpr -> TODO()
+        is UnorderedWindowCeilingExpr, is SmallerCountExpr -> TODO()
         // TODO, allow stats-hacking:
         is LengthsExpr -> GExpr("lengths").apply { setf("field", q.statsField) }
         is AlwaysMatchExpr -> TODO()

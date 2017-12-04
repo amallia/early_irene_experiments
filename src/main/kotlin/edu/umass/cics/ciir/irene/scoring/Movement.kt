@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.UnorderedWindowCeilingExpr
 import org.apache.lucene.index.Term
 import org.apache.lucene.search.DocIdSetIterator
 
@@ -33,14 +34,22 @@ private fun createMoverRec(q: QExpr, ctx: IQContext) : QueryMover = when(q) {
     is LengthsExpr -> AlwaysMatchMover(q.toString(), ctx.numDocs())
 
 // AND nodes:
-    is AndExpr, is MinCountExpr, is OrderedWindowExpr, is UnorderedWindowExpr -> createAndMover(q.children.map { createMoverRec(it, ctx) }, ctx.numDocs())
+    is UnorderedWindowCeilingExpr, is SmallerCountExpr,
+    is AndExpr, is OrderedWindowExpr, is UnorderedWindowExpr -> createAndMover(q.children.map { createMoverRec(it, ctx) }, ctx.numDocs())
 
 // Transformers are straight-forward:
     is CountToScoreExpr, is BoolToScoreExpr, is CountToBoolExpr, is AbsoluteDiscountingQLExpr, is BM25Expr, is WeightExpr, is DirQLExpr -> createMoverRec(q.trySingleChild, ctx)
 
 // NOTE: Galago semantics, only look at cond. This is not an AND like you might think.
     is RequireExpr -> createMoverRec(q.cond, ctx)
-    is WhitelistMatchExpr -> TODO()
+    is WhitelistMatchExpr -> {
+        val matching = ctx.selectRelativeDocIds(q.docIdentifiers!!)
+        if (matching.isEmpty()) {
+            NeverMatchMover("Whitelist.Empty")
+        } else {
+            IntSetMover(matching)
+        }
+    }
 }
 
 /** Borrow this constant locally. */
@@ -78,6 +87,15 @@ interface QueryMover {
             advance(target)
             assert(docID() >= target)
         }
+    }
+
+    fun collectList(): List<Int> {
+        val output = ArrayList<Int>(this.estimateDF().toInt())
+        while(!this.done) {
+            output.add(docID())
+            nextDoc()
+        }
+        return output
     }
 }
 
@@ -247,3 +265,24 @@ data class LuceneDocsMover(val name: String, val iter: DocIdSetIterator) : Query
     }
 
 }
+
+class IntSetMover(xs: Collection<Int>): QueryMover {
+    val ordered = (xs).sorted()
+    var pos = 0
+    override val done: Boolean get() = pos >= ordered.size
+    override fun docID(): Int = if (done) NO_MORE_DOCS else ordered[pos]
+    override fun matches(doc: Int): Boolean {
+        syncTo(doc)
+        if (done) return false
+        return ordered[pos] == doc
+    }
+    override fun estimateDF(): Long = ordered.size.toLong()
+    override fun advance(target: Int): Int {
+        if (done) return NO_MORE_DOCS
+        while(!done && ordered[pos] < target) {
+            pos++
+        }
+        return docID()
+    }
+}
+

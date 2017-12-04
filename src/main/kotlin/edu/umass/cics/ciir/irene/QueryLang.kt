@@ -218,15 +218,14 @@ data class NeverMatchExpr(override var child: QExpr) : SingleChildExpr() {
     override fun copy() = NeverMatchExpr(child.copy())
 }
 
-data class WhitelistMatchExpr(override var child: QExpr, var docNames: Set<String>? = null, var docIdentifiers: List<Int>? = null) : SingleChildExpr() {
+data class WhitelistMatchExpr(var docNames: Set<String>? = null, var docIdentifiers: List<Int>? = null) : LeafExpr() {
     override fun applyEnvironment(env: RREnv) {
         if (docIdentifiers == null) {
             if (docNames == null) error("WhitelistMatchExpr must have *either* docNames or docIdentifiers to start.")
             docIdentifiers = env.lookupNames(docNames!!)
         }
     }
-
-    override fun copy() = WhitelistMatchExpr(child, docNames, docIdentifiers)
+    override fun copy() = WhitelistMatchExpr(docNames, docIdentifiers)
 }
 
 data class LengthsExpr(var statsField: String?, var stats: CountStats? = null) : LeafExpr() {
@@ -297,13 +296,18 @@ data class MaxExpr(override var children: List<QExpr>) : OpExpr() {
     override fun copy() = MaxExpr(copyChildren())
 }
 
-data class MinCountExpr(override var children: List<QExpr>): OpExpr() {
-    override fun copy() = MinCountExpr(copyChildren())
+/** For estimating the lower-bound of an [OrderedWindowExpr]. When all terms occur, which is smallest? */
+data class SmallerCountExpr(override var children: List<QExpr>): OpExpr() {
+    override fun copy() = SmallerCountExpr(copyChildren())
+}
+/** For estimating the ceiling of an [UnorderedWindowExpr]. When all terms occur, which is biggest? */
+data class UnorderedWindowCeilingExpr(override var children: List<QExpr>, var width: Int=8): OpExpr() {
+    override fun copy() = UnorderedWindowCeilingExpr(copyChildren())
 }
 data class OrderedWindowExpr(override var children: List<QExpr>, var step: Int=1) : OpExpr() {
     override fun copy() = OrderedWindowExpr(copyChildren(), step)
 }
-data class UnorderedWindowExpr(override var children: List<QExpr>, var width: Int=4) : OpExpr() {
+data class UnorderedWindowExpr(override var children: List<QExpr>, var width: Int=8) : OpExpr() {
     override fun copy() = UnorderedWindowExpr(copyChildren(), width)
 }
 
@@ -415,7 +419,7 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
         is WeightExpr, is CombineExpr, is MultExpr, is MaxExpr -> {
             DataNeeded.SCORES
         }
-        is MinCountExpr -> {
+        is UnorderedWindowCeilingExpr, is SmallerCountExpr -> {
             if (q.children.size <= 1) {
                 throw TypeCheckError("Need more than 1 child for an count summary Expr, e.g. $q")
             }

@@ -76,7 +76,7 @@ abstract class RREnv {
         is ConstCountExpr -> RRConst(this, q.x.toDouble())
         is ConstBoolExpr -> RRConst(this, if (q.x) 1.0 else 0.0)
         is MultiExpr -> TODO()
-        is MinCountExpr -> TODO()
+        is UnorderedWindowCeilingExpr, is SmallerCountExpr -> TODO()
         is LengthsExpr -> RRDocLength(this, q.statsField!!)
 
         // These movement hints mean nothing in RR context.

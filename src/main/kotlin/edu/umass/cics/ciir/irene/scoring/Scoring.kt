@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.*
+import gnu.trove.set.hash.TIntHashSet
 import org.apache.lucene.index.Term
 import org.apache.lucene.search.DocIdSetIterator
 import org.apache.lucene.search.Explanation
@@ -35,8 +36,12 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is UnorderedWindowExpr -> UnorderedWindow(
             computeCountStats(q, ctx),
             q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.width)
-    is MinCountExpr -> MinCountWindow(
+    is SmallerCountExpr -> SmallerCountWindow(
             computeCountStats(q, ctx),
+            q.children.map { exprToEval(it, ctx) as CountEvalNode })
+    is edu.umass.cics.ciir.irene.UnorderedWindowCeilingExpr -> UnorderedWindowCeiling(
+            computeCountStats(q, ctx),
+            q.width,
             q.children.map { exprToEval(it, ctx) as CountEvalNode })
     is ConstScoreExpr -> ConstEvalNode(q.x.toFloat())
     is ConstCountExpr -> ConstCountEvalNode(q.x, exprToEval(q.lengths, ctx) as CountEvalNode)
@@ -46,11 +51,11 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is LengthsExpr -> ctx.createLengths(q.statsField!!, q.stats!!)
     is NeverMatchExpr -> FixedMatchEvalNode(false, exprToEval(q.trySingleChild, ctx))
     is AlwaysMatchExpr -> FixedMatchEvalNode(true, exprToEval(q.trySingleChild, ctx))
-    is WhitelistMatchExpr -> TODO()
+    is WhitelistMatchExpr -> WhitelistMatchEvalNode(TIntHashSet(ctx.selectRelativeDocIds(q.docIdentifiers!!)))
 }
 
 fun approxStats(q: QExpr, method: String): CountStatsStrategy {
-    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is MinCountExpr) {
+    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is SmallerCountExpr || q is UnorderedWindowCeilingExpr) {
         val cstats = q.children.map { c ->
             if (c is TextExpr) {
                 c.stats!!
@@ -73,7 +78,7 @@ fun approxStats(q: QExpr, method: String): CountStatsStrategy {
 }
 
 fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
-    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is MinCountExpr) {
+    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is SmallerCountExpr || q is edu.umass.cics.ciir.irene.UnorderedWindowCeilingExpr) {
         val method = ctx.env.estimateStats ?: return LazyCountStats(q.copy(), ctx.env)
         return approxStats(q, method)
     } else {
@@ -105,6 +110,19 @@ private class FixedMatchEvalNode(val matchAnswer: Boolean, override val child: Q
         Explanation.match(child.score(doc), "AlwaysMatchNode", child.explain(doc))
     } else {
         Explanation.noMatch("NeverMatchNode", child.explain(doc))
+    }
+}
+
+private class WhitelistMatchEvalNode(val allowed: TIntHashSet): QueryEvalNode {
+    val N = allowed.size().toLong()
+    override fun estimateDF(): Long = N
+    override fun matches(doc: Int): Boolean = allowed.contains(doc)
+    override fun score(doc: Int): Float = if (matches(doc)) { 1f } else { 0f }
+    override fun count(doc: Int): Int = if (matches(doc)) { 1 } else { 0 }
+    override fun explain(doc: Int): Explanation = if (matches(doc)) {
+        Explanation.match(score(doc), "WhitelistMatchEvalNode N=$N")
+    } else {
+        Explanation.noMatch("WhitelistMatchEvalNode N=$N")
     }
 }
 
@@ -225,6 +243,20 @@ class MultiEvalNode(children: List<QueryEvalNode>, val names: List<String>) : Or
     val primary: Int = Math.max(0, names.indexOf("primary"))
     override fun count(doc: Int): Int = children[primary].count(doc)
     override fun score(doc: Int): Float = children[primary].score(doc)
+
+    override fun explain(doc: Int): Explanation {
+        val expls = children.map { it.explain(doc) }
+
+        val namedChildExpls = names.zip(expls).map { (name, childExpl) ->
+            if (childExpl.isMatch) {
+                Explanation.match(childExpl.value, name, childExpl)
+            } else {
+                Explanation.noMatch("${childExpl.value} for name", childExpl)
+            }
+        }
+
+        return Explanation.noMatch("MultiEvalNode ${names}", namedChildExpls)
+    }
 }
 
 /**
@@ -374,10 +406,10 @@ private class WeightedEval(override val child: QueryEvalNode, val weight: Float)
     override fun count(doc: Int): Int = error("Weighted($weight).count()")
     override fun explain(doc: Int): Explanation {
         val orig = child.score(doc)
-        if (child.matches(doc)) {
-            return Explanation.match(weight*orig, "Weighted@$doc = $weight * $orig")
+        return if (child.matches(doc)) {
+            Explanation.match(weight*orig, "Weighted@$doc = $weight * $orig", child.explain(doc))
         } else {
-            return Explanation.noMatch("Weighted.Miss@$doc (${weight*orig} = $weight * $orig)")
+            Explanation.noMatch("Weighted.Miss@$doc (${weight*orig} = $weight * $orig)", child.explain(doc))
         }
     }
 }

@@ -122,4 +122,12 @@ class IntList(var data: IntArray, var fill: Int = data.size) : MutableList<Int>,
 		(0 until fill).forEach {i -> fn(data[i]) }
 	}
 
+    fun search(doc: Int): Boolean {
+		if (fill < 32) {
+			forEach { if (it == doc) return true }
+			return false
+		}
+		return Arrays.binarySearch(data, 0, fill, doc) >= 0
+	}
+
 }

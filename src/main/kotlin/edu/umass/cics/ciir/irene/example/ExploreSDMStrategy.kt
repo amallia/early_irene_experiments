@@ -27,7 +27,6 @@ fun main(args: Array<String>) {
     val sdm_odw = 0.15
     val sdm_uww = 0.05
     val poolTarget = 1000
-    val meanW = 1.0 / 3.0
 
     val baseTimeStats = StreamingStats()
     val approxTimeStats = StreamingStats()
@@ -41,26 +40,28 @@ fun main(args: Array<String>) {
             // Optimization does nothing for queries with single term.
             if (qterms.size <= 1) return@forEach
 
-            val ql = QueryLikelihood(qterms).weighted(sdm_uw).weighted(meanW)
-            val bestCaseWindowEstimators = ArrayList<QExpr>()
+            val ql = QueryLikelihood(qterms).weighted(sdm_uw)
+            val bestCaseOdWindows = ArrayList<QExpr>()
+            val bestCaseUwWindows = ArrayList<QExpr>()
             val worstCaseWindowEstimators = ArrayList<QExpr>()
             val odWindows = ArrayList<QExpr>()
             val uwWindows = ArrayList<QExpr>()
             qterms.forEachSeqPair { lhs, rhs ->
-                bestCaseWindowEstimators.add(DirQLExpr(MinCountExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
+                bestCaseOdWindows.add(DirQLExpr(SmallerCountExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
+                bestCaseUwWindows.add(DirQLExpr(UnorderedWindowCeilingExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
                 worstCaseWindowEstimators.add(DirQLExpr(
-                        MinCountExpr(listOf(lhs, rhs).map { MissingTermScoreHack(it, index.env) })
+                        // Use smaller-count expr in both places here, because we're hacking all counts to zero to just use statistics.
+                        SmallerCountExpr(listOf(lhs, rhs).map { MissingTermScoreHack(it, index.env) })
                 ))
                 odWindows.add(DirQLExpr(OrderedWindowExpr(listOf(lhs, rhs).map { TextExpr(it) })))
                 uwWindows.add(DirQLExpr(UnorderedWindowExpr(listOf(lhs, rhs).map { TextExpr(it) })))
             }
-            val baseExpr = MeanExpr(bestCaseWindowEstimators)
-            val odEst = baseExpr.copy().weighted(sdm_odw).weighted(meanW)
-            val uwEst = baseExpr.copy().weighted(sdm_uww).weighted(meanW)
+            val odEst = MeanExpr(bestCaseOdWindows).weighted(sdm_odw)
+            val uwEst = MeanExpr(bestCaseUwWindows).weighted(sdm_uww)
 
             val badBaseExpr = MeanExpr(worstCaseWindowEstimators)
-            val odEstBad = badBaseExpr.copy().weighted(sdm_odw).weighted(meanW)
-            val uwEstBad = badBaseExpr.copy().weighted(sdm_uww).weighted(meanW)
+            val odEstBad = badBaseExpr.copy().weighted(sdm_odw)
+            val uwEstBad = badBaseExpr.copy().weighted(sdm_uww)
 
             val bestCase = SumExpr(odEst, uwEst)
             val maxMinExpr = MultiExpr(mapOf(
@@ -68,8 +69,8 @@ fun main(args: Array<String>) {
                     "best" to bestCase,
                     "worst" to SumExpr(odEstBad, uwEstBad),
                     "true" to SumExpr(
-                            MeanExpr(odWindows).weighted(sdm_odw).weighted(meanW),
-                            MeanExpr(uwWindows).weighted(sdm_uww).weighted(meanW))
+                            MeanExpr(odWindows).weighted(sdm_odw),
+                            MeanExpr(uwWindows).weighted(sdm_uww))
             ))
 
             val sdmQ = SequentialDependenceModel(qterms)
@@ -79,15 +80,37 @@ fun main(args: Array<String>) {
 
             val expected = expectedDocs.scoreDocs.mapTo(HashSet()) { it.doc }
 
+            val trueScores = expectedDocs.scoreDocs.map { Pair(it.doc, it.score) }.associate { it }
+
             val lq = index.prepare(maxMinExpr)
             val (approxTime, results) = timed { index.searcher.search(lq, MaxMinCollectorManager(maxMinExpr, poolTarget)) }
             approxTimeStats.push(approxTime)
-            //println("$qid $qterms ${results.totalHits} -> ${results.totalOffered} -> ${results.prunedHits.size} -> ${poolTarget}")
+            println("$qid $qterms ${results.totalHits} -> ${results.totalOffered} -> ${results.prunedHits.size} -> ${poolTarget}")
             //totalOffered.push(results.totalOffered)
             //totalPlausible.push(results.prunedHits.size)
 
             val returned = results.prunedHits.mapTo(HashSet()) { it.id }
             //val returned = results.scoreDocs.mapTo(HashSet()) { it.doc }
+
+            for (mmd in results.prunedHits) {
+                val max = mmd.maxScore
+                val min = mmd.minScore
+                val truth = trueScores[mmd.id] ?: continue
+                var bad = false
+                if (truth > max) {
+                    println("Max inaccurate: $mmd $truth")
+                    bad = true
+                }
+                if (truth < min) {
+                    println("Min inaccurate: $mmd $truth")
+                    bad = true
+                }
+                if (bad) {
+                    println(index.explain(sdmQ, mmd.id))
+                    println(index.explain(maxMinExpr, mmd.id))
+                    error("Badness!")
+                }
+            }
 
             val recall = Recall(expected, returned)
             println("Recall vs. True SDM: $recall ... ${recall.value}")
@@ -110,7 +133,7 @@ data class MaxMinScoreDoc(val minScore: Float, val baseScore: Float, val maxScor
 data class MaxMinResults(val totalHits: Int, val totalOffered: Long, val prunedHits: List<MaxMinScoreDoc>) {
     var exactResults: TopDocs? = null
 }
-class MaxMinCollectorManager(val mq: MultiExpr, val poolSize: Int): CollectorManager<MaxMinCollectorManager.MaxMinCollector, MaxMinResults> {
+class MaxMinCollectorManager(val mq: MultiExpr, val poolSize: Int, val epsilon: Float = 0.00001f): CollectorManager<MaxMinCollectorManager.MaxMinCollector, MaxMinResults> {
     override fun reduce(collectors: Collection<MaxMinCollector>): MaxMinResults {
         val plausible = ArrayList<MaxMinScoreDoc>()
         for (c in collectors) {
@@ -168,8 +191,10 @@ class MaxMinCollectorManager(val mq: MultiExpr, val poolSize: Int): CollectorMan
             val base = baseExpr.score(docNo)
             val best = bestExpr.score(docNo)
             val worst = worstExpr.score(docNo)
-            val max = base + best
-            val min = base + worst
+
+            // Throw in an epsilon here to avoid rounding/floating point errors causing loss.
+            val max = base + best + epsilon
+            val min = base + worst - epsilon
 
             if (java.lang.Float.isInfinite(min)) {
                 println(worstExpr.explain(docNo))

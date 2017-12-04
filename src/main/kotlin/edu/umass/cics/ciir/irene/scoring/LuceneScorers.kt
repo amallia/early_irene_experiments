@@ -26,7 +26,7 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
         return create(term, needed, stats, getLengths(term.field()))
     }
 
-    private fun selectRelativeDocIds(ids: IntList): IntList {
+    fun selectRelativeDocIds(ids: List<Int>): IntList {
         val base = context.docBase
         val limit = base + context.reader().numDocs()
         val output = IntList()
@@ -35,6 +35,7 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
                 output.push(id-base)
             }
         }
+        output.sort()
         return output
     }
 
