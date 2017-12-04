@@ -22,6 +22,7 @@ fun createOptimizedMovementExpr(q: QExpr): QExpr = when(q) {
     // Don't translate these subtrees, as their names give away their behavior! No point in instantiating them.
     is AlwaysMatchExpr -> AlwaysMatchExpr(ConstBoolExpr(true))
     is NeverMatchExpr -> NeverMatchExpr(ConstBoolExpr(false))
+    is WhitelistMatchExpr -> q.copy(child=ConstBoolExpr(true))
 }
 
 fun simplifyBooleans(q: QExpr): QExpr {

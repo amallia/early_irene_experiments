@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.irene.scoring
 
+import edu.umass.cics.ciir.chai.IntList
 import edu.umass.cics.ciir.irene.*
 import org.apache.lucene.index.*
 import org.apache.lucene.search.*
@@ -23,6 +24,18 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
 
     fun create(term: Term, needed: DataNeeded, stats: CountStats): QueryEvalNode {
         return create(term, needed, stats, getLengths(term.field()))
+    }
+
+    private fun selectRelativeDocIds(ids: IntList): IntList {
+        val base = context.docBase
+        val limit = base + context.reader().numDocs()
+        val output = IntList()
+        ids.forEach { id ->
+            if(id >= base && id < limit) {
+                output.push(id-base)
+            }
+        }
+        return output
     }
 
     private fun termCached(term: Term, needed: DataNeeded): Optional<PostingsEnum> {

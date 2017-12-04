@@ -94,6 +94,7 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
         is LengthsExpr -> GExpr("lengths").apply { setf("field", q.statsField) }
         is AlwaysMatchExpr -> TODO()
         is NeverMatchExpr -> TODO()
+        is WhitelistMatchExpr -> TODO()
     }
 }
 

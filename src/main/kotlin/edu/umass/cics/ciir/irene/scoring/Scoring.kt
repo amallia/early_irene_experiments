@@ -46,6 +46,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is LengthsExpr -> ctx.createLengths(q.statsField!!, q.stats!!)
     is NeverMatchExpr -> FixedMatchEvalNode(false, exprToEval(q.trySingleChild, ctx))
     is AlwaysMatchExpr -> FixedMatchEvalNode(true, exprToEval(q.trySingleChild, ctx))
+    is WhitelistMatchExpr -> TODO()
 }
 
 fun approxStats(q: QExpr, method: String): CountStatsStrategy {

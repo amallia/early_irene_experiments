@@ -40,6 +40,7 @@ private fun createMoverRec(q: QExpr, ctx: IQContext) : QueryMover = when(q) {
 
 // NOTE: Galago semantics, only look at cond. This is not an AND like you might think.
     is RequireExpr -> createMoverRec(q.cond, ctx)
+    is WhitelistMatchExpr -> TODO()
 }
 
 /** Borrow this constant locally. */

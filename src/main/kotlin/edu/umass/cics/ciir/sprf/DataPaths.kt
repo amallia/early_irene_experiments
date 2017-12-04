@@ -16,7 +16,7 @@ import java.net.InetAddress
 
 fun notImpl(msg: String): Nothing = throw RuntimeException("notImpl: $msg")
 fun isSydney(host: String): Boolean {
-    return host == "sydney.cs.umass.edu" || host.startsWith("sydney") || host.endsWith("sydney")
+    return host == "sydney.cs.umass.edu" || host.startsWith("sydney") || host.endsWith("sydney") || host.startsWith("compute-")
 }
 fun mapHost(host: String): String {
     if (isSydney(host)) {

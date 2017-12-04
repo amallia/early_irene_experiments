@@ -10,7 +10,7 @@ import org.lemurproject.galago.utility.Parameters
  * @author jfoley
  */
 fun main(args: Array<String>) {
-    val argp = Parameters.create()
+    val argp = Parameters.parseArgs(args)
     InfoStream.setDefault(PrintStreamInfoStream(System.out))
 
     val targetSegments = argp.get("targetSegments", 8)
