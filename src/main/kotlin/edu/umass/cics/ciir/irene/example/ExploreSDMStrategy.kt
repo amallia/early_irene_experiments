@@ -21,6 +21,38 @@ import java.util.concurrent.atomic.AtomicInteger
 fun MissingTermScoreHack(t: String, env: RREnv): QExpr {
     return ConstCountExpr(0, LengthsExpr(env.defaultField, stats=env.getStats(t)))
 }
+
+fun MakeCheapWorstQuery(q: QExpr): QExpr = when(q) {
+    is MultiExpr -> MultiExpr(q.namedExprs.mapValues { (_, vq) -> MakeCheapWorstQuery(vq) })
+    is ConstCountExpr -> TODO()
+    is ConstBoolExpr -> TODO()
+    is LengthsExpr -> TODO()
+    is TextExpr -> TODO()
+    is LuceneExpr -> TODO()
+    is ConstScoreExpr -> q.copy()
+    is AndExpr -> TODO()
+    is OrExpr -> TODO()
+    is CombineExpr -> TODO()
+    is MultExpr -> TODO()
+    is MaxExpr -> TODO()
+    is MinCountExpr -> TODO()
+    is SynonymExpr -> q.copy(children = q.children.map { MakeCheapWorstQuery(it) })
+
+    is UnorderedWindowExpr -> TODO()
+    is OrderedWindowExpr -> MinCountExpr(q.children.map { MakeCheapWorstQuery(it) })
+
+    is AlwaysMatchExpr -> NeverMatchExpr(MakeCheapWorstQuery(q.child))
+    is NeverMatchExpr -> NeverMatchExpr(MakeCheapWorstQuery(q.child))
+    is DirQLExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
+    is WeightExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
+    is AbsoluteDiscountingQLExpr-> q.copy(child=MakeCheapWorstQuery(q.child))
+    is BM25Expr  -> TODO()
+    is CountToScoreExpr -> TODO()
+    is BoolToScoreExpr -> TODO()
+    is CountToBoolExpr -> TODO()
+    is RequireExpr -> TODO()
+}
+
 fun main(args: Array<String>) {
     val dataset = DataPaths.get("gov2")
     val sdm_uw = 0.8
