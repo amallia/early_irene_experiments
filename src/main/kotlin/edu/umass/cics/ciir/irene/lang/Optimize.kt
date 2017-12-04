@@ -10,7 +10,7 @@ import edu.umass.cics.ciir.sprf.incr
  * @author jfoley.
  */
 fun simplify(q: QExpr): QExpr {
-    val pq = q.copy()
+    val pq = q.deepCopy()
 
     // combine weights and boolean nodes until query stops changing.
     var changed = true

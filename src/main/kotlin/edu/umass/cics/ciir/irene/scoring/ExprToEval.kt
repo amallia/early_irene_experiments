@@ -36,6 +36,9 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is UnorderedWindowExpr -> UnorderedWindow(
             computeCountStats(q, ctx),
             q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.width)
+    is ProxExpr -> ProxWindow(
+            computeCountStats(q, ctx),
+            q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.width)
     is SmallerCountExpr -> SmallerCountWindow(
             computeCountStats(q, ctx),
             q.children.map { exprToEval(it, ctx) as CountEvalNode })
@@ -52,11 +55,10 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is NeverMatchExpr -> FixedMatchEvalNode(false, exprToEval(q.trySingleChild, ctx))
     is AlwaysMatchExpr -> FixedMatchEvalNode(true, exprToEval(q.trySingleChild, ctx))
     is WhitelistMatchExpr -> WhitelistMatchEvalNode(TIntHashSet(ctx.selectRelativeDocIds(q.docIdentifiers!!)))
-    is ProxExpr -> TODO()
 }
 
 fun approxStats(q: QExpr, method: String): CountStatsStrategy {
-    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is SmallerCountExpr || q is UnorderedWindowCeilingExpr) {
+    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is SmallerCountExpr || q is UnorderedWindowCeilingExpr || q is ProxExpr) {
         val cstats = q.children.map { c ->
             if (c is TextExpr) {
                 c.stats!!
@@ -69,8 +71,8 @@ fun approxStats(q: QExpr, method: String): CountStatsStrategy {
             }
         }
         return when(method) {
-            "min" -> MinEstimatedCountStats(q.copy(), cstats)
-            "prob" -> ProbEstimatedCountStats(q.copy(), cstats)
+            "min" -> MinEstimatedCountStats(q.deepCopy(), cstats)
+            "prob" -> ProbEstimatedCountStats(q.deepCopy(), cstats)
             else -> TODO("estimateStats strategy = $method")
         }
     } else {
@@ -79,8 +81,8 @@ fun approxStats(q: QExpr, method: String): CountStatsStrategy {
 }
 
 fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
-    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is SmallerCountExpr || q is UnorderedWindowCeilingExpr) {
-        val method = ctx.env.estimateStats ?: return LazyCountStats(q.copy(), ctx.env)
+    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is SmallerCountExpr || q is UnorderedWindowCeilingExpr || q is ProxExpr) {
+        val method = ctx.env.estimateStats ?: return LazyCountStats(q.deepCopy(), ctx.env)
         return approxStats(q, method)
     } else {
         TODO("computeCountStats($q)")

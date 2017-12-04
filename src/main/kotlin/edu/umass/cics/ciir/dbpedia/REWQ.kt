@@ -1,8 +1,8 @@
 package edu.umass.cics.ciir.dbpedia
 
 import edu.umass.cics.ciir.chai.normalize
-import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.toQueryResults
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluators
@@ -75,9 +75,7 @@ fun main(args: Array<String>) {
                 "prms" -> MeanExpr(qterms.map { term ->
                     val weights: Map<String, Double> = fields.map { field ->
                         val stats = index.getStats(term, field)
-                        if (stats == null) {
-                            null
-                        } else Pair(field, stats.nonzeroCountProbability())
+                        Pair(field, stats.nonzeroCountProbability())
                     }.filterNotNull().associate { it }.normalize()
 
                     MeanExpr(weights.map { (field, weight) ->

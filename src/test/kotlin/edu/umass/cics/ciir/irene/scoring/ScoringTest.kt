@@ -142,7 +142,7 @@ class ScoringTest {
         val index = resource.index!!
         val bgStats = index.galago.getCollectionStatistics(GExpr("lengths"))
         index.terms.forEach { term ->
-            val istats = index.irene.getStats(term)!!
+            val istats = index.irene.getStats(term)
             val gstats = (index.galago.createIterator(pmake {}, GExpr("counts", term)) as CountIterator).calculateStatistics()
             //println(gstats)
             Assert.assertEquals("cf $term", gstats.nodeFrequency, istats.cf)
@@ -160,7 +160,7 @@ class ScoringTest {
             val odi = OrderedWindowExpr(listOf(TextExpr(t1), TextExpr(t2)))
             val odg = odi.toGalago(index.env)
             //val odg = galagoOd1(listOf(t1, t2));
-            val istats = index.irene.getStats(odi)!!
+            val istats = index.irene.getStats(odi)
             val gstats = index.galago.getNodeStatistics(index.galago.transformQuery(odg, Parameters.create()));
             // Galago does this wrong!
             var df = 0L
@@ -194,7 +194,7 @@ class ScoringTest {
             listOf(3,6,9).forEach { width ->
                 val udi = UnorderedWindowExpr(listOf(TextExpr(t1), TextExpr(t2)), width)
                 val udg = udi.toGalago(index.env)
-                val istats = index.irene.getStats(udi)!!
+                val istats = index.irene.getStats(udi)
                 val gstats = index.galago.getNodeStatistics(index.galago.transformQuery(udg, Parameters.create()));
 
                 val term = "uw:$width($t1 $t2)"

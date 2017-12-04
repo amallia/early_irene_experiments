@@ -2,7 +2,7 @@ package edu.umass.cics.ciir.irene.example
 
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.RREnv
-import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.IreneScoredDoc
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.IreneQueryScorer
 import edu.umass.cics.ciir.irene.scoring.MultiEvalNode
@@ -30,17 +30,17 @@ fun MakeCheapWorstQuery(q: QExpr): QExpr = when(q) {
     is LengthsExpr -> TODO()
     is TextExpr -> TODO()
     is LuceneExpr -> TODO()
-    is ConstScoreExpr -> q.copy()
+    is ConstScoreExpr -> q.deepCopy()
     is AndExpr -> TODO()
     is OrExpr -> TODO()
     is CombineExpr -> TODO()
     is MultExpr -> TODO()
     is MaxExpr -> TODO()
-    is MinCountExpr -> TODO()
+    is SmallerCountExpr -> TODO()
     is SynonymExpr -> q.copy(children = q.children.map { MakeCheapWorstQuery(it) })
 
     is UnorderedWindowExpr -> TODO()
-    is OrderedWindowExpr -> MinCountExpr(q.children.map { MakeCheapWorstQuery(it) })
+    is OrderedWindowExpr -> SmallerCountExpr(q.children.map { MakeCheapWorstQuery(it) })
 
     is AlwaysMatchExpr -> NeverMatchExpr(MakeCheapWorstQuery(q.child))
     is NeverMatchExpr -> NeverMatchExpr(MakeCheapWorstQuery(q.child))
@@ -52,6 +52,9 @@ fun MakeCheapWorstQuery(q: QExpr): QExpr = when(q) {
     is BoolToScoreExpr -> TODO()
     is CountToBoolExpr -> TODO()
     is RequireExpr -> TODO()
+    is WhitelistMatchExpr -> TODO()
+    is UnorderedWindowCeilingExpr -> TODO()
+    is ProxExpr -> TODO()
 }
 
 fun main(args: Array<String>) {
@@ -93,8 +96,8 @@ fun main(args: Array<String>) {
             val uwEst = MeanExpr(bestCaseUwWindows).weighted(sdm_uww)
 
             val badBaseExpr = MeanExpr(worstCaseWindowEstimators)
-            val odEstBad = badBaseExpr.copy().weighted(sdm_odw)
-            val uwEstBad = badBaseExpr.copy().weighted(sdm_uww)
+            val odEstBad = badBaseExpr.deepCopy().weighted(sdm_odw)
+            val uwEstBad = badBaseExpr.deepCopy().weighted(sdm_uww)
 
             val bestCase = SumExpr(odEst, uwEst)
             val maxMinExpr = MultiExpr(mapOf(

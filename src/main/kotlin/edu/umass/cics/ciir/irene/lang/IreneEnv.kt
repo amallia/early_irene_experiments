@@ -1,5 +1,12 @@
 package edu.umass.cics.ciir.irene.lang
 
+import edu.umass.cics.ciir.iltr.RREnv
+import edu.umass.cics.ciir.irene.CountStats
+import edu.umass.cics.ciir.irene.EmptyIndex
+import edu.umass.cics.ciir.irene.IIndex
+import edu.umass.cics.ciir.irene.IreneIndex
+import org.apache.lucene.queryparser.classic.QueryParser
+
 /**
  *
  * @author jfoley.

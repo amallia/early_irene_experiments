@@ -87,7 +87,6 @@ fun closeOrError(c: Closeable): Exception? = try {
 }
 
 fun closeAll(items: List<Closeable>) {
-    var closed = true
     val errors = items.map { closeOrError(it) }
     if (errors.isEmpty()) {
         return

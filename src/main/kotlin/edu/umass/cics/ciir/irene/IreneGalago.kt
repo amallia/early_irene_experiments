@@ -16,7 +16,7 @@ import org.lemurproject.galago.utility.Parameters
  * @author jfoley.
  */
 
-fun TopDocs.toQueryResults(index: IreneIndex) = QueryResults(this.scoreDocs.mapIndexed { i, sdoc ->
+fun TopDocs.toQueryResults(index: IreneIndex, qid: String = "dont-care") = QueryResults(qid, this.scoreDocs.mapIndexed { i, sdoc ->
     val name = index.getDocumentName(sdoc.doc) ?: "null"
     SimpleEvalDoc(name, i+1, sdoc.score.toDouble())
 })
@@ -96,6 +96,7 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
         is AlwaysMatchExpr -> TODO()
         is NeverMatchExpr -> TODO()
         is WhitelistMatchExpr -> TODO()
+        is ProxExpr -> TODO()
     }
 }
 

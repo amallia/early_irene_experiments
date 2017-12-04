@@ -10,10 +10,10 @@ fun createOptimizedMovementExpr(q: QExpr): QExpr = when(q) {
     is SynonymExpr, is OrExpr, is CombineExpr, is MultExpr, is MaxExpr, is MultiExpr -> OrExpr(q.children.map { createOptimizedMovementExpr(it) })
 
     // Leaves:
-    is WhitelistMatchExpr, is TextExpr, is LuceneExpr, is LengthsExpr, is ConstCountExpr, is ConstBoolExpr, is ConstScoreExpr -> q.copy()
+    is WhitelistMatchExpr, is TextExpr, is LuceneExpr, is LengthsExpr, is ConstCountExpr, is ConstBoolExpr, is ConstScoreExpr -> q.deepCopy()
 
     // AND nodes:
-    is AndExpr, is UnorderedWindowCeilingExpr, is SmallerCountExpr, is OrderedWindowExpr, is UnorderedWindowExpr -> AndExpr(q.children.map { createOptimizedMovementExpr(it) })
+    is AndExpr, is ProxExpr, is UnorderedWindowCeilingExpr, is SmallerCountExpr, is OrderedWindowExpr, is UnorderedWindowExpr -> AndExpr(q.children.map { createOptimizedMovementExpr(it) })
 
     // Transformers are
     is CountToScoreExpr, is BoolToScoreExpr, is CountToBoolExpr, is AbsoluteDiscountingQLExpr, is BM25Expr, is WeightExpr, is DirQLExpr -> createOptimizedMovementExpr(q.trySingleChild)
@@ -27,7 +27,7 @@ fun createOptimizedMovementExpr(q: QExpr): QExpr = when(q) {
 }
 
 fun simplifyBooleans(q: QExpr): QExpr {
-    val pq = q.copy()
+    val pq = q.deepCopy()
     // combine weights until query stops changing.
     while(simplifyBooleanExpr(pq)) { }
     return pq

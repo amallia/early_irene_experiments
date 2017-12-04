@@ -1,6 +1,8 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.CountStats
+import edu.umass.cics.ciir.irene.CountStatsStrategy
+import edu.umass.cics.ciir.irene.LazyCountStats
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.approxStats
 import edu.umass.cics.ciir.sprf.inqueryStop
@@ -25,7 +27,7 @@ abstract class RREnv {
     fun statsComputation(q: QExpr): CountStatsStrategy {
         if (q is OrderedWindowExpr || q is UnorderedWindowExpr) {
             if (estimateStats == null || estimateStats == "exact") {
-                return LazyCountStats(q.copy(), this)
+                return LazyCountStats(q.deepCopy(), this)
             } else {
                 return approxStats(q, estimateStats!!)
             }
@@ -82,6 +84,7 @@ abstract class RREnv {
 
         // These movement hints mean nothing in RR context.
         is AlwaysMatchExpr, is NeverMatchExpr, is WhitelistMatchExpr -> fromQExpr(q.trySingleChild)
+        is ProxExpr -> TODO()
     }
 
 
