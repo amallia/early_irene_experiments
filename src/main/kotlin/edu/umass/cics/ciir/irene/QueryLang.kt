@@ -15,6 +15,7 @@ typealias LuceneQuery = org.apache.lucene.search.Query
  * @author jfoley.
  */
 class IreneQueryLanguage(val index: IIndex = EmptyIndex()) : RREnv() {
+    override fun lookupNames(docNames: Set<String>): List<Int> = docNames.mapNotNull { index.documentById(it) }
     override fun fieldStats(field: String): CountStats = index.fieldStats(field) ?: error("Requested field $field does not exist.")
     override fun computeStats(q: QExpr): CountStats = index.getStats(q)
     override fun getStats(term: String, field: String?): CountStats = index.getStats(term, field ?: defaultField)
@@ -138,6 +139,7 @@ sealed class QExpr {
     }
     abstract val children: List<QExpr>
     abstract fun copy(): QExpr
+    open fun applyEnvironment(env: RREnv) {}
     fun copyChildren() = children.map { it.copy() }
 
     fun findTextNodes(): List<TextExpr> {
@@ -216,8 +218,19 @@ data class NeverMatchExpr(override var child: QExpr) : SingleChildExpr() {
     override fun copy() = NeverMatchExpr(child.copy())
 }
 
+data class WhitelistMatchExpr(override var child: QExpr, var docNames: Set<String>? = null, var docIdentifiers: List<Int>? = null) : SingleChildExpr() {
+    override fun applyEnvironment(env: RREnv) {
+        if (docIdentifiers == null) {
+            if (docNames == null) error("WhitelistMatchExpr must have *either* docNames or docIdentifiers to start.")
+            docIdentifiers = env.lookupNames(docNames!!)
+        }
+    }
+
+    override fun copy() = WhitelistMatchExpr(child, docNames, docIdentifiers)
+}
+
 data class LengthsExpr(var statsField: String?, var stats: CountStats? = null) : LeafExpr() {
-    fun applyEnvironment(env: RREnv) {
+    override fun applyEnvironment(env: RREnv) {
         if (statsField == null) {
             statsField = env.defaultField
         }
@@ -240,7 +253,7 @@ data class TextExpr(var text: String, private var field: String? = null, private
     override fun copy() = TextExpr(text, field, statsField, stats, needed)
     constructor(term: Term) : this(term.text(), term.field())
 
-    fun applyEnvironment(env: RREnv) {
+    override fun applyEnvironment(env: RREnv) {
         if (field == null) {
             field = env.defaultField
         }
@@ -397,7 +410,7 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
         is LengthsExpr -> return
         is AndExpr, is OrExpr -> DataNeeded.DOCS
         // Pass through whatever at this point.
-        is AlwaysMatchExpr, is NeverMatchExpr, is MultiExpr -> childNeeds
+        is WhitelistMatchExpr, is AlwaysMatchExpr, is NeverMatchExpr, is MultiExpr -> childNeeds
         is LuceneExpr, is SynonymExpr -> childNeeds
         is WeightExpr, is CombineExpr, is MultExpr, is MaxExpr -> {
             DataNeeded.SCORES
@@ -433,8 +446,6 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded=DataNeeded.DOCS) {
 fun applyEnvironment(env: RREnv, root: QExpr) {
     root.visit { q ->
         when(q) {
-            is LengthsExpr -> q.applyEnvironment(env)
-            is TextExpr -> q.applyEnvironment(env)
             is LuceneExpr -> q.parse(env as? IreneQueryLanguage ?: error("LuceneExpr in environment without LuceneParser."))
             is DirQLExpr -> if (q.mu == null) {
                 q.mu = env.defaultDirichletMu
@@ -446,7 +457,7 @@ fun applyEnvironment(env: RREnv, root: QExpr) {
                 if (q.b == null) q.b = env.defaultBM25b
                 if (q.k == null) q.k = env.defaultBM25k
             }
-            else -> {}
+            else -> q.applyEnvironment(env)
         }
     }
 }

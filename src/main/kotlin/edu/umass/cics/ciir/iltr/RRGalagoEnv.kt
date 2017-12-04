@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.iltr
 
+import edu.umass.cics.ciir.chai.IntList
 import edu.umass.cics.ciir.irene.CountStats
 import edu.umass.cics.ciir.irene.QExpr
 import edu.umass.cics.ciir.irene.toGalago
@@ -13,6 +14,17 @@ import org.lemurproject.galago.utility.Parameters
  * @author jfoley
  */
 class RRGalagoEnv(val retr: LocalRetrieval) : RREnv() {
+    override fun lookupNames(docNames: Set<String>): IntList {
+        val output = IntList(docNames.size)
+        retr.getDocumentIds(docNames.toList()).forEach {
+            if (it > Int.MAX_VALUE) {
+                error("Lucene only supports integer ids. To use Galago perfectly in parallel, please shard your index.")
+            }
+            output.push(it.toInt())
+        }
+        return output
+    }
+
     init {
         defaultField = "document"
     }

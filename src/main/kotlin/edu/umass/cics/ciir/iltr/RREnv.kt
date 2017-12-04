@@ -33,6 +33,9 @@ abstract class RREnv {
         }
     }
 
+    /** @return a list of internal identifiers */
+    abstract fun lookupNames(docNames: Set<String>): List<Int>
+
     fun prepare(q: QExpr): QExpr {
         val pq = simplify(q)
         applyEnvironment(this, pq)
@@ -77,8 +80,7 @@ abstract class RREnv {
         is LengthsExpr -> RRDocLength(this, q.statsField!!)
 
         // These movement hints mean nothing in RR context.
-        is AlwaysMatchExpr -> fromQExpr(q.child)
-        is NeverMatchExpr -> fromQExpr(q.child)
+        is AlwaysMatchExpr, is NeverMatchExpr, is WhitelistMatchExpr -> fromQExpr(q.trySingleChild)
     }
 
 
@@ -93,8 +95,6 @@ abstract class RREnv {
     fun bm25(terms: List<String>, field: String = defaultField) = sum(terms.map { RRBM25Term(this, it, field) })
     fun mult(vararg exprs: RRExpr) = RRMult(this, exprs.toList())
     fun const(x: Double) = RRConst(this, x)
-
-
 }
 
 fun computeRelevanceModel(docs: List<LTRDoc>, feature: String, fbDocs: Int, field: String, flat: Boolean = false, stopwords: Set<String> = inqueryStop, logSumExp:Boolean=false): RelevanceModel {

@@ -119,6 +119,7 @@ interface IIndex : Closeable {
     fun tokenize(text: String, field: String=defaultField) = tokenizer.tokenize(text, field)
     fun toTextExprs(text: String, field: String = defaultField): List<TextExpr> = tokenize(text, field).map { TextExpr(it, field) }
     fun search(q: QExpr, n: Int): TopDocs
+    fun documentById(id: String): Int?
 }
 class EmptyIndex(override val tokenizer: GenericTokenizer = WhitespaceTokenizer()) : IIndex {
     override val defaultField: String = "missing"
@@ -129,6 +130,7 @@ class EmptyIndex(override val tokenizer: GenericTokenizer = WhitespaceTokenizer(
     override fun close() { }
     override fun search(q: QExpr, n: Int): TopDocs = TopDocs(0L, emptyArray(), -Float.MAX_VALUE)
     override fun getRREnv(): RREnv = error("No RREnv for EmptyIndex.")
+    override fun documentById(id: String): Int? = null
 }
 
 class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
@@ -149,6 +151,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
     private val termStatsCache: Cache<Term, CountStats> = Caffeine.newBuilder().maximumSize(100_000).build()
     private val exprStatsCache = Caffeine.newBuilder().maximumSize(100_000).build<QExpr, ForkJoinTask<CountStats>>()
     private val fieldStatsCache = ConcurrentHashMap<String, CountStats?>()
+    private val nameToIdCache: Cache<String, Int> = Caffeine.newBuilder().maximumSize(100_000).build()
 
     override fun close() {
         reader.close()
@@ -175,16 +178,21 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
     fun document(doc: Int, fields: Set<String>): LDoc? {
         return lucene_try { searcher.doc(doc, fields) }
     }
-    fun documentById(id: String): Int? {
+    private fun documentByIdInternal(id: String): Int? {
         val q = BooleanQuery.Builder().add(TermQuery(Term(idFieldName, id)), BooleanClause.Occur.MUST).build()!!
-
         return lucene_try {
             val results = searcher.search(q, 10)?.scoreDocs
-            if (results == null || results.isEmpty()) return -1
+            if (results == null || results.isEmpty()) return null
             // TODO complain about dupes?
             return results[0].doc
         }
     }
+    override fun documentById(id: String): Int? {
+        val response = nameToIdCache.get(id, { missing -> documentByIdInternal(missing) ?: -1 })
+        if (response == null || response < 0) return null
+        return response
+    }
+
     fun terms(doc: Int, field: String): List<String> {
         val text = getField(doc, field)?.stringValue() ?: return emptyList()
         return tokenize(text, field)
