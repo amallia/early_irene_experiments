@@ -113,13 +113,13 @@ fun main(args: Array<String>) {
                         SequentialDependenceModel(q.qterms, field="short_text", statsField="body", stopwords=inqueryStop).weighted(fieldWeights["short_text"]),
                         SequentialDependenceModel(q.qterms, field="body", statsField="body", stopwords=inqueryStop).weighted(fieldWeights["body"]))
                 val wikiTopDocs = wiki.search(wikiQ, 1000)
-                val wikiScoreInfo = wikiTopDocs.scoreDocs.map { it.score }.asFeatureStats()
+                val wikiScoreInfo = wikiTopDocs.scoreDocs.map { it.score }.computeStats()
                 val logSumExp = wikiTopDocs.logSumExp()
 
                 // What percentage of wikipedia matches this query?
                 query_features["wiki_hits"] = wikiTopDocs.totalHits.toDouble() / wikiN
                 val topWikiLTRDocs = wikiTopDocs.scoreDocs.asSequence().mapIndexedNotNull { i, sdoc ->
-                    val normScore = wikiScoreInfo.normalize(sdoc.score.toDouble())
+                    val normScore = wikiScoreInfo.maxMinNormalize(sdoc.score.toDouble())
                     val docFields = wiki.document(sdoc.doc, WikiFields)?.toParameters() ?: return@mapIndexedNotNull null
 
                     val body = docFields.get("body", "")

@@ -25,11 +25,14 @@ fun MissingTermScoreHack(t: String, env: RREnv): QExpr {
     return ConstCountExpr(0, LengthsExpr(env.defaultField, stats=env.getStats(t)))
 }
 fun main(args: Array<String>) {
-    val dataset = DataPaths.get("robust")
+    val dataset = DataPaths.get("gov2")
     val sdm_uw = 0.8
     val sdm_odw = 0.15
     val sdm_uww = 0.05
+    val poolTarget = 1000
+    val meanW = 1.0 / 3.0
 
+    val baseTimeStats = StreamingStats()
     val totalOffered = StreamingStats()
     val totalPlausible = StreamingStats()
     dataset.getIreneIndex().use { index ->
@@ -40,15 +43,18 @@ fun main(args: Array<String>) {
             // Optimization does nothing for queries with single term.
             if (qterms.size <= 1) return@forEach
 
-            val meanW = 1.0 / 3.0
             val ql = QueryLikelihood(qterms).weighted(sdm_uw).weighted(meanW)
             val bestCaseWindowEstimators = ArrayList<QExpr>()
             val worstCaseWindowEstimators = ArrayList<QExpr>()
+            val odWindows = ArrayList<QExpr>()
+            val uwWindows = ArrayList<QExpr>()
             qterms.forEachSeqPair { lhs, rhs ->
                 bestCaseWindowEstimators.add(DirQLExpr(MinCountExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
                 worstCaseWindowEstimators.add(DirQLExpr(
                         MinCountExpr(listOf(lhs, rhs).map { MissingTermScoreHack(it, index.env) })
                 ))
+                odWindows.add(DirQLExpr(OrderedWindowExpr(listOf(lhs, rhs).map { TextExpr(it) })))
+                uwWindows.add(DirQLExpr(UnorderedWindowExpr(listOf(lhs, rhs).map { TextExpr(it) })))
             }
             val baseExpr = MeanExpr(bestCaseWindowEstimators)
             val odEst = baseExpr.copy().weighted(sdm_odw).weighted(meanW)
@@ -59,26 +65,40 @@ fun main(args: Array<String>) {
             val uwEstBad = badBaseExpr.copy().weighted(sdm_uww).weighted(meanW)
 
             val bestCase = SumExpr(odEst, uwEst)
-            val maxMinExpr = MultiExpr(mapOf("base" to ql, "best" to bestCase, "worst" to SumExpr(odEstBad, uwEstBad)))
+            val maxMinExpr = MultiExpr(mapOf(
+                    "base" to ql,
+                    "best" to bestCase,
+                    "worst" to SumExpr(odEstBad, uwEstBad),
+                    "true" to SumExpr(
+                            MeanExpr(odWindows).weighted(sdm_odw).weighted(meanW),
+                            MeanExpr(uwWindows).weighted(sdm_uww).weighted(meanW))
+            ))
+
+            val sdmQ = SequentialDependenceModel(qterms)
+
+            val (baseTime, expectedDocs) = timed { index.search(sdmQ, poolTarget) }
+            baseTimeStats.push(baseTime)
+
+            val expected = expectedDocs.scoreDocs.mapTo(HashSet()) { it.doc }
 
             val lq = index.prepare(maxMinExpr)
-            val poolTarget = 1000
             val results = index.searcher.search(lq, MaxMinCollectorManager(maxMinExpr, poolTarget))
             println("$qid $qterms ${results.totalHits} -> ${results.totalOffered} -> ${results.prunedHits.size} -> ${poolTarget}")
             totalOffered.push(results.totalOffered)
             totalPlausible.push(results.prunedHits.size)
+
+            val returned = results.prunedHits.mapTo(HashSet()) { it.id }
+
+            val recall = Recall(expected, returned)
+            println("Recall vs. True SDM: $recall ... ${recall.value}")
+
         }
 
         System.out.println("offered: ${totalOffered}")
+        System.out.println("SDM-time: ${baseTimeStats}")
         System.out.println("plausible: ${totalPlausible}")
         System.out.println("pl/off: ${totalPlausible.mean / totalOffered.mean}")
     }
-}
-
-fun <T> List<T>.findIndex(x: T): Int? {
-    val pos = this.indexOf(x)
-    if (pos >= 0) return pos
-    return null
 }
 
 // Keep in heap based on the "worst" possible score for each document.

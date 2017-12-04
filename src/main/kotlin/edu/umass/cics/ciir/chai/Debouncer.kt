@@ -92,3 +92,11 @@ data class RateEstimate(val time: Long, val itemsComplete: Long, val totalItems:
     override fun toString(): String =
             String.format("%d/%d items, %4.1f items/s [%s left]; [%s spent], %2.1f%% complete.", itemsComplete, totalItems, itemsPerSecond(), prettyTimeOfMillis(remaining.toLong()), prettyTimeOfMillis(time), percentComplete())
 }
+
+
+inline fun <R> timed(x: ()->R): Pair<Double, R> {
+    val start = System.nanoTime()
+    val result = x()
+    val end = System.nanoTime()
+    return Pair((end-start)/ 1e9, result)
+}

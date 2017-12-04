@@ -30,8 +30,8 @@ fun <N : Number> List<N>.mean(): Double {
     return this.sumByDouble { it.toDouble() } / this.size.toDouble()
 }
 
-fun <N : Number> List<N>.asFeatureStats(): FeatureStats {
-    val out = FeatureStats()
+fun <N : Number> List<N>.computeStats(): StreamingStats {
+    val out = StreamingStats()
     for (x in this) {
         out.push(x.toDouble())
     }
@@ -98,27 +98,9 @@ fun <I,O> Collection<I>.pmapIndividual(pool: ForkJoinPool = ForkJoinPool.commonP
     return output.toList()
 }
 
-class FeatureStats {
-    var min = Double.MAX_VALUE
-    var max = -Double.MAX_VALUE
-    var sum = 0.0
-    var count = 0
-    fun push(x: Double) {
-        count++
-        sum += x
-        if (x < min) {
-            min = x;
-        }
-        if (x > max) {
-            max = x
-        }
-    }
-
-    override fun toString(): String = "$count $min..$max"
-
-    fun normalize(y: Double): Double {
-        if (count == 0) return y
-        if (min == max) return y
-        return (y - min) / (max - min)
-    }
+fun <T> List<T>.findIndex(x: T): Int? {
+    val pos = this.indexOf(x)
+    if (pos >= 0) return pos
+    return null
 }
+

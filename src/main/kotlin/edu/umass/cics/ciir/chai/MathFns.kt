@@ -124,6 +124,9 @@ class StreamingStats() {
         return this
     }
     fun toComputedStats(): ComputedStats = ComputedStats(this)
+    fun maxMinNormalize(rawVal: Double): Double {
+        return (rawVal - min) / (max - min)
+    }
 }
 
 data class ComputedStats(val mean: Double, val min: Double, val max: Double, val variance: Double, val stddev: Double, val total: Double, val count: Double) {

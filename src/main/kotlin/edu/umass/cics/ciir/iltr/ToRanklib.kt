@@ -1,6 +1,6 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.chai.FeatureStats
+import edu.umass.cics.ciir.chai.StreamingStats
 import edu.umass.cics.ciir.chai.smartDoLines
 import edu.umass.cics.ciir.chai.smartPrint
 import edu.umass.cics.ciir.sprf.getStr
@@ -45,7 +45,7 @@ fun main(args: Array<String>) {
     println("Finished DocFeatures")
 
     val allFeatures = HashSet<String>()
-    val fstats = HashMap<Pair<String, String>, FeatureStats>()
+    val fstats = HashMap<Pair<String, String>, StreamingStats>()
     var index = 0
     File(input).smartDoLines(true) { line ->
         try {
@@ -58,7 +58,7 @@ fun main(args: Array<String>) {
                 allFeatures.add(fname)
                 if (shouldNormalize(fname)) {
                     fstats
-                            .computeIfAbsent(Pair(qid, fname), { FeatureStats() })
+                            .computeIfAbsent(Pair(qid, fname), { StreamingStats() })
                             .push(features.getDouble(fname))
                 }
             }
@@ -106,7 +106,7 @@ fun main(args: Array<String>) {
                 val stats = fstats[Pair(qid, fname)]
                 val fval = if (stats != null) {
                     if (rawVal == null) 0.0 else {
-                        stats.normalize(rawVal)
+                        stats.maxMinNormalize(rawVal)
                     }
                 } else rawVal ?: 0.0
                 Pair(fid, fval)
