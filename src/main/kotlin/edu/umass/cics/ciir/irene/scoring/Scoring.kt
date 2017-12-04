@@ -9,84 +9,6 @@ import org.apache.lucene.search.DocIdSetIterator
 import org.apache.lucene.search.Explanation
 import java.io.File
 
-/**
- * This function translates the public-facing query language ([QExpr] and subclasses) to a set of private-facing operators ([QueryEvalNode] and subclasses).
- * @author jfoley.
- */
-fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
-    is TextExpr -> ctx.create(Term(q.countsField(), q.text), q.needed, q.stats ?: error("Missed computeQExprStats pass."))
-    is LuceneExpr -> TODO()
-    is SynonymExpr -> TODO()
-    is AndExpr -> BooleanAndEval(q.children.map { exprToEval(it, ctx) })
-    is OrExpr -> BooleanOrEval(q.children.map { exprToEval(it, ctx) })
-    is CombineExpr -> WeightedSumEval(
-            q.children.map { exprToEval(it, ctx) },
-            q.weights.map { it }.toDoubleArray())
-    is MultExpr -> TODO()
-    is MaxExpr -> MaxEval(q.children.map { exprToEval(it, ctx) })
-    is WeightExpr -> WeightedEval(exprToEval(q.child, ctx), q.weight.toFloat())
-    is DirQLExpr -> DirichletSmoothingEval(exprToEval(q.child, ctx) as CountEvalNode, q.mu!!)
-    is BM25Expr -> BM25ScoringEval(exprToEval(q.child, ctx) as CountEvalNode, q.b!!, q.k!!)
-    is CountToScoreExpr -> TODO()
-    is BoolToScoreExpr -> TODO()
-    is CountToBoolExpr -> TODO()
-    is RequireExpr -> RequireEval(exprToEval(q.cond, ctx), exprToEval(q.value, ctx))
-    is OrderedWindowExpr -> OrderedWindow(
-            computeCountStats(q, ctx),
-            q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.step)
-    is UnorderedWindowExpr -> UnorderedWindow(
-            computeCountStats(q, ctx),
-            q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.width)
-    is SmallerCountExpr -> SmallerCountWindow(
-            computeCountStats(q, ctx),
-            q.children.map { exprToEval(it, ctx) as CountEvalNode })
-    is UnorderedWindowCeilingExpr -> UnorderedWindowCeiling(
-            computeCountStats(q, ctx),
-            q.width,
-            q.children.map { exprToEval(it, ctx) as CountEvalNode })
-    is ConstScoreExpr -> ConstEvalNode(q.x.toFloat())
-    is ConstCountExpr -> ConstCountEvalNode(q.x, exprToEval(q.lengths, ctx) as CountEvalNode)
-    is ConstBoolExpr -> if(q.x) ConstTrueNode(ctx.numDocs()) else ConstEvalNode(0)
-    is AbsoluteDiscountingQLExpr -> error("No efficient method to implement AbsoluteDiscountingQLExpr in Irene backend; needs numUniqWords per document.")
-    is MultiExpr -> MultiEvalNode(q.children.map { exprToEval(it, ctx) }, q.names)
-    is LengthsExpr -> ctx.createLengths(q.statsField!!, q.stats!!)
-    is NeverMatchExpr -> FixedMatchEvalNode(false, exprToEval(q.trySingleChild, ctx))
-    is AlwaysMatchExpr -> FixedMatchEvalNode(true, exprToEval(q.trySingleChild, ctx))
-    is WhitelistMatchExpr -> WhitelistMatchEvalNode(TIntHashSet(ctx.selectRelativeDocIds(q.docIdentifiers!!)))
-}
-
-fun approxStats(q: QExpr, method: String): CountStatsStrategy {
-    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is SmallerCountExpr || q is UnorderedWindowCeilingExpr) {
-        val cstats = q.children.map { c ->
-            if (c is TextExpr) {
-                c.stats!!
-            } else if (c is ConstCountExpr) {
-                c.lengths.stats!!
-            } else if (c is LengthsExpr) {
-                c.stats!!
-            } else {
-                error("Can't estimate stats with non-TextExpr children. $c")
-            }
-        }
-        return when(method) {
-            "min" -> MinEstimatedCountStats(q.copy(), cstats)
-            "prob" -> ProbEstimatedCountStats(q.copy(), cstats)
-            else -> TODO("estimateStats strategy = $method")
-        }
-    } else {
-        TODO("approxStats($q)")
-    }
-}
-
-fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
-    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is SmallerCountExpr || q is UnorderedWindowCeilingExpr) {
-        val method = ctx.env.estimateStats ?: return LazyCountStats(q.copy(), ctx.env)
-        return approxStats(q, method)
-    } else {
-        TODO("computeCountStats($q)")
-    }
-}
-
 const val NO_MORE_DOCS = DocIdSetIterator.NO_MORE_DOCS
 interface QueryEvalNode {
     // Return a score for a document.
@@ -103,7 +25,7 @@ interface QueryEvalNode {
     fun setHeapMinimum(target: Float) {}
 }
 
-private class FixedMatchEvalNode(val matchAnswer: Boolean, override val child: QueryEvalNode): SingleChildEval<QueryEvalNode>() {
+internal class FixedMatchEvalNode(val matchAnswer: Boolean, override val child: QueryEvalNode): SingleChildEval<QueryEvalNode>() {
     override fun matches(doc: Int): Boolean = matchAnswer
     override fun score(doc: Int): Float = child.score(doc)
     override fun count(doc: Int): Int = child.count(doc)
@@ -114,7 +36,7 @@ private class FixedMatchEvalNode(val matchAnswer: Boolean, override val child: Q
     }
 }
 
-private class WhitelistMatchEvalNode(val allowed: TIntHashSet): QueryEvalNode {
+internal class WhitelistMatchEvalNode(val allowed: TIntHashSet): QueryEvalNode {
     val N = allowed.size().toLong()
     override fun estimateDF(): Long = N
     override fun matches(doc: Int): Boolean = allowed.contains(doc)
@@ -202,7 +124,7 @@ class ConstEvalNode(val count: Int, val score: Float) : QueryEvalNode {
 /**
  * Created from [RequireExpr] via [exprToEval]
  */
-private class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val miss: Float=-Float.MAX_VALUE): QueryEvalNode {
+internal class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val miss: Float=-Float.MAX_VALUE): QueryEvalNode {
     override fun score(doc: Int): Float = if (cond.matches(doc)) { score.score(doc) } else miss
     override fun count(doc: Int): Int = if (cond.matches(doc)) { score.count(doc) } else 0
     /**
@@ -285,14 +207,14 @@ abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval
 /**
  * Created from [OrExpr] using [exprToEval]
  */
-private class BooleanOrEval(children: List<QueryEvalNode>): OrEval<QueryEvalNode>(children) {
+internal class BooleanOrEval(children: List<QueryEvalNode>): OrEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float = if (matches(doc)) { 1f } else { 0f }
     override fun count(doc: Int): Int = if (matches(doc)) { 1 } else { 0 }
 }
 /**
  * Created from [AndExpr] using [exprToEval]
  */
-private class BooleanAndEval(children: List<QueryEvalNode>): AndEval<QueryEvalNode>(children) {
+internal class BooleanAndEval(children: List<QueryEvalNode>): AndEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float = if (matches(doc)) { 1f } else { 0f }
     override fun count(doc: Int): Int = if (matches(doc)) { 1 } else { 0 }
 }
@@ -300,7 +222,7 @@ private class BooleanAndEval(children: List<QueryEvalNode>): AndEval<QueryEvalNo
 /**
  * Created from [MaxExpr] using [exprToEval]
  */
-private class MaxEval(children: List<QueryEvalNode>) : OrEval<QueryEvalNode>(children) {
+internal class MaxEval(children: List<QueryEvalNode>) : OrEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float {
         var sum = 0f
         children.forEach {
@@ -366,7 +288,7 @@ private class PruningWeightedSumEval(children: List<QueryEvalNode>, val weights:
  * Created from [CombineExpr] using [exprToEval]
  * Also known as #combine for you galago/indri folks.
  */
-private class WeightedSumEval(children: List<QueryEvalNode>, val weights: DoubleArray) : OrEval<QueryEvalNode>(children) {
+internal class WeightedSumEval(children: List<QueryEvalNode>, val weights: DoubleArray) : OrEval<QueryEvalNode>(children) {
     override fun score(doc: Int): Float {
         return (0 until children.size).sumByDouble {
             weights[it] * children[it].score(doc)
@@ -388,7 +310,7 @@ private class WeightedSumEval(children: List<QueryEvalNode>, val weights: Double
 /**
  * Helper class to make scorers that will have one child (like [DirichletSmoothingEval] and [BM25ScoringEval]) easier to implement.
  */
-private abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
+internal abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
     abstract val child: T
     override fun estimateDF(): Long = child.estimateDF()
     override fun matches(doc: Int): Boolean {
@@ -396,7 +318,7 @@ private abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
     }
 }
 
-private class WeightedEval(override val child: QueryEvalNode, val weight: Float): SingleChildEval<QueryEvalNode>() {
+internal class WeightedEval(override val child: QueryEvalNode, val weight: Float): SingleChildEval<QueryEvalNode>() {
     override fun setHeapMinimum(target: Float) {
         // e.g., if this is 2*child, and target is 5
         // child target is 5 / 2
@@ -419,7 +341,7 @@ private class WeightedEval(override val child: QueryEvalNode, val weight: Float)
 /**
  * Created from [BM25Expr] via [exprToEval]
  */
-private class BM25ScoringEval(override val child: CountEvalNode, val b: Double, val k: Double): SingleChildEval<CountEvalNode>() {
+internal class BM25ScoringEval(override val child: CountEvalNode, val b: Double, val k: Double): SingleChildEval<CountEvalNode>() {
     private val stats = child.getCountStats()
     private val avgDL = stats.avgDL()
     private val idf = Math.log(stats.dc / (stats.df + 0.5))
@@ -447,7 +369,7 @@ private class BM25ScoringEval(override val child: CountEvalNode, val b: Double, 
 /**
  * Created from [DirQLExpr] via [exprToEval]
  */
-private class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
+internal class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
     val background = mu * child.getCountStats().nonzeroCountProbability()
     init {
         assert(java.lang.Double.isFinite(background)) {

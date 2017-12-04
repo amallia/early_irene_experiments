@@ -132,7 +132,7 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded= DataNeeded.DOCS) {
             }
             DataNeeded.COUNTS
         }
-        is UnorderedWindowExpr, is OrderedWindowExpr -> {
+        is ProxExpr, is UnorderedWindowExpr, is OrderedWindowExpr -> {
             if (q.children.size <= 1) {
                 throw TypeCheckError("Need more than 1 child for an window Expr, e.g. $q")
             }

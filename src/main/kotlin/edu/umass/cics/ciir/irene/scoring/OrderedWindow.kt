@@ -2,8 +2,10 @@ package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.irene.CountStats
 import edu.umass.cics.ciir.irene.CountStatsStrategy
+import edu.umass.cics.ciir.irene.lang.ProxExpr
 import edu.umass.cics.ciir.irene.lang.SmallerCountExpr
 import edu.umass.cics.ciir.irene.lang.UnorderedWindowCeilingExpr
+import edu.umass.cics.ciir.irene.lang.UnorderedWindowExpr
 
 /**
  *
@@ -88,6 +90,31 @@ fun countUnorderedWindows(iters: List<PositionsIter>, width: Int): Int {
     }
 }
 
+/** Prox [ProxExpr] differs from [UnorderedWindowExpr] in that we want to compute something that has a stronger upper-bound. */
+fun countProxWindows(iters: List<PositionsIter>, width: Int): Int {
+    val smallest = iters.minBy { it.size } ?: return 0
+    val rest = iters.filter { it !== smallest }
+
+    var hits = 0
+    smallest.forAll { candidate ->
+        val min = candidate - width
+        val max = candidate + width
+
+        var match = true
+        for (r in rest) {
+            if (!r.advance(min)) return hits
+            if (r.position > max) {
+                match = false
+                break
+            }
+        }
+        if (match) {
+            hits++
+        }
+    }
+    return hits
+}
+
 class PositionsIter(val data: IntArray, val size: Int=data.size, var index: Int = 0) {
     val done: Boolean get() = index >= size
     fun reset() { index = 0}
@@ -97,6 +124,17 @@ class PositionsIter(val data: IntArray, val size: Int=data.size, var index: Int 
     }
     val position: Int get() = data[index]
     val count: Int get() = size
+
+    inline fun forAll(each: (Int)->Unit) {
+        (0 until size).forEach { each(data[it]) }
+    }
+    /** @return true if found (false if [done]). */
+    fun advance(target: Int): Boolean {
+        while(index < size && data[index] < target) {
+            index++
+        }
+        return index < size
+    }
 
     override fun toString() = (0 until size).map { data[it] }.toList().toString()
 }
@@ -137,16 +175,16 @@ abstract class CountWindow(val stats: CountStatsStrategy, children: List<Positio
 }
 
 class OrderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val step: Int) : CountWindow(stats, children) {
-    override fun compute(iters: List<PositionsIter>): Int {
-        return countOrderedWindows(iters, step)
-    }
+    override fun compute(iters: List<PositionsIter>): Int = countOrderedWindows(iters, step)
 }
 
 class UnorderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val width: Int) : CountWindow(stats, children) {
-    override fun compute(iters: List<PositionsIter>): Int {
-        val count = countUnorderedWindows(iters, width)
-        return count
-    }
+    override fun compute(iters: List<PositionsIter>): Int = countUnorderedWindows(iters, width)
+}
+
+/** From [ProxExpr] for computing something like [UnorderedWindow] but more realistically upper-bounded by MinCount(children). */
+class ProxWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val width: Int): CountWindow(stats, children) {
+    override fun compute(iters: List<PositionsIter>): Int = countProxWindows(iters, width)
 }
 
 /** From [SmallerCountExpr], for estimating the ceiling of [OrderedWindow] nodes. */

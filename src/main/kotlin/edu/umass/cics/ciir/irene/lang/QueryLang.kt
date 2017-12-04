@@ -131,6 +131,10 @@ data class RequireExpr(var cond: QExpr, var value: QExpr): QExpr() {
     override fun copy()  = RequireExpr(cond.copy(), value.copy())
     override val children: List<QExpr> get() = arrayListOf(cond, value)
 }
+
+/**
+ * [TextExpr] represent a term [text] inside a [field] smoothed with statistics [stats] derived from [statsField]. By default [field] and [statsField] will be the same, and will be filled with sane defaults if left empty.
+ */
 data class TextExpr(var text: String, private var field: String? = null, private var statsField: String? = null, var stats: CountStats? = null, var needed: DataNeeded = DataNeeded.DOCS) : LeafExpr() {
     override fun copy() = TextExpr(text, field, statsField, stats, needed)
     constructor(term: Term) : this(term.text(), term.field())
@@ -190,8 +194,16 @@ data class UnorderedWindowCeilingExpr(override var children: List<QExpr>, var wi
 data class OrderedWindowExpr(override var children: List<QExpr>, var step: Int=1) : OpExpr() {
     override fun copy() = OrderedWindowExpr(copyChildren(), step)
 }
+
+/**
+ * This [UnorderedWindowExpr] matches the computation in Galago. Huston et al. found that the particular unordered window does not matter so much, so we recommend using [ProxExpr] instead. [Tech Report](http://ciir-publications.cs.umass.edu/pub/web/getpdf.php?id=1142).
+ */
 data class UnorderedWindowExpr(override var children: List<QExpr>, var width: Int=8) : OpExpr() {
     override fun copy() = UnorderedWindowExpr(copyChildren(), width)
+}
+
+data class ProxExpr(override var children: List<QExpr>, var width: Int=8): OpExpr() {
+    override fun copy() = ProxExpr(children, width)
 }
 
 data class WeightExpr(override var child: QExpr, var weight: Double = 1.0) : SingleChildExpr() {
@@ -216,5 +228,4 @@ data class BoolToScoreExpr(override var child: QExpr, var trueScore: Double=1.0,
 data class CountToBoolExpr(override var child: QExpr, var gt: Int = 0): SingleChildExpr() {
     override fun copy() = CountToBoolExpr(child.copy(), gt)
 }
-
 
