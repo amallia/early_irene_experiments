@@ -5,16 +5,7 @@ import edu.umass.cics.ciir.irene.UnorderedWindowCeilingExpr
 import org.apache.lucene.index.Term
 import org.apache.lucene.search.DocIdSetIterator
 
-fun createMover(q: QExpr, ctx: IQContext): QueryMover {
-    val reified =  createMoverRec(q, ctx)
-
-    // TODO, clean up optimizations based on actual leaf presence of terms.
-    // OR(xs ... false) -> OR(xs)
-    // OR(xs ... true) -> true
-    // etc.
-
-    return reified
-}
+fun createMover(q: QExpr, ctx: IQContext): QueryMover = createMoverRec(q, ctx)
 
 private fun createMoverRec(q: QExpr, ctx: IQContext) : QueryMover = when(q) {
     // OR nodes:
