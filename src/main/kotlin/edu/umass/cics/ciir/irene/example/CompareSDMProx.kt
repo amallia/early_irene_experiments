@@ -16,18 +16,25 @@ import java.io.File
  */
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dsName = argp.get("dataset", "gov2")
+    val dsName = argp.get("dataset", "robust")
     val dataset = DataPaths.get(dsName)
     val qrels = dataset.qrels
     val measure = getEvaluator("map")
     val info = NamedMeasures()
+    val qtype = argp.get("qtype", "desc")
     val estStats = argp.get("stats", "min")
     val proxType = argp.get("prox", "sc")
 
-    Pair(File("$dsName.sdm.$estStats.trecrun").printWriter(), File("$dsName.sdm-${proxType}.$estStats.trecrun").printWriter()).use { w1, w2 ->
+    val queries = when(qtype) {
+        "title" -> dataset.title_qs
+        "desc" -> dataset.desc_qs
+        else -> error("qtype=$qtype")
+    }
+
+    Pair(File("$dsName.sdm.$qtype.$estStats.trecrun").printWriter(), File("$dsName.sdm-${proxType}.$qtype.$estStats.trecrun").printWriter()).use { w1, w2 ->
         dataset.getIreneIndex().use { index ->
             index.env.estimateStats = if (estStats == "exact") { null } else { estStats }
-            dataset.title_qs.forEach { qid, qtext ->
+            queries.forEach { qid, qtext ->
                 val qterms = index.tokenize(qtext)
                 val judgments = qrels[qid] ?: QueryJudgments(qid, emptyMap())
 
