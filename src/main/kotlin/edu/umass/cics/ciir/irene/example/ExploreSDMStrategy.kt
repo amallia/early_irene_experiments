@@ -58,7 +58,7 @@ fun MakeCheapWorstQuery(q: QExpr): QExpr = when(q) {
 }
 
 fun main(args: Array<String>) {
-    val dataset = DataPaths.get("gov2")
+    val dataset = DataPaths.get("robust")
     val sdm_uw = 0.8
     val sdm_odw = 0.15
     val sdm_uww = 0.05
@@ -70,7 +70,7 @@ fun main(args: Array<String>) {
     val totalPlausible = StreamingStats()
     dataset.getIreneIndex().use { index ->
         index.env.estimateStats = "min"
-        dataset.title_qs.forEach { qid, qtext ->
+        dataset.desc_qs.forEach { qid, qtext ->
             val qterms = index.tokenize(qtext)
 
             // Optimization does nothing for queries with single term.
@@ -90,20 +90,22 @@ fun main(args: Array<String>) {
                         SmallerCountExpr(listOf(lhs, rhs).map { MissingTermScoreHack(it, index.env) })
                 ))
                 odWindows.add(DirQLExpr(OrderedWindowExpr(listOf(lhs, rhs).map { TextExpr(it) })))
-                uwWindows.add(DirQLExpr(ProxExpr(listOf(lhs, rhs).map { TextExpr(it) })))
+                uwWindows.add(DirQLExpr(SmallerCountExpr(listOf(lhs, rhs).map { TextExpr(it) })))
             }
             val odEst = MeanExpr(bestCaseOdWindows).weighted(sdm_odw)
             val uwEst = MeanExpr(bestCaseUwWindows).weighted(sdm_uww)
+
+            val base = SumExpr(ql)
 
             val badBaseExpr = MeanExpr(worstCaseWindowEstimators)
             val odEstBad = badBaseExpr.deepCopy().weighted(sdm_odw)
             val uwEstBad = badBaseExpr.deepCopy().weighted(sdm_uww)
 
-            val bestCase = SumExpr(odEst, uwEst)
+            //val bestCase = SumExpr(odEst, uwEst)
             val maxMinExpr = MultiExpr(mapOf(
-                    "base" to ql,
-                    "best" to bestCase,
-                    "worst" to SumExpr(odEstBad, uwEstBad),
+                    "base" to base,
+                    "best" to SumExpr(uwEst, odEst),
+                    "worst" to SumExpr(uwEstBad, odEstBad),
                     "true" to SumExpr(
                             MeanExpr(odWindows).weighted(sdm_odw),
                             MeanExpr(uwWindows).weighted(sdm_uww))
@@ -114,7 +116,7 @@ fun main(args: Array<String>) {
             sdmQ.visit { q ->
                 if (q is DirQLExpr && q.child is UnorderedWindowExpr) {
                     val uw = q.child as? UnorderedWindowExpr ?: error("Concurrent Access.")
-                    q.child = ProxExpr(uw.deepCopyChildren(), uw.width)
+                    q.child = ProxExpr(uw.deepCopyChildren())
                 }
             }
 
