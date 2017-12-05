@@ -21,17 +21,23 @@ fun main(args: Array<String>) {
     val qrels = dataset.qrels
     val measure = getEvaluator("map")
     val info = NamedMeasures()
-    val qtype = argp.get("qtype", "desc")
+    val scorer = argp.get("scorer", "bm25")
+    val qtype = argp.get("qtype", "title")
     val estStats = argp.get("stats", "min")
-    val proxType = argp.get("prox", "sc")
+    val proxType = argp.get("prox", "prox")
 
     val queries = when(qtype) {
         "title" -> dataset.title_qs
         "desc" -> dataset.desc_qs
         else -> error("qtype=$qtype")
     }
+    val scorerFn: (QExpr)->QExpr = when(scorer) {
+        "bm25" -> {{BM25Expr(it, 0.3, 0.9)}}
+        "ql" -> {{DirQLExpr(it)}}
+        else -> error("scorer=$scorer")
+    }
 
-    Pair(File("$dsName.sdm.$qtype.$estStats.trecrun").printWriter(), File("$dsName.sdm-${proxType}.$qtype.$estStats.trecrun").printWriter()).use { w1, w2 ->
+    Pair(File("$dsName.sdm.$scorer.$qtype.$estStats.trecrun").printWriter(), File("$dsName.sdm-${proxType}.$scorer.$qtype.$estStats.trecrun").printWriter()).use { w1, w2 ->
         dataset.getIreneIndex().use { index ->
             index.env.estimateStats = if (estStats == "exact") { null } else { estStats }
             queries.forEach { qid, qtext ->
@@ -42,7 +48,7 @@ fun main(args: Array<String>) {
                 if (judgments.size > 0 && qterms.size > 1) {
                     println(qid)
 
-                    val sdmQ = SequentialDependenceModel(qterms)
+                    val sdmQ = SequentialDependenceModel(qterms, makeScorer = scorerFn)
                     val approxSDMQ = sdmQ.deepCopy()
 
                     approxSDMQ.visit { q ->

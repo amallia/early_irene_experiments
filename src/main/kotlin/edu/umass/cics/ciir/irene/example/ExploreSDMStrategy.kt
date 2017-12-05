@@ -84,13 +84,13 @@ fun main(args: Array<String>) {
             val uwWindows = ArrayList<QExpr>()
             qterms.forEachSeqPair { lhs, rhs ->
                 bestCaseOdWindows.add(DirQLExpr(SmallerCountExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
-                bestCaseUwWindows.add(DirQLExpr(UnorderedWindowCeilingExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
+                bestCaseUwWindows.add(DirQLExpr(SmallerCountExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
                 worstCaseWindowEstimators.add(DirQLExpr(
                         // Use smaller-count expr in both places here, because we're hacking all counts to zero to just use statistics.
                         SmallerCountExpr(listOf(lhs, rhs).map { MissingTermScoreHack(it, index.env) })
                 ))
                 odWindows.add(DirQLExpr(OrderedWindowExpr(listOf(lhs, rhs).map { TextExpr(it) })))
-                uwWindows.add(DirQLExpr(UnorderedWindowExpr(listOf(lhs, rhs).map { TextExpr(it) })))
+                uwWindows.add(DirQLExpr(ProxExpr(listOf(lhs, rhs).map { TextExpr(it) })))
             }
             val odEst = MeanExpr(bestCaseOdWindows).weighted(sdm_odw)
             val uwEst = MeanExpr(bestCaseUwWindows).weighted(sdm_uww)
@@ -109,7 +109,14 @@ fun main(args: Array<String>) {
                             MeanExpr(uwWindows).weighted(sdm_uww))
             ))
 
+            // Create an SDM with Prox instead of UW
             val sdmQ = SequentialDependenceModel(qterms)
+            sdmQ.visit { q ->
+                if (q is DirQLExpr && q.child is UnorderedWindowExpr) {
+                    val uw = q.child as? UnorderedWindowExpr ?: error("Concurrent Access.")
+                    q.child = ProxExpr(uw.deepCopyChildren(), uw.width)
+                }
+            }
 
             val (baseTime, expectedDocs) = timed { index.search(sdmQ, poolTarget) }
             baseTimeStats.push(baseTime)
