@@ -176,6 +176,19 @@ abstract class CountWindow(val stats: CountStatsStrategy, children: List<Positio
 
 class OrderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val step: Int) : CountWindow(stats, children) {
     override fun compute(iters: List<PositionsIter>): Int = countOrderedWindows(iters, step)
+
+    /** TODO is the minimum possible at this document is always zero for a [CountEvalNode]? */
+    fun min(doc: Int): Int = 0
+    /** Custom maximization logic for [OrderedWindow]. This is the same as [SmallerCountWindow] */
+    fun max(doc: Int): Int {
+        var min = Integer.MAX_VALUE
+        for (c in children) {
+            val cc = c.count(doc)
+            if (cc == 0) return 0
+            min = minOf(cc, min)
+        }
+        return min
+    }
 }
 
 class UnorderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val width: Int) : CountWindow(stats, children) {

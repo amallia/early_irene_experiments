@@ -1,8 +1,10 @@
 package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.chai.*
-import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.GenericTokenizer
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.logSumExp
+import edu.umass.cics.ciir.irene.toParameters
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
@@ -63,7 +65,7 @@ fun LTRDocOfWeb(tokenizer: GenericTokenizer, p: Parameters): LTRDoc {
 val WikiFields = setOf("body", "short_text", "title", "id")
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dsName = argp.get("dataset", "mq07")
+    val dsName = argp.get("dataset", "clue09")
     val dataset = DataPaths.get(dsName)
     val evals = getEvaluators(listOf("ap", "ndcg"))
     val ms = NamedMeasures()

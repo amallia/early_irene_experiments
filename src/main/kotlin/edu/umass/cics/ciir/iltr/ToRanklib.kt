@@ -12,15 +12,23 @@ import java.io.File
 
 fun shouldNormalize(f: String): Boolean = f.startsWith("norm:")
 
+fun valAsDouble(value: Any?): Double = when (value) {
+    null -> 0.0
+    "NaN", "-Infinity", "+Infinity", "Infinity" -> 0.0
+    is Number -> value.toDouble()
+    is Boolean -> if (value) 1.0 else 0.0
+    else -> error("Unhandled value $value")
+}
+
 /**
  * @author jfoley
  */
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args);
-    val dataset = argp.get("dataset", "trec-car-100k")
+    val dataset = argp.get("dataset", "wt10g")
     val input = argp.get("input", "l2rf/latest/$dataset.features.jsonl.gz")
     val docInput = File("html_raw/$dataset.features.jsonl.gz")
-    val output = argp.get("output", "l2rf/latest/$dataset.features.ranklib")
+    val output = argp.get("output", "l2rf/latest/$dataset.features.ranklib.gz")
 
     val docFeatures = HashMap<String, Map<String, Double>>()
     if (docInput.exists()) {
@@ -31,13 +39,7 @@ fun main(args: Array<String>) {
             val docFVec = HashMap<String, Double>()
             docFeatures.put(docId, docFVec)
             features.keys.forEach { key ->
-                val value = features[key]
-                when (value) {
-                    null -> docFVec[key] = 0.0
-                    is Number -> docFVec[key] = value.toDouble()
-                    is Boolean -> docFVec[key] = if (value) 1.0 else 0.0
-                    else -> error("Unhandled value $value")
-                }
+                docFVec[key] = valAsDouble(features[key])
             }
         }
     }
@@ -59,7 +61,7 @@ fun main(args: Array<String>) {
                 if (shouldNormalize(fname)) {
                     fstats
                             .computeIfAbsent(Pair(qid, fname), { StreamingStats() })
-                            .push(features.getDouble(fname))
+                            .push(valAsDouble(features.get(fname)))
                 }
             }
             docFeatures[name]?.forEach { fname, value ->
@@ -102,13 +104,11 @@ fun main(args: Array<String>) {
             val docFVec = docFeatures[name] ?: emptyMap()
 
             val pt = fmap.entries.associate { (fname, fid) ->
-                val rawVal = (features[fname] as Number?)?.toDouble() ?: docFVec[fname]
+                val rawVal = docFVec[name] ?: valAsDouble(features[fname])
                 val stats = fstats[Pair(qid, fname)]
                 val fval = if (stats != null) {
-                    if (rawVal == null) 0.0 else {
-                        stats.maxMinNormalize(rawVal)
-                    }
-                } else rawVal ?: 0.0
+                    stats.maxMinNormalize(rawVal)
+                } else rawVal
                 Pair(fid, fval)
             }.toSortedMap().entries
                     .joinToString(
