@@ -49,6 +49,11 @@ inline fun <T> List<T>.forEachSeqPair(fn: (T,T)->Unit) {
         fn(this[i], this[i+1])
     }
 }
+inline fun <T,R> List<T>.mapEachSeqPair(fn: (T,T)->R): List<R> {
+    return (0 until this.size-1).map { i ->
+        fn(this[i], this[i+1])
+    }
+}
 inline fun <T> List<T>.forAllPairs(fn: (T,T)->Unit) {
     (0 until this.size-1).forEach { i ->
         (i until this.size).forEach { j ->

@@ -288,8 +288,10 @@ object DataPaths {
         else -> notImpl(name)
     }
 
+    val QuerySets = listOf(Robust, Gov2, Gov2_MQT, Clue09BSpam60, WT10G, REWQ_Clue12, DBPE)
+
     @JvmStatic fun main(args: Array<String>) {
-        listOf(Robust, Gov2, Gov2_MQT, Clue09BSpam60, WT10G, REWQ_Clue12, DBPE).forEach { collection ->
+        QuerySets.forEach { collection ->
             val nj = collection.qrels.size
             val nq = collection.title_qs.size
             println("${collection.name} Queries: submitted: $nq == with-qrels: $nj")

@@ -109,14 +109,14 @@ fun loadWord2VecTextFormat(input: File): Word2VecDB {
 // Conclusion: not possible with my unsupervised intuition.
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val inputPath = argp.get("vectors", "data/paragraphs.norm.w2v.vec")
+    val inputPath = argp.get("vectors", "data/paragraphs.norm.fastText.vec")
     val db = loadWord2VecTextFormat(File(inputPath))
     println("Loaded ${db.N} vectors of dim ${db.dim}")
 
     val stopwords = computeMeanVector(inqueryStop.mapNotNull { db[it] }) ?: db.bgVector
 
     val dataset = DataPaths.get("robust")
-    val queries = dataset.desc_qs
+    val queries = dataset.title_qs
     val qrels = dataset.qrels
     val info = NamedMeasures()
     val measure = getEvaluator("ap")
@@ -157,9 +157,15 @@ fun main(args: Array<String>) {
             info.push("ap1", measure.evaluate(baseline, judgments))
             info.push("ap2", measure.evaluate(treatment, judgments))
 
-            println("$qid: $info")
+            println("$qid: $qterms $info")
         }
     }
 
     println(info)
+}
+
+object ExactWordProb {
+    fun main(args: Array<String>) {
+
+    }
 }
