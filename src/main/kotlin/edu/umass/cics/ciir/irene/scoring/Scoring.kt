@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.irene.scoring
 
+import edu.umass.cics.ciir.chai.Fraction
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.sprf.*
@@ -389,6 +390,28 @@ internal class DirichletSmoothingEval(override val child: CountEvalNode, val mu:
             return Explanation.match(score(doc), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. ${child.getCountStats()}", listOf(child.explain(doc)))
         } else {
             return Explanation.noMatch("score=${score(doc)} or $c/$length with mu=$mu, bg=$background dirichlet smoothing ${child.getCountStats()} ${child.getCountStats().nonzeroCountProbability()}.", listOf(child.explain(doc)))
+        }
+    }
+}
+
+object DirichletSmoothingExploration {
+    @JvmStatic fun main(args: Array<String>) {
+        // As length increases, so does the Dirichlet Probability.
+        // As frequency increases, so does the Dirichlet Probability.
+        // Need max length.
+        // Estimate max freq as a fraction of that max length?
+        val bg = 0.05
+        val mu = 1500.0
+        (0 .. 100).forEach { i ->
+            val f = Fraction(i,100)
+            val values = (0 .. 10).map { s ->
+                val count = (f.numerator * s).toDouble()
+                val length = (f.denominator * s).toDouble()
+
+                Math.log((count + bg) / (length + mu))
+            }
+
+            println("${f.numerator}/${f.denominator} ${values.joinToString { "%1.3f".format(it) }}")
         }
     }
 }
