@@ -16,7 +16,7 @@ import java.io.File
  */
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dsName = argp.get("dataset", "robust")
+    val dsName = argp.get("dataset", "gov2")
     val dataset = DataPaths.get(dsName)
     val qrels = dataset.qrels
     val measure = getEvaluator("map")
@@ -24,7 +24,7 @@ fun main(args: Array<String>) {
     val scorer = argp.get("scorer", "ql")
     val qtype = argp.get("qtype", "title")
     val estStats = argp.get("stats", "min")
-    val proxType = argp.get("prox", "prox")
+    val proxType = argp.get("prox", "sc")
 
     val queries = when(qtype) {
         "title" -> dataset.title_qs

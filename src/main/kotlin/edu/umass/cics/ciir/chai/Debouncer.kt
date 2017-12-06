@@ -64,11 +64,11 @@ class CountingDebouncer(val total: Long, delay: Long = 1000) {
 
     fun incr(amt: Long=1L): RateEstimate? {
         val x = count.addAndGet(amt)
-        //return synchronized(msg) {
+        synchronized(msg) {
             return if (msg.ready()) {
                 msg.estimate(x, total)
             } else null
-        //}
+        }
     }
 
     fun final(): RateEstimate {
