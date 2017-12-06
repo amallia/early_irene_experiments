@@ -9,17 +9,20 @@ import java.util.*
 interface Vector {
     val dim: Int
     val indexes: IntRange get() = (0 until dim)
-    val l1Norm: Double get() = (0 until dim).sumByDouble { Math.abs(this[it]) }
-    val l2Norm: Double get() = (0 until dim).sumByDouble {
-        val xi = this[it]
-        return xi*xi
-    }
+    val l1Norm: Double get() = (0 until dim).sumByDouble { i -> Math.abs(get(i)) }
+    val l2Norm: Double get() = (0 until dim).sumByDouble { i -> val xi = get(i); xi*xi }
 
     fun toList() = indexes.map { get(it) }
     operator fun get(i: Int): Double
     fun dotp(v: Vector): Double {
         assert(v.dim == dim)
         return (0 until dim).sumByDouble { i -> this[i] * v[i] }
+    }
+    fun cosineSimilarity(v: Vector): Double {
+        val num = dotp(v)
+        val n1 = Math.sqrt(l2Norm)
+        val n2 = Math.sqrt(v.l2Norm)
+        return num / (n1 * n2)
     }
     fun copy(): SimpleDenseVector {
         val out = SimpleDenseVector(dim)
@@ -76,6 +79,18 @@ interface MutableVector : Vector {
             this[i] = v[i]
         }
     }
+}
+
+fun computeMeanVector(vs: List<Vector>): SimpleDenseVector? {
+    if (vs.size == 0) return null
+    if (vs.size == 1) return vs[0].copy()
+    val output = SimpleDenseVector(vs[0].dim)
+
+    val n = vs.size.toDouble()
+    vs.forEach { output.plusAssign(it) }
+    output.normalize(n)
+
+    return output
 }
 
 class SimpleDenseVector(override val dim: Int) : MutableVector {

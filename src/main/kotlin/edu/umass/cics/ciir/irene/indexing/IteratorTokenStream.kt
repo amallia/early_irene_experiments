@@ -68,7 +68,13 @@ class LDocBuilder(val params: IndexParams) {
      *  - A [AlreadyTokenizedTextField] of name [field] that contains a stream over the tokens using the correct analyzer.
      *  - A [NumericDocValuesField] of name "lengths:$[field]" which contains the true length; this lets Lucene use norms as it wishes.
      */
-    fun setTextField(field: String, text: String, stored: Boolean) = setTextField(field, text, analyzer.tokenize(field, text), stored)
+    fun setTextField(field: String, text: String, stored: Boolean=true) = setTextField(field, text, analyzer.tokenize(field, text), stored)
+
+    fun maybeTextField(field: String, text: String?, stored: Boolean=true) {
+        if (text != null) {
+            setTextField(field, text, stored)
+        }
+    }
 
     /**
      * This "setter" creates derived lucene fields from the same text.

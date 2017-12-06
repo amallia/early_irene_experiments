@@ -3,7 +3,17 @@ package edu.umass.cics.ciir.wordvec
 import edu.umass.cics.ciir.chai.CountingDebouncer
 import edu.umass.cics.ciir.chai.smartReader
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
+import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.toQueryResults
 import edu.umass.cics.ciir.learning.Vector
+import edu.umass.cics.ciir.learning.computeMeanVector
+import edu.umass.cics.ciir.sprf.DataPaths
+import edu.umass.cics.ciir.sprf.NamedMeasures
+import edu.umass.cics.ciir.sprf.getEvaluator
+import edu.umass.cics.ciir.sprf.inqueryStop
+import org.lemurproject.galago.core.eval.QueryJudgments
+import org.lemurproject.galago.utility.MathUtils
+import org.lemurproject.galago.utility.Parameters
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -94,10 +104,62 @@ fun loadWord2VecTextFormat(input: File): Word2VecDB {
     }
 }
 
+
+// This main file answers the question: What if we used word vectors to try and assign bigram weights?
+// Conclusion: not possible with my unsupervised intuition.
 fun main(args: Array<String>) {
-    val db = loadWord2VecTextFormat(File("data/paragraphs.norm.w2v.vec"))
+    val argp = Parameters.parseArgs(args)
+    val inputPath = argp.get("vectors", "data/paragraphs.norm.w2v.vec")
+    val db = loadWord2VecTextFormat(File(inputPath))
     println("Loaded ${db.N} vectors of dim ${db.dim}")
 
-    println(db["president"])
-    println(db["minister"])
+    val stopwords = computeMeanVector(inqueryStop.mapNotNull { db[it] }) ?: db.bgVector
+
+    val dataset = DataPaths.get("robust")
+    val queries = dataset.desc_qs
+    val qrels = dataset.qrels
+    val info = NamedMeasures()
+    val measure = getEvaluator("ap")
+
+    dataset.getIreneIndex().use { index ->
+        index.env.estimateStats = "min"
+        val qtok = queries.mapValues { (_,qtext) -> index.tokenize(qtext) }
+        val qTermVectors = qtok.values.flatMap { qterms -> qterms.map { Pair(it, db[it] ?: db.bgVector) } }.associate { it }
+
+        //println("stopwords=${stopwords.copy()}")
+        qTermVectors.forEach { term, vec ->
+            println("$term: ${vec.cosineSimilarity(stopwords)}")
+        }
+
+        qtok.forEach { qid, qterms ->
+            val judgments = qrels[qid] ?: QueryJudgments(qid, emptyMap())
+            val vecs = qterms.map { qTermVectors[it]!! }
+            val qMeanVec = computeMeanVector(vecs) ?: error("No vectors?")
+            val baselineQ = SequentialDependenceModel(qterms)
+
+            val treatmentQ = SequentialDependenceModel(qterms, makeScorer = { c ->
+                if (c is TextExpr) {
+                    // unigram weighting
+                    DirQLExpr(c).weighted(1.0 - MathUtils.sigmoid(qMeanVec.cosineSimilarity(qTermVectors[c.text]!!)))
+                } else if (c is OrderedWindowExpr || c is UnorderedWindowExpr) {
+                    val mVec = computeMeanVector(c.children.mapNotNull { it as? TextExpr }.map { qTermVectors[it.text]!! })!!
+                    DirQLExpr(c).weighted(1.0 - MathUtils.sigmoid(qMeanVec.cosineSimilarity(mVec)))
+                } else error("No other node in SDM! But, actually found: $c")
+            })
+
+            println(simplify(treatmentQ))
+
+            val results = index.pool(mapOf("baseline" to baselineQ, "treatment" to treatmentQ), 1000)
+
+            val baseline = results["baseline"]!!.toQueryResults(index, qid)
+            val treatment = results["treatment"]!!.toQueryResults(index, qid)
+
+            info.push("ap1", measure.evaluate(baseline, judgments))
+            info.push("ap2", measure.evaluate(treatment, judgments))
+
+            println("$qid: $info")
+        }
+    }
+
+    println(info)
 }

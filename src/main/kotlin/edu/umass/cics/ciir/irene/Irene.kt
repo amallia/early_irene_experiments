@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.irene
 
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
+import edu.umass.cics.ciir.chai.CountingDebouncer
 import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.irene.indexing.LDocBuilder
 import edu.umass.cics.ciir.irene.lang.IreneQueryLanguage
@@ -9,15 +10,13 @@ import edu.umass.cics.ciir.irene.lang.MultiExpr
 import edu.umass.cics.ciir.irene.lang.QExpr
 import edu.umass.cics.ciir.irene.lang.TextExpr
 import edu.umass.cics.ciir.irene.scoring.IreneQueryModel
+import edu.umass.cics.ciir.sprf.IRDataset
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper
 import org.apache.lucene.benchmark.byTask.feeds.DocData
 import org.apache.lucene.benchmark.byTask.feeds.NoMoreDataException
 import org.apache.lucene.benchmark.byTask.feeds.TrecContentSource
 import org.apache.lucene.benchmark.byTask.utils.Config
-import org.apache.lucene.document.Field
-import org.apache.lucene.document.StringField
-import org.apache.lucene.document.TextField
 import org.apache.lucene.index.*
 import org.apache.lucene.search.*
 import org.lemurproject.galago.utility.Parameters
@@ -251,9 +250,14 @@ fun main(args: Array<String>) {
         setProperty("tests.verbose", "false")
         setProperty("content.source.excludeIteration", "true")
         setProperty("content.source.forever", "false")
-        setProperty("docs.dir", "/media/jfoley/flash/raw/robust04/data/")
+        setProperty("docs.dir", when(IRDataset.host) {
+            "gob" -> "/media/jfoley/flash/raw/robust04/data/"
+            "oakey" -> "/mnt/scratch/jfoley/robust04raw/"
+            else -> error("Robust raw path needed.")
+        })
     })
 
+    val msg = CountingDebouncer(527_719)
     IreneIndexer.build {
         withPath(File("/mnt/scratch/jfoley/robust.irene2"))
         create()
@@ -268,19 +272,15 @@ fun main(args: Array<String>) {
                 e.printStackTrace(System.err)
             }
 
-            val fields = arrayListOf<IndexableField>()
-            fields.add(StringField("id", doc.name, Field.Store.YES))
-            if (doc.title != null) {
-                fields.add(TextField("title", doc.title, Field.Store.YES))
+            writer.doc {
+                setId(doc.name)
+                setTextField("body", doc.body, true)
+                maybeTextField("title", doc.title, true)
+                maybeTextField("date", doc.date, true)
             }
-            fields.add(TextField("body", doc.body, Field.Store.YES))
-            if (doc.date != null) {
-                fields.add(StringField("date", doc.date, Field.Store.YES))
+            msg.incr()?.let { upd ->
+                println("Indexing robust.irene2 $upd")
             }
-            if(doc.props.size > 0) {
-                println(doc.props)
-            }
-            writer.push(fields)
         }
     }
 }
