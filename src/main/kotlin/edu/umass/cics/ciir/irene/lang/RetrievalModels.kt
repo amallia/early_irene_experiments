@@ -58,7 +58,7 @@ fun SequentialDependenceModel(terms: List<String>, field: String?=null, statsFie
         exprs.add(makeScorer(UnorderedWindowExpr(fullProxTerms.map { TextExpr(it, field, statsField) }, fullProxWidth)).weighted(fullProx))
     }
 
-    return SumExpr(exprs)
+    return MeanExpr(exprs)
 }
 
 fun FullDependenceModel(terms: List<String>, field: String?=null, statsField: String? = null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, fullProx: Double? = null, fullProxWidth:Int=12, makeScorer: (QExpr)-> QExpr = { DirQLExpr(it) }): QExpr {

@@ -1,9 +1,6 @@
 package edu.umass.cics.ciir.irene.example
 
-import edu.umass.cics.ciir.chai.CountingDebouncer
-import edu.umass.cics.ciir.chai.forEachSeqPair
-import edu.umass.cics.ciir.chai.mapEachSeqPair
-import edu.umass.cics.ciir.chai.smartPrint
+import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.DataPaths
@@ -13,6 +10,7 @@ import edu.umass.cics.ciir.sprf.inqueryStop
 import org.lemurproject.galago.utility.Parameters
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.experimental.buildSequence
 
 /**
  *
@@ -135,6 +133,45 @@ object CollectStatsForQueries {
                     }
 
                     // Do stuff.
+                }
+            }
+        }
+    }
+}
+
+data class CTCount(val context: String, val token: String, var count: Int = 0) : ScoredForHeap {
+    override val score: Float get() = count.toFloat()
+
+}
+object MergeSortedContextCounts {
+
+    fun countedFromLines(lines: Sequence<String>): Sequence<CTCount> = buildSequence {
+        var accum: CTCount? = null
+        for (line in lines) {
+            val cols = line.split('\t')
+            val ctx = cols[0]
+            val term = cols[1]
+            val count = cols[2].toInt()
+
+            if (accum == null || accum.context != ctx || accum.token != term) {
+                if (accum != null) {
+                    yield(accum!!)
+                }
+                accum = CTCount(ctx, term, count)
+            } else {
+                accum.count += count
+            }
+        }
+        if (accum != null) {
+            yield(accum!!)
+        }
+    }
+
+    @JvmStatic fun main(args: Array<String>) {
+        File("q-context-counts.summed.tsv.gz").smartPrint { writer ->
+            File("q-context-counts.sorted.tsv.gz").smartLines { lines: Sequence<String> ->
+                countedFromLines(lines).forEach { ctc ->
+                    writer.println("${ctc.context}\t${ctc.token}\t${ctc.count}")
                 }
             }
         }

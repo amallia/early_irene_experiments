@@ -1,16 +1,12 @@
 package edu.umass.cics.ciir.wordvec
 
-import edu.umass.cics.ciir.chai.CountingDebouncer
-import edu.umass.cics.ciir.chai.smartReader
+import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.toQueryResults
 import edu.umass.cics.ciir.learning.Vector
 import edu.umass.cics.ciir.learning.computeMeanVector
-import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.NamedMeasures
-import edu.umass.cics.ciir.sprf.getEvaluator
-import edu.umass.cics.ciir.sprf.inqueryStop
+import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.MathUtils
 import org.lemurproject.galago.utility.Parameters
@@ -164,8 +160,87 @@ fun main(args: Array<String>) {
     println(info)
 }
 
-object ExactWordProb {
-    fun main(args: Array<String>) {
+data class ScoredWord(override val score: Float, val word: String): ScoredForHeap { }
 
+object ExactWordProb {
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val wordWordCounts = HashMap<String, HashMap<String, Int>>()
+        val contextNorms = HashMap<String, Int>()
+
+        val inputPath = argp.get("vectors", "q-context-counts.summed.tsv.gz")
+        File(inputPath).smartDoLines(true, total=3833527L) { line ->
+            val cols = line.split('\t')
+            val context = cols[0]
+            val word = cols[1]
+            val count = cols[2].toInt()
+            wordWordCounts.computeIfAbsent(context, {HashMap()}).incr(word, count)
+            contextNorms.incr(context, count)
+        }
+
+        val dataset = DataPaths.get("robust")
+        val queries = dataset.title_qs
+        val qrels = dataset.qrels
+        val info = NamedMeasures()
+        val measure = getEvaluator("ap")
+
+        dataset.getIreneIndex().use { index ->
+            index.env.estimateStats = "min"
+            val qtok = queries.mapValues { (_,qtext) -> index.tokenize(qtext) }
+            qtok.forEach { qid, qterms ->
+                val judgments = qrels[qid] ?: QueryJudgments(qid, emptyMap())
+
+                val wordBiList = qterms + qterms.mapEachSeqPair { lhs, rhs -> "$lhs $rhs" }
+
+                val candidateProbabilities = wordBiList.associate { ctx ->
+                    val norm = contextNorms[ctx] ?: 0
+                    val scored = (wordWordCounts[ctx] ?: emptyMap<String, Int>()).mapValues { (_,freq) ->
+                        safeDiv(freq, norm)
+                    }
+                    Pair(ctx, scored)
+                }
+                val candidates = candidateProbabilities.values.flatMapTo(HashSet()) { it.keys }
+
+                val heap = ScoringHeap<ScoredWord>(30)
+                for (c in candidates) {
+                    val likelihood = candidateProbabilities.entries.sumByDouble { (obsv, probs) ->
+                        val bgProb = (0.5 / (contextNorms[obsv] ?: 1).toDouble())
+                        Math.log(probs[c] ?: bgProb)
+                    }
+                    heap.offer(ScoredWord(likelihood.toFloat(), c))
+                }
+
+                val expTerms = heap.sorted
+                println(expTerms.joinToString(separator = "\t"))
+                val logSumExp = MathUtils.logSumExp(expTerms.map { it.score.toDouble() }.toDoubleArray())
+
+                val normExpTerms = expTerms.associate { Pair(it.word, Math.exp(it.score.toDouble() - logSumExp)) }.normalize()
+                println(normExpTerms.entries.joinToString(separator = "\t"))
+
+                candidateProbabilities.forEach { obsv, probs ->
+                    val norm = (contextNorms[obsv] ?: 1).toDouble()
+                    val bgProb = 0.5 / norm
+                    val score = candidates.associate { Pair(it, Math.log(probs[it] ?: bgProb)) }
+                }
+
+                val baselineQ = SequentialDependenceModel(qterms)
+                val treatmentQ = SumExpr(baselineQ.weighted(0.7),
+                        SumExpr(normExpTerms.map { DirQLExpr(TextExpr(it.key)).weighted(it.value) }).weighted(0.3))
+
+                println(simplify(treatmentQ))
+
+                val results = index.pool(mapOf("baseline" to baselineQ, "treatment" to treatmentQ), 1000)
+
+                val baseline = results["baseline"]!!.toQueryResults(index, qid)
+                val treatment = results["treatment"]!!.toQueryResults(index, qid)
+
+                info.push("ap1", measure.evaluate(baseline, judgments))
+                info.push("ap2", measure.evaluate(treatment, judgments))
+
+                println("$qid: $qterms $info")
+            }
+        }
+
+        println(info)
     }
 }
