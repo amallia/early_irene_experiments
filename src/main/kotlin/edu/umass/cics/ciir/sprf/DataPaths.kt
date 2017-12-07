@@ -148,7 +148,7 @@ open class NYTSource : IRDataset() {
     override val name: String = "nyt-ldc"
     val inputTarFiles: List<File> get() = when(IRDataset.host) {
         "oakey" -> NYT.Years.flatMap { year -> File("/mnt/scratch/jfoley/nyt-raw/data", year.toString()).listFiles().toList() }
-        "gob" -> NYT.Years.map { year -> File("/media/jfoley/flash/raw/nyt/nyt-$year.tar)") }
+        "gob" -> NYT.Years.map { year -> File("/media/jfoley/flash/raw/nyt/nyt-$year.tar") }
         else -> notImpl(IRDataset.host)
     }
 }
