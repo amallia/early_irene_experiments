@@ -103,10 +103,10 @@ class IreneIndexer(val params: IndexParams) : Closeable {
     }
     fun open() = IreneIndex(dest, params)
 
-    fun doc(fn: LDocBuilder.()->Unit) {
+    fun doc(fn: LDocBuilder.()->Unit): Long {
         val doc = LDocBuilder(params)
         fn(doc)
-        push(doc.finish())
+        return push(doc.finish())
     }
 }
 

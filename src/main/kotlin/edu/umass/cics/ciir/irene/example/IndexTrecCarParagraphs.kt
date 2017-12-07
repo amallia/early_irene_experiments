@@ -5,8 +5,11 @@ import edu.umass.cics.ciir.chai.Debouncer
 import edu.umass.cics.ciir.chai.smartDoLines
 import edu.umass.cics.ciir.chai.smartPrint
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
-import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.IndexParams
+import edu.umass.cics.ciir.irene.IreneIndex
+import edu.umass.cics.ciir.irene.IreneIndexer
 import edu.umass.cics.ciir.irene.lang.SequentialDependenceModel
+import edu.umass.cics.ciir.irene.toQueryResults
 import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluators
 import edu.umass.cics.ciir.sprf.inqueryStop
@@ -14,9 +17,6 @@ import edu.umass.cics.ciir.sprf.pmake
 import edu.unh.cs.treccar.Data
 import edu.unh.cs.treccar.read_data.DeserializeData
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
-import org.apache.lucene.document.Field
-import org.apache.lucene.document.StringField
-import org.apache.lucene.document.TextField
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QuerySetJudgments
 import org.lemurproject.galago.utility.Parameters
@@ -50,11 +50,11 @@ fun main(args: Array<String>) {
                 val text = paragraph.textOnly
                 val links = paragraph.entitiesOnly
 
-                val processed = writer.push(
-                        StringField("id", id, Field.Store.YES),
-                        TextField("text", text, Field.Store.YES),
-                        TextField("links", links.joinToString(separator="\t"), Field.Store.YES)
-                )
+                val processed = writer.doc {
+                    setId(id)
+                    setTextField("text", text)
+                    setTextField("links", links.joinToString(separator="\t"))
+                }
 
                 if (msg.ready()) {
                     println(id)
