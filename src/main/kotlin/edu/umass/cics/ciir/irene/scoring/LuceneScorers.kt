@@ -22,7 +22,7 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
     val iterCache = HashMap<Term, Optional<PostingsEnum>>()
 
     private fun getLengths(field: String) = lengths.computeIfAbsent(field, { missing ->
-        lucene_try { context.reader().getNormValues(missing) } ?: error("Couldn't find norms for ``$missing''.")
+        lucene_try { context.reader().getNormValues(missing) } ?: error("Couldn't find norms for ``$missing'' ND=${context.reader().numDocs()} F=${context.reader().fieldInfos.map { it.name }}.")
     })
 
     fun create(term: Term, needed: DataNeeded, stats: CountStats): QueryEvalNode {

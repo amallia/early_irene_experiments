@@ -49,6 +49,7 @@ object NYT {
     fun getIndexParams(path: String) = IndexParams().apply {
         withPath(File(path))
         withAnalyzer("classifier", WhitespaceAnalyzer())
+        defaultField = "text"
     }
 
 }
@@ -73,7 +74,12 @@ object TitlePatterns {
 }
 
 
-fun Element.selectSingleChild(tag: String): Element? = this.children().find { it.tagName() == tag }
+fun Element.selectSingleChild(tag: String): Element? {
+    val found = select(tag)
+    if (found.size == 0) return null
+    if (found.size == 1) return found[0]
+    error("Multiple tags found for `$tag`")
+}
 fun Element.innerText(): String = this.text()
 
 /**
@@ -91,7 +97,6 @@ class NYTDoc {
     lateinit var desk: String
     private var byline: String? = null
     var title: String? = null
-    lateinit var body: String
     private val date: LocalDateTime
     private val epochSec: Long
     private var score = 0.0f
@@ -103,7 +108,7 @@ class NYTDoc {
         this.id = fields["id"] ?: error("Must have id stored.")
         this.title = fields["title"] ?: ""
         this.headline = fields["headline"] ?: ""
-        this.body = fields.get("body")
+        this.text = fields.get("text")
         this.epochSec = fields.getField("storedTimeStamp").numericValue().toLong()
         this.date = LocalDateTime.ofEpochSecond(epochSec, 0, ZoneOffset.UTC)
     }
@@ -129,44 +134,42 @@ class NYTDoc {
         }
         classifier = classifiers.joinToString(separator = "\n")
 
-        val bodyTag = xml.selectSingleChild("body")
+        val bodyTag = xml.selectSingleChild("body") ?: error("Missing body!")
 
-        if (bodyTag != null) {
-            headline = bodyTag.selectSingleChild("hedline")?.innerText() ?: ""
-            if (TitlePatterns.isNoHeadline(headline!!)) {
-                headline = ""
-            }
+        headline = bodyTag.selectSingleChild("hedline")?.innerText() ?: ""
+        if (TitlePatterns.isNoHeadline(headline!!)) {
+            headline = ""
+        }
 
 
-            val bylines = bodyTag.select("byline")
-            if (bylines.isEmpty()) {
-                byline = ""
-            } else {
-                for (xNode in bylines) {
-                    if (xNode.attr("class").toLowerCase() == ("normalized_byline")) {
-                        byline = xNode.innerText()
-                    }
-                }
-                // fall-back to "any" byline.
-                if (byline == null) {
-                    bylines[0].innerText()
+        val bylines = bodyTag.select("byline")
+        if (bylines.isEmpty()) {
+            byline = ""
+        } else {
+            for (xNode in bylines) {
+                if (xNode.attr("class").toLowerCase() == ("normalized_byline")) {
+                    byline = xNode.innerText()
                 }
             }
+            // fall-back to "any" byline.
+            if (byline == null) {
+                bylines[0].innerText()
+            }
+        }
 
-            val blocks = bodyTag.select("block")
-            for (block in blocks) {
-                val blockClass = block.attr("class")
-                when (blockClass) {
-                    "lead_paragraph" -> lead = joinParagraphs(block)
-                    "online_lead_paragraph" -> {
-                        if (lead == null) { // only if not another
-                            lead = joinParagraphs(block)
-                        }
+        val blocks = bodyTag.select("block")
+        for (block in blocks) {
+            val blockClass = block.attr("class")
+            when (blockClass) {
+                "lead_paragraph" -> lead = joinParagraphs(block)
+                "online_lead_paragraph" -> {
+                    if (lead == null) { // only if not another
+                        lead = joinParagraphs(block)
                     }
-                    "full_text" -> text = joinParagraphs(block)
-                    "correction_text" -> wasCorrected = true
-                    else -> throw RuntimeException(id + "\t" + blockClass)
                 }
+                "full_text" -> text = joinParagraphs(block)
+                "correction_text" -> wasCorrected = true
+                else -> throw RuntimeException(id + "\t" + blockClass)
             }
         }
 
@@ -200,7 +203,7 @@ class NYTDoc {
         staticFeatures.put("title.earnings", ofBool(TitlePatterns.isEarningsReport(title)))
         staticFeatures.put("title.obit", ofBool(TitlePatterns.isObituary(title)))
         staticFeatures.put("title.correction", ofBool(TitlePatterns.isCorrection(title)))
-        staticFeatures.put("body.length", body.length.toFloat())
+        staticFeatures.put("text.length", (text ?: "").length.toFloat())
         staticFeatures.put("date." + date.dayOfWeek.toString(), ofBool(true))
         staticFeatures.put("date.continuous", NYT.getNormCorpusTime(epochSec))
 

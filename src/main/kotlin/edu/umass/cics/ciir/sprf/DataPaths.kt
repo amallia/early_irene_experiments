@@ -322,11 +322,13 @@ object DataPaths {
     val Clue09BSpam60 = Clue09BSpam60()
     val WT10G = WT10G()
     val TrecCarT200 = TrecCarTest200()
+    val TrecCoreNIST = TrecCoreNIST()
 
     val REWQ_Clue12: WikiSource = Clue12Rewq()
     val DBPE: WikiSource = DBPE()
 
     fun get(name: String): IRDataset = when(name) {
+        "trec-core" -> TrecCoreNIST
         "trec-car-test200", "trec-car" -> TrecCarT200
         "robust", "robust04" -> Robust
         "gov2" -> Gov2
