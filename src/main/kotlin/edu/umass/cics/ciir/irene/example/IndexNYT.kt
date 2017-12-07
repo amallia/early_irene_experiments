@@ -8,6 +8,7 @@ package edu.umass.cics.ciir.irene.example
 import edu.umass.cics.ciir.chai.CountingDebouncer
 import edu.umass.cics.ciir.chai.Debouncer
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.sprf.NYTSource
 import edu.umass.cics.ciir.sprf.reader
 import gnu.trove.map.hash.TObjectFloatHashMap
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
@@ -17,7 +18,6 @@ import org.apache.lucene.search.ScoreDoc
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
-import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.*
 import java.time.LocalDate
@@ -25,7 +25,6 @@ import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.*
 import java.util.zip.GZIPInputStream
-import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.coroutines.experimental.buildSequence
 import kotlin.streams.asStream
 
@@ -35,6 +34,7 @@ object NYT {
     val MinYear = 1987
     val MaxYear = 2007
     val MaxDate = LocalDate.of(2007, 6, 19)
+    val Years = (MinYear .. MaxYear)
 
     val NumDocs = 1855490
     val CorpusStart: Long = 536457600
@@ -50,6 +50,7 @@ object NYT {
         withPath(File(path))
         withAnalyzer("classifier", WhitespaceAnalyzer())
     }
+
 }
 
 object TitlePatterns {
@@ -340,7 +341,15 @@ data class TarEntryData(val name: String, private val content: ByteArray) {
     }
 }
 fun tarEntries(fp: File): Sequence<TarEntryData> = buildSequence {
-    TarArchiveInputStream(StreamCreator.openInputStream(fp)).use { tarStream ->
+    val name = fp.name
+
+    val fileStream = if(name.endsWith(".tgz")) {
+        GZIPInputStream(FileInputStream(fp))
+    } else {
+        StreamCreator.openInputStream(fp)
+    }
+
+    TarArchiveInputStream(fileStream).use { tarStream ->
         while(true) {
             val current = tarStream.nextTarEntry ?: break
             if (current.size == 0L) continue
@@ -352,32 +361,25 @@ fun tarEntries(fp: File): Sequence<TarEntryData> = buildSequence {
 }
 
 fun main(args: Array<String>) {
-    val argp = Parameters.parseArgs(args)
-
-    val factory = DocumentBuilderFactory.newInstance()
-    factory.isValidating = false
-    factory.isExpandEntityReferences = false
-
-    val params = NYT.getIndexParams("/media/jfoley/flash/nytxml.irene2").apply {
-        create()
-    }
-    val dir = File(argp.get("input", "/media/jfoley/flash/raw/nyt/"))
+    val dataset = NYTSource()
+    val params = dataset.getIndexParams().apply { create() }
     IreneIndexer(params).use { indexer ->
         val msg = CountingDebouncer(NYT.NumDocs.toLong())
-        for (i in NYT.MinYear..NYT.MaxYear) {
-            tarEntries(File(dir, "nyt-$i.tar")).asStream().parallel().forEach { entry ->
-                val text = entry.text.replace("<!DOCTYPE nitf SYSTEM \"http://www.nitf.org/IPTC/NITF/3.3/specification/dtd/nitf-3-3.dtd\">", "\n")
-                try {
-                    val xsoup = Jsoup.parse(text, "http://www.nyt.com/", Parser.xmlParser())
-                    val doc = NYTDoc(xsoup)
+        dataset.inputTarFiles.toList().asSequence().asStream()
+                .flatMap { tarEntries(it).asStream() }
+                .parallel()
+                .forEach { entry ->
+            val text = entry.text.replace("<!DOCTYPE nitf SYSTEM \"http://www.nitf.org/IPTC/NITF/3.3/specification/dtd/nitf-3-3.dtd\">", "\n")
+            try {
+                val xsoup = Jsoup.parse(text, "http://www.nyt.com/", Parser.xmlParser())
+                val doc = NYTDoc(xsoup)
 
-                    indexer.push(doc.toLuceneDoc())
-                    msg.incr()?.let { upd ->
-                        println(upd)
-                    }
-                } catch (e: Exception) {
-                    System.err.println(entry.name+": "+e.message)
+                indexer.push(doc.toLuceneDoc())
+                msg.incr()?.let { upd ->
+                    println(upd)
                 }
+            } catch (e: Exception) {
+                System.err.println(entry.name+": "+e.message)
             }
         }
     } // close indexer

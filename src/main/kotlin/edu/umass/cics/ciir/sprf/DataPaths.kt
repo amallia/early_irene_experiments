@@ -2,11 +2,12 @@ package edu.umass.cics.ciir.sprf
 
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndex
+import edu.umass.cics.ciir.irene.example.NYT
 import edu.umass.cics.ciir.irene.example.TrecCarDataset
 import edu.umass.cics.ciir.irene.example.getTrecCarIndexParams
 import edu.umass.cics.ciir.irene.example.loadTrecCarDataset
-import edu.umass.cics.ciir.sprf.IRDataset.Companion.host
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
+import org.jsoup.Jsoup
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QuerySetJudgments
 import org.lemurproject.galago.core.retrieval.LocalRetrieval
@@ -26,20 +27,20 @@ fun mapHost(host: String): String {
 }
 
 
-interface IRDataset {
+abstract class IRDataset {
     companion object {
         val host: String = mapHost(InetAddress.getLocalHost().hostName)
     }
-    fun getQueryDir(): File = File(when(host) {
+    open fun getQueryDir(): File = File(when(host) {
         "gob" -> "/home/jfoley/code/queries/"
         "oakey" -> "/home/jfoley/code/queries/"
         "sydney" -> "/mnt/nfs/work1/jfoley/queries/"
         else -> notImpl(host)
     })
-    val name: String
+    abstract val name: String
 
-    fun getBM25B(): Double? = null
-    fun getBM25K(): Double? = null
+    open fun getBM25B(): Double? = null
+    open fun getBM25K(): Double? = null
 
     abstract fun getIndexParams(): IndexParams
     fun getIreneIndex(): IreneIndex = IreneIndex(getIndexParams())
@@ -55,22 +56,22 @@ interface IRDataset {
         }
     }
 
-    val qrels: QuerySetJudgments get() = getQueryJudgments()
-    val title_qs: Map<String,String> get() = getTitleQueries()
-    val desc_qs: Map<String,String> get() = getDescQueries()
+    val qrels: QuerySetJudgments by lazy { getQueryJudgments() }
+    val title_qs: Map<String,String> by lazy { getTitleQueries() }
+    val desc_qs: Map<String,String> by lazy { getDescQueries() }
 
-    fun getTitleQueries(): Map<String, String> = parseTSV(getTitleQueryFile())
-    fun getDescQueries(): Map<String, String> = parseTSV(getDescQueryFile())
-    fun getQueryJudgments(): QuerySetJudgments = QuerySetJudgments(getQueryJudgmentsFile().absolutePath, false, false);
+    open fun getTitleQueries(): Map<String, String> = parseTSV(getTitleQueryFile())
+    open fun getDescQueries(): Map<String, String> = parseTSV(getDescQueryFile())
+    open fun getQueryJudgments(): QuerySetJudgments = QuerySetJudgments(getQueryJudgmentsFile().absolutePath, false, false);
 
     // Implement these:
-    fun getIndexFile(): File
-    fun getTitleQueryFile(): File
-    fun getDescQueryFile(): File
-    fun getQueryJudgmentsFile(): File
+    abstract fun getIndexFile(): File
+    abstract fun getTitleQueryFile(): File
+    abstract fun getDescQueryFile(): File
+    abstract fun getQueryJudgmentsFile(): File
 }
 
-class Robust04 : IRDataset {
+class Robust04 : IRDataset() {
     override fun getIndexParams(): IndexParams {
         val path = when(IRDataset.host) {
             "gob" -> "/media/jfoley/flash/robust.irene2"
@@ -100,7 +101,7 @@ class Robust04 : IRDataset {
     override fun getBM25K(): Double? = 0.75
 }
 
-open class Gov2 : IRDataset {
+open class Gov2 : IRDataset() {
     override fun getIndexParams(): IndexParams {
         val path = when(IRDataset.host) {
             "gob" -> "/media/jfoley/flash/gov2.irene2"
@@ -133,7 +134,55 @@ class MQ2007 : Gov2() {
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "million_query_track/gov2/mq.gov2.judged.qrel")
 }
 
-open class WikiSource : IRDataset {
+open class NYTSource : IRDataset() {
+    override fun getTitleQueryFile(): File = error("No queries.")
+    override fun getDescQueryFile(): File = error("No queries.")
+    override fun getQueryJudgmentsFile(): File = error("No queries.")
+    override fun getIndexParams(): IndexParams = NYT.getIndexParams(getIreneIndexPath())
+    fun getIreneIndexPath() = when(IRDataset.host) {
+        "oakey" -> "/mnt/scratch/jfoley/nyt.irene2"
+        "gob" -> "/media/jfoley/flash/nyt.irene2"
+        else -> notImpl(IRDataset.host)
+    }
+    override fun getIndexFile(): File = notImpl(IRDataset.host)
+    override val name: String = "nyt-ldc"
+    val inputTarFiles: List<File> get() = when(IRDataset.host) {
+        "oakey" -> NYT.Years.flatMap { year -> File("/mnt/scratch/jfoley/nyt-raw/data", year.toString()).listFiles().toList() }
+        "gob" -> NYT.Years.map { year -> File("/media/jfoley/flash/raw/nyt/nyt-$year.tar)") }
+        else -> notImpl(IRDataset.host)
+    }
+}
+
+data class ParsedTrecCoreQuery(val qid: String, val title: String, val desc: String, val narr: String)
+class TrecCoreNIST : NYTSource() {
+    val nistQueryData: List<ParsedTrecCoreQuery> by lazy { parseNISTSGMLQueries(File(getQueryDir(), "trec_core/core_nist.txt")) }
+    val crowdQueryData: List<ParsedTrecCoreQuery> by lazy { parseNISTSGMLQueries(File(getQueryDir(), "trec_core/core_crowd.txt")) }
+    val queryData: List<ParsedTrecCoreQuery> by lazy { nistQueryData + crowdQueryData }
+
+    fun parseNISTSGMLQueries(fp: File): List<ParsedTrecCoreQuery> {
+        val doc = Jsoup.parse(fp.readText(), "http://trec.nist.gov")
+        return doc.select("top").map { query ->
+            // Without close tags, these can get parsed as:
+            // <title> Title <desc> Longer Text <narr> Narrative here </narr> </desc> </title>
+            val qid = query.selectFirst("num").ownText().substringAfter("Number:")
+            val title = query.selectFirst("title").ownText() ?: ""
+            val desc = query.selectFirst("desc").ownText() ?: ""
+            val narr = query.selectFirst("narr").ownText() ?: ""
+            ParsedTrecCoreQuery(qid.trim(), title.trim(), desc.trim(), narr.trim())
+        }
+    }
+
+    override fun getTitleQueries(): Map<String, String> {
+        return nistQueryData.associate { Pair(it.qid, it.title) }
+    }
+
+    override fun getDescQueries(): Map<String, String> {
+        return nistQueryData.associate { Pair(it.qid, it.desc) }
+    }
+    override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "trec_core/nist.qrels.txt")
+}
+
+open class WikiSource : IRDataset() {
     override val name: String = "wiki"
     override fun getTitleQueryFile(): File = error("No queries.")
     override fun getDescQueryFile(): File = error("No queries.")
@@ -200,7 +249,7 @@ private class DBPE : WikiSource() {
     }
 }
 
-class Clue09BSpam60 : IRDataset {
+class Clue09BSpam60 : IRDataset() {
     override fun getIndexParams(): IndexParams {
         val path = when(IRDataset.host) {
             "oakey" -> "/mnt/scratch/jfoley/clue09.irene2"
@@ -223,7 +272,7 @@ class Clue09BSpam60 : IRDataset {
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "clue09/clueweb.qrels")
 }
 
-class WT10G : IRDataset {
+class WT10G : IRDataset() {
     override fun getIndexParams(): IndexParams {
         val path = when(IRDataset.host) {
             "oakey" -> "/mnt/scratch/jfoley/wt10g.irene2"
@@ -246,14 +295,13 @@ class WT10G : IRDataset {
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "wt10g/wt10g.qrels")
 }
 
-class TrecCarTest200 : IRDataset {
+class TrecCarTest200 : IRDataset() {
     override val name: String = "trec-car"
     fun getBaseDir(): File = File(when(host) {
         "oakey" -> "/mnt/scratch/jfoley/trec-car/"
         else -> notImpl(host)
     })
     val tcd: TrecCarDataset by lazy { loadTrecCarDataset(File(getBaseDir(), "test200/train.test200.fold0.cbor.hierarchical.qrels")) }
-    override fun getIreneIndex(): IreneIndex = IreneIndex(getIndexParams())
     override fun getIndexParams(): IndexParams = getTrecCarIndexParams(File(getBaseDir(), "paragraphs.irene2"))
     override fun getIndexFile(): File = error("No galago.")
     override fun getTitleQueryFile(): File = error("No title queries.")

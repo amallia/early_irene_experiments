@@ -93,7 +93,7 @@ object TestDecode {
     @JvmStatic fun main(args: Array<String>) {
         (1 .. 4).forEach { fold ->
             val qrelsPath = File("/mnt/scratch/jfoley/trec-car/train/train.fold$fold.cbor.hierarchical.qrels")
-            val (queries, qrels) = loadTrecCarDataset(qrelsPath)
+            val (queries, _) = loadTrecCarDataset(qrelsPath)
             println("Fold $fold, Queries: ${queries.size}")
         }
     }
