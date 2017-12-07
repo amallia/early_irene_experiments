@@ -57,8 +57,8 @@ fun main(args: Array<String>) {
                         if (q is DirQLExpr && q.child is UnorderedWindowExpr) {
                             val uw = q.child as? UnorderedWindowExpr ?: error("Concurrent Access.")
                             when (proxType) {
-                                "sc" -> q.child = SmallerCountExpr(uw.deepCopyChildren())
-                                "prox" -> q.child = ProxExpr(uw.deepCopyChildren(), uw.width)
+                                "sc" -> q.child = SmallerCountExpr(uw.children)
+                                "prox" -> q.child = ProxExpr(uw.children, uw.width)
                                 else -> error("No type $proxType!")
                             }
                         }

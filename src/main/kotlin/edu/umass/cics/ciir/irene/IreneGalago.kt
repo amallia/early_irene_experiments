@@ -23,7 +23,7 @@ fun TopDocs.toQueryResults(index: IreneIndex, qid: String = "dont-care") = Query
 
 fun GExpr.transform(ret: Retrieval): GExpr = ret.transformQuery(this, Parameters.create())!!
 
-fun QExpr.toGalago(env: RREnv): GExpr = toGalagoRecursive(env.prepare(this))
+fun QExpr.toGalago(env: RREnv): GExpr = toGalagoRecursive(env.prepare(this.deepCopy()))
 private fun createLengths(child: QExpr): GExpr {
     val fields = child.getStatsFields()
     when(fields.size) {
@@ -94,7 +94,7 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
         // TODO, allow stats-hacking:
         is LengthsExpr -> GExpr("lengths").apply { setf("field", q.statsField) }
         is AlwaysMatchExpr -> TODO()
-        is NeverMatchExpr -> TODO()
+        is NeverMatchLeaf -> TODO()
         is WhitelistMatchExpr -> TODO()
         is ProxExpr -> TODO()
     }

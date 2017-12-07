@@ -2,7 +2,6 @@ package edu.umass.cics.ciir.irene.lang
 
 import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.irene.DataNeeded
-import edu.umass.cics.ciir.irene.simplifyBooleanExpr
 import edu.umass.cics.ciir.sprf.incr
 
 /**
@@ -18,15 +17,15 @@ fun simplify(q: QExpr): QExpr {
         changed = false
 
         // Try to combine weights:
-        val (reduced, rq) = combineWeights(pq)
-        // If there was any change, keep it.
-        if (reduced) {
+        combineWeights(pq)?.let {
             changed = true
-            pq = rq
+            pq = it
         }
 
-        while (simplifyBooleanExpr(pq)) {
+        // Try to flatten ANDs and ORs
+        simplifyBooleanExpr(pq)?.let {
             changed = true
+            pq = it
         }
     }
 
@@ -97,7 +96,7 @@ class CombineWeightsFixedPoint {
     }
 }
 
-fun combineWeights(q: QExpr): Pair<Boolean, QExpr> {
+fun combineWeights(q: QExpr): QExpr? {
     val ctx = CombineWeightsFixedPoint()
 
     var anyChange = false
@@ -110,7 +109,10 @@ fun combineWeights(q: QExpr): Pair<Boolean, QExpr> {
         ctx.iter++
     } while(ctx.changed)
 
-    return Pair(anyChange, reducedQ)
+    if (anyChange) {
+        return reducedQ
+    }
+    return null
 }
 
 fun combineWeights(q: QExpr, ctx: CombineWeightsFixedPoint): QExpr = when(q) {
@@ -143,44 +145,36 @@ fun combineWeights(q: QExpr, ctx: CombineWeightsFixedPoint): QExpr = when(q) {
             CombineExpr(q.children.map { combineWeights(it, ctx) }, q.weights)
         }
     }
-    // recurse on multi expressions.
-    is MultiExpr -> MultiExpr(q.namedExprs.mapValues { (_,c) -> combineWeights(c, ctx) })
 
-    // Leaf exprs: done.
-    is WhitelistMatchExpr, is LengthsExpr, is TextExpr, is LuceneExpr,
-    is ConstCountExpr, is ConstBoolExpr, is ConstScoreExpr -> q.deepCopy()
+    is ConstBoolExpr,
+    is ConstCountExpr,
+    is ConstScoreExpr,
+    is LengthsExpr,
+    is LuceneExpr,
+    is NeverMatchLeaf,
+    is TextExpr -> q
 
-    // OpExprs, recurse:
-    is MultExpr -> MultExpr(q.children.map { combineWeights(it, ctx) })
-    is MaxExpr -> MaxExpr(q.children.map { combineWeights(it, ctx) })
-    is SynonymExpr -> SynonymExpr(q.children.map { combineWeights(it, ctx) })
-    is AndExpr -> AndExpr(q.children.map { combineWeights(it, ctx) })
-    is OrExpr -> OrExpr(q.children.map { combineWeights(it, ctx) })
-    is SmallerCountExpr -> {
-        if (q.children.size == 1) {
-            ctx.changed = true
-            combineWeights(q.children[0], ctx)
-        } else {
-            SmallerCountExpr(q.children.map { combineWeights(it, ctx) })
-        }
-    }
-    is UnorderedWindowCeilingExpr -> UnorderedWindowCeilingExpr(q.children.map { combineWeights(it, ctx) })
-    is OrderedWindowExpr -> OrderedWindowExpr(q.children.map { combineWeights(it, ctx) })
-    is UnorderedWindowExpr -> UnorderedWindowExpr(q.children.map { combineWeights(it, ctx) })
-    is ProxExpr -> ProxExpr(q.children.map { combineWeights(it, ctx) })
-
-
-    is DirQLExpr -> DirQLExpr(combineWeights(q.child, ctx))
-    is AbsoluteDiscountingQLExpr -> AbsoluteDiscountingQLExpr(combineWeights(q.child, ctx))
-    is BM25Expr -> BM25Expr(combineWeights(q.child, ctx))
-    is RequireExpr -> RequireExpr(
-            combineWeights(q.cond, ctx),
-            combineWeights(q.value, ctx))
-    is AlwaysMatchExpr -> AlwaysMatchExpr(combineWeights(q.child, ctx))
-    is NeverMatchExpr -> NeverMatchExpr(combineWeights(q.child, ctx))
-    is CountToScoreExpr -> CountToScoreExpr(combineWeights(q.child, ctx))
-    is BoolToScoreExpr -> BoolToScoreExpr(combineWeights(q.child, ctx))
-    is CountToBoolExpr -> CountToBoolExpr(combineWeights(q.child, ctx))
+    // recurse on all other expressions.
+    is AbsoluteDiscountingQLExpr,
+    is AlwaysMatchExpr,
+    is AndExpr,
+    is BM25Expr,
+    is BoolToScoreExpr,
+    is CountToBoolExpr,
+    is CountToScoreExpr,
+    is DirQLExpr,
+    is MaxExpr,
+    is MultExpr,
+    is MultiExpr,
+    is OrExpr,
+    is OrderedWindowExpr,
+    is ProxExpr,
+    is RequireExpr,
+    is SmallerCountExpr,
+    is SynonymExpr,
+    is UnorderedWindowCeilingExpr,
+    is UnorderedWindowExpr,
+    is WhitelistMatchExpr -> q.map { combineWeights(it, ctx) }
 }
 
 class TypeCheckError(msg: String): Exception(msg)
@@ -198,7 +192,7 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded= DataNeeded.DOCS) {
         is LengthsExpr -> return
         is AndExpr, is OrExpr -> DataNeeded.DOCS
     // Pass through whatever at this point.
-        is WhitelistMatchExpr, is AlwaysMatchExpr, is NeverMatchExpr, is MultiExpr -> childNeeds
+        is WhitelistMatchExpr, is AlwaysMatchExpr, is NeverMatchLeaf, is MultiExpr -> childNeeds
         is LuceneExpr, is SynonymExpr -> childNeeds
         is WeightExpr, is CombineExpr, is MultExpr, is MaxExpr -> {
             DataNeeded.SCORES

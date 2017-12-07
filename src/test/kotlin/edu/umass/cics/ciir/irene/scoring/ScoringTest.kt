@@ -59,6 +59,7 @@ class CommonTestIndexes : Closeable {
     init {
         val params = IndexParams().apply {
             inMemory()
+            defaultField = contentsField
             defaultAnalyzer = WhitespaceAnalyzer()
         }
 

@@ -15,7 +15,7 @@ private fun createMoverRec(q: QExpr, ctx: IQContext) : QueryMover = when(q) {
     is LuceneExpr -> TODO("LuceneExpr")
 
     // Never score these subtrees.
-    is NeverMatchExpr,
+    is NeverMatchLeaf -> NeverMatchMover("literal")
     // Never score a document just because of a constant or prior.
     is ConstBoolExpr, is ConstScoreExpr, is ConstCountExpr -> NeverMatchMover(q.toString())
 

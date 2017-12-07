@@ -88,7 +88,7 @@ abstract class RREnv {
         is LengthsExpr -> RRDocLength(this, q.statsField!!)
 
         // These movement hints mean nothing in RR context.
-        is AlwaysMatchExpr, is NeverMatchExpr, is WhitelistMatchExpr -> fromQExpr(q.trySingleChild)
+        is AlwaysMatchExpr, is NeverMatchLeaf, is WhitelistMatchExpr -> fromQExpr(q.trySingleChild)
         is ProxExpr -> TODO()
     }
 

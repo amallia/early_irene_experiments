@@ -43,7 +43,7 @@ fun MakeCheapWorstQuery(q: QExpr): QExpr = when(q) {
     is OrderedWindowExpr -> SmallerCountExpr(q.children.map { MakeCheapWorstQuery(it) })
 
     is AlwaysMatchExpr -> NeverMatchExpr(MakeCheapWorstQuery(q.child))
-    is NeverMatchExpr -> NeverMatchExpr(MakeCheapWorstQuery(q.child))
+    is NeverMatchLeaf -> q
     is DirQLExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
     is WeightExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
     is AbsoluteDiscountingQLExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
@@ -116,7 +116,7 @@ fun main(args: Array<String>) {
             sdmQ.visit { q ->
                 if (q is DirQLExpr && q.child is UnorderedWindowExpr) {
                     val uw = q.child as? UnorderedWindowExpr ?: error("Concurrent Access.")
-                    q.child = ProxExpr(uw.deepCopyChildren())
+                    q.child = ProxExpr(uw.children.map { it.deepCopy() })
                 }
             }
 

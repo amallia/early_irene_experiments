@@ -13,7 +13,12 @@ import org.apache.lucene.index.Term
  * @author jfoley.
  */
 fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
-    is TextExpr -> ctx.create(Term(q.countsField(), q.text), q.needed, q.stats ?: error("Missed computeQExprStats pass."))
+    is TextExpr -> try {
+        ctx.create(Term(q.countsField(), q.text), q.needed, q.stats ?: error("Missed computeQExprStats pass."))
+    } catch (e: Exception) {
+        println(q)
+        throw e
+    }
     is LuceneExpr -> TODO()
     is SynonymExpr -> TODO()
     is AndExpr -> BooleanAndEval(q.children.map { exprToEval(it, ctx) })
@@ -52,7 +57,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is AbsoluteDiscountingQLExpr -> error("No efficient method to implement AbsoluteDiscountingQLExpr in Irene backend; needs numUniqWords per document.")
     is MultiExpr -> MultiEvalNode(q.children.map { exprToEval(it, ctx) }, q.names)
     is LengthsExpr -> ctx.createLengths(q.statsField!!, q.stats!!)
-    is NeverMatchExpr -> FixedMatchEvalNode(false, exprToEval(q.trySingleChild, ctx))
+    is NeverMatchLeaf -> FixedMatchEvalNode(false, exprToEval(q.trySingleChild, ctx))
     is AlwaysMatchExpr -> FixedMatchEvalNode(true, exprToEval(q.trySingleChild, ctx))
     is WhitelistMatchExpr -> WhitelistMatchEvalNode(TIntHashSet(ctx.selectRelativeDocIds(q.docIdentifiers!!)))
 }
