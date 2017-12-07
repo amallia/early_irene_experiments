@@ -10,15 +10,21 @@ import edu.umass.cics.ciir.sprf.incr
  * @author jfoley.
  */
 fun simplify(q: QExpr): QExpr {
-    val pq = q.deepCopy()
+    var pq = q.deepCopy()
 
     // combine weights and boolean nodes until query stops changing.
     var changed = true
     while(changed) {
         changed = false
-        while (combineWeights(pq)) {
+
+        // Try to combine weights:
+        val (reduced, rq) = combineWeights(pq)
+        // If there was any change, keep it.
+        if (reduced) {
             changed = true
+            pq = rq
         }
+
         while (simplifyBooleanExpr(pq)) {
             changed = true
         }
@@ -41,69 +47,131 @@ fun computeQExprStats(index: RREnv, root: QExpr) {
     }
 }
 
-fun combineWeights(q: QExpr): Boolean {
-    var changed = false
-    when(q) {
-    // Flatten nested-weights.
-        is WeightExpr -> {
-            val c = q.child
-            if (c is WeightExpr) {
-                q.child = c.child
-                q.weight *= c.weight
-                changed = true
-                //println("weight(weight(x)) -> weight(x)")
-            }
-        }
-    // Pull weights up into CombineExpr.
-        is CombineExpr -> {
-            val newChildren = arrayListOf<QExpr>()
-            val newWeights = arrayListOf<Double>()
-            q.entries.forEach { (c, w) ->
-                if (c is CombineExpr) {
-                    // flatten combine(combine(...))
-                    c.children.zip(c.weights).forEach { (cc, cw) ->
-                        newChildren.add(cc)
-                        newWeights.add(w*cw)
-                    }
-                    changed = true
-                } else if (c is WeightExpr) {
-                    //println("combine(...weight(x)..) -> combine(...x...)")
-                    newChildren.add(c.child)
-                    newWeights.add(c.weight * w)
-                    changed = true
-                } else {
-                    newChildren.add(c)
-                    newWeights.add(w)
-                }
-                q.children = newChildren
-                q.weights = newWeights
-            }
-        }
-        else -> {}
-    }
+class CombineWeightsFixedPoint {
+    var changed: Boolean = false
 
-    // Statically-combine any now-redundant-children in CombineExpr:
-    if (q is CombineExpr && q.children.toSet().size < q.children.size) {
+    fun combineRedundantCombineChildren(q: CombineExpr): CombineExpr {
+        // accumulate weights across redundant nodes:
         val weights = HashMap<QExpr, Double>()
         q.entries.forEach { (child, weight) ->
             weights.incr(child, weight)
         }
 
+        // create new children:
         val newChildren = arrayListOf<QExpr>()
         val newWeights = arrayListOf<Double>()
-        weights.forEach { c,w ->
-            newChildren.add(c)
+        weights.forEach { c, w ->
+            newChildren.add(combineWeights(c, this))
             newWeights.add(w)
         }
-        q.children = newChildren
-        q.weights = newWeights
         changed = true
+
+        // reduce children recursively:
+        return CombineExpr(newChildren.map { combineWeights(it, this) }, newWeights)
     }
 
-    q.children.forEach {
-        changed = changed || combineWeights(it)
+    fun flattenCombineExpr(q: CombineExpr): CombineExpr {
+        val newChildren = arrayListOf<QExpr>()
+        val newWeights = arrayListOf<Double>()
+        q.entries.forEach { (c, w) ->
+            if (c is CombineExpr) {
+                // flatten combine(combine(...))
+                c.children.zip(c.weights).forEach { (cc, cw) ->
+                    newChildren.add(cc)
+                    newWeights.add(w * cw)
+                }
+                changed = true
+            } else if (c is WeightExpr) {
+                //println("combine(...weight(x)..) -> combine(...x...)")
+                newChildren.add(c.child)
+                newWeights.add(c.weight * w)
+                changed = true
+            } else {
+                // keep regular children around
+                newChildren.add(c)
+                newWeights.add(w)
+            }
+        }
+        return CombineExpr(newChildren.map { combineWeights(it, this) }, newWeights)
     }
-    return changed
+}
+
+fun combineWeights(q: QExpr): Pair<Boolean, QExpr> {
+    val ctx = CombineWeightsFixedPoint()
+
+    var anyChange = false
+    var reducedQ = q
+    // Call combineWeights until the query stops changing.
+    do {
+        ctx.changed = false
+        reducedQ = combineWeights(reducedQ, ctx)
+        anyChange = anyChange or ctx.changed
+    } while(ctx.changed)
+
+    return Pair(anyChange, reducedQ)
+}
+
+fun combineWeights(q: QExpr, ctx: CombineWeightsFixedPoint): QExpr = when(q) {
+    // Flatten nested-weights.
+    is WeightExpr -> {
+        val c = q.child
+        if (c is WeightExpr) {
+            ctx.changed = true
+            // Merge nested weights:
+            WeightExpr(combineWeights(c.child, ctx), q.weight * c.weight)
+        } else if (c is CombineExpr) {
+            ctx.changed = true
+            // Push weight down into Combine.
+            CombineExpr(
+                    c.children.map { combineWeights(it, ctx)},
+                    c.weights.map { it * q.weight })
+        } else {
+            // Otherwise just recurse, no-changes:
+            WeightExpr(combineWeights(q.child, ctx), q.weight)
+        }
+    }
+    // Pull weights up into CombineExpr.
+    is CombineExpr -> {
+        // Statically-combine any now-redundant-children in CombineExpr:
+        if (q.children.toSet().size < q.children.size) {
+            ctx.combineRedundantCombineChildren(q)
+        } else if (q.children.any { it is CombineExpr || it is WeightExpr }) {
+            ctx.flattenCombineExpr(q)
+        } else {
+            CombineExpr(q.children.map { combineWeights(it, ctx) }, q.weights)
+        }
+    }
+    // recurse on multi expressions.
+    is MultiExpr -> MultiExpr(q.namedExprs.mapValues { (_,c) -> combineWeights(c, ctx) })
+
+    // Leaf exprs: done.
+    is WhitelistMatchExpr, is LengthsExpr, is TextExpr, is LuceneExpr,
+    is ConstCountExpr, is ConstBoolExpr, is ConstScoreExpr -> q
+
+    // OpExprs, recurse:
+    is MultExpr -> MultExpr(q.children.map { combineWeights(it, ctx) })
+    is MaxExpr -> MaxExpr(q.children.map { combineWeights(it, ctx) })
+    is SynonymExpr -> SynonymExpr(q.children.map { combineWeights(it, ctx) })
+    is AndExpr -> AndExpr(q.children.map { combineWeights(it, ctx) })
+    is OrExpr -> OrExpr(q.children.map { combineWeights(it, ctx) })
+    is SmallerCountExpr -> SmallerCountExpr(q.children.map { combineWeights(it, ctx) })
+    is UnorderedWindowCeilingExpr -> UnorderedWindowCeilingExpr(q.children.map { combineWeights(it, ctx) })
+    is OrderedWindowExpr -> OrderedWindowExpr(q.children.map { combineWeights(it, ctx) })
+    is UnorderedWindowExpr -> UnorderedWindowExpr(q.children.map { combineWeights(it, ctx) })
+    is ProxExpr -> ProxExpr(q.children.map { combineWeights(it, ctx) })
+
+
+    is DirQLExpr -> DirQLExpr(combineWeights(q.child, ctx))
+    is AbsoluteDiscountingQLExpr -> AbsoluteDiscountingQLExpr(combineWeights(q.child, ctx))
+    is BM25Expr -> BM25Expr(combineWeights(q.child, ctx))
+    is RequireExpr -> RequireExpr(
+            combineWeights(q.cond, ctx),
+            combineWeights(q.value, ctx))
+    is AlwaysMatchExpr -> AlwaysMatchExpr(combineWeights(q.child, ctx))
+    is NeverMatchExpr -> NeverMatchExpr(combineWeights(q.child, ctx))
+    is CountToScoreExpr -> CountToScoreExpr(combineWeights(q.child, ctx))
+    is BoolToScoreExpr -> BoolToScoreExpr(combineWeights(q.child, ctx))
+    is CountToBoolExpr -> CountToBoolExpr(combineWeights(q.child, ctx))
 }
 
 class TypeCheckError(msg: String): Exception(msg)

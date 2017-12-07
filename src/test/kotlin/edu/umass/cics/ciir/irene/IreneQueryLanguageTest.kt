@@ -32,6 +32,15 @@ class IreneQueryLanguageTest {
         Assert.assertEquals(expected, opt1)
         Assert.assertEquals(expected, opt2)
     }
+
+    @Test
+    fun testWeightedCombine() {
+        val a = TextExpr("a")
+        val b = TextExpr("b")
+        val opt = simplify(MeanExpr(a.weighted(2.0), b).weighted(0.5))
+        val expected = CombineExpr(listOf(a, b), listOf(0.5, 0.25))
+        Assert.assertEquals(expected, opt)
+    }
     @Test
     fun complexSimplify() {
         val a = TextExpr("a")

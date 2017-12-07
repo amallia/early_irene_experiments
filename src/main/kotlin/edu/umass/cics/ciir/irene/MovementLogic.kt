@@ -106,7 +106,7 @@ fun simplifyBooleanExpr(q: QExpr): Boolean {
     }
 
     q.children.forEach {
-        changed = changed || combineWeights(it)
+        changed = changed || simplifyBooleanExpr(it)
     }
     return changed
 }
