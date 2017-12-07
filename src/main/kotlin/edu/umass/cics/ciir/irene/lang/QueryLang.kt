@@ -185,6 +185,9 @@ data class MaxExpr(override var children: List<QExpr>) : OpExpr() {
 
 /** For estimating the lower-bound of an [OrderedWindowExpr]. When all terms occur, which is smallest? */
 data class SmallerCountExpr(override var children: List<QExpr>): OpExpr() {
+    init {
+        assert(children.size >= 2)
+    }
     override fun deepCopy() = SmallerCountExpr(deepCopyChildren())
 }
 /** For estimating the ceiling of an [UnorderedWindowExpr]. When all terms occur, which is biggest? */

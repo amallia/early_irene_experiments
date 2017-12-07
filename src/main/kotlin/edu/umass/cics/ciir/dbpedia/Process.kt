@@ -212,34 +212,8 @@ fun mapFileToShards(inName: String, sample: Boolean, shards: Int, outName: Strin
     }
 }
 
+
 object ProcessAndShardFullText {
-    fun isWikidata(url: String): Boolean = url.startsWith(QPagePrefix)
-    fun isResource(url: String): Boolean = url.startsWith(PagePrefix)
-    fun getKey(url: String): String {
-        val start = if (isResource(url)) {
-            PagePrefix.length
-        } else if (isWikidata(url)) {
-            QPagePrefix.length
-        } else {
-            0
-        }
-        val beforeQueryParams = url.lastIndexOf("?")
-        if (beforeQueryParams >= 0) {
-            return url.substring(start, beforeQueryParams)
-        }
-        return url.substring(start)
-    }
-    fun lastSlash(url: String): String {
-        var beforeQueryParams = url.lastIndexOf("?")
-        var lastSlash = url.lastIndexOf('/')
-        if (lastSlash < 0) {
-            lastSlash = 0
-        } else {
-            lastSlash += 1
-        }
-        if (beforeQueryParams < 0) beforeQueryParams = url.length
-        return url.substring(lastSlash, beforeQueryParams)
-    }
     fun simple(record: List<String>, writers: ShardWriters) {
         val page = getKey(record[0])
         val text = record[2]
@@ -355,32 +329,6 @@ object ProcessAndShardFullText {
 }
 
 object ProcessAndShardRelations  {
-    fun tokenizeCamelCase(camels: String): List<String> {
-        val splits = camels.mapIndexed { i, ch ->
-            if (Character.isUpperCase(ch)) {
-                i
-            } else null
-        }.filterNotNull().toMutableList()
-
-        val all_splits = arrayListOf(0)
-        all_splits.addAll(splits)
-        all_splits.add(camels.length)
-
-        val tolower = camels.toLowerCase()
-        return (0 until all_splits.size-1).map { i ->
-            val left = all_splits[i]
-            val right = all_splits[i+1]
-            tolower.substring(left, right)
-        }.toList()
-    }
-    fun propToText(prop: String) = tokenizeCamelCase(prop).joinToString(separator = " ") { it.trim() }
-    fun getProp(url: String): String {
-        if (url.endsWith("#seeAlso")) {
-            return "see also"
-        } else {
-            return ProcessAndShardFullText.lastSlash(url)
-        }
-    }
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)
         val shards = argp.get("shards", 20)
@@ -401,7 +349,7 @@ object ProcessAndShardRelations  {
         }
 
         mapFileToShards(StringRelations, sample, shards, "string_relations.jsonl.gz") { record, writers ->
-            val page = ProcessAndShardFullText.getKey(record[0])
+            val page = getKey(record[0])
             val prop = getProp(record[1])
             val propText = propToText(prop)
             val text = record[2]
@@ -417,7 +365,7 @@ object ProcessAndShardRelations  {
         val pageLabels = HashMap<String,String>()
         val qPageLabels = TIntObjectHashMap<String>()
         mapFileToShards(Labels, sample, shards, "titles.jsonl.gz") { record, writers ->
-            val page = ProcessAndShardFullText.getKey(record[0])
+            val page = getKey(record[0])
             val text = record[2]
             if (page != text) {
                 pageLabels[page] = text
@@ -428,7 +376,7 @@ object ProcessAndShardRelations  {
             })
         }
         forEachTTLRecord(QLabels, sample) { record ->
-            val page = ProcessAndShardFullText.getKey(record[0])
+            val page = getKey(record[0])
             assert(page[0] == 'Q')
             val wkd_id = page.substring(1).toInt()
             val text = record[2]
@@ -437,15 +385,15 @@ object ProcessAndShardRelations  {
             }
         }
         mapFileToShards(ObjectRelations, sample, shards, "object_relations.jsonl.gz") { record, writers ->
-            val page = ProcessAndShardFullText.getKey(record[0])
+            val page = getKey(record[0])
             val prop = getProp(record[1])
             val propText = propToText(prop)
 
-            val text = if (ProcessAndShardFullText.isResource(record[2])) {
-                val key = ProcessAndShardFullText.getKey(record[2])
+            val text = if (isResource(record[2])) {
+                val key = getKey(record[2])
                 pageLabels[key] ?: key
-            } else if (ProcessAndShardFullText.isWikidata(record[2])) {
-                val key = ProcessAndShardFullText.getKey(record[2])
+            } else if (isWikidata(record[2])) {
+                val key = getKey(record[2])
                 qPageLabels.get(key.substring(1).toInt()) ?: null
             } else {
                 record[2]
@@ -453,13 +401,11 @@ object ProcessAndShardRelations  {
 
             writers.hashed(page).println(pmake {
                 set("id", page)
-                set("text", "$propText ${MergeShardData.wikiTitleToText(text?: "")}")
+                set("text", "$propText ${wikiTitleToText(text?: "")}")
             })
 
         }
     }
-    fun wikiTitleToText(x: String): String = MergeShardData.wikiTitleToText(x)
-    fun getKey(x: String) = ProcessAndShardFullText.getKey(x)
 }
 
 fun <T> Parameters.setIfNotEmpty(key: String, x: Collection<T>) {
@@ -496,45 +442,40 @@ class CategoryGraphBuilder {
 
 object CategoryGraphAnalysis {
     val CategoryPrefix = "http://dbpedia.org/resource/Category:"
-    fun category(x: String): String? {
-        if (x.startsWith(CategoryPrefix)) {
-            return x.substring(CategoryPrefix.length)
-        } else return null
-    }
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)
         val sample = argp.get("sample", true)
 
         val graph = CategoryGraphBuilder()
         forEachTTLRecord(CategoryLabels, sample) { record ->
-            val name = category(record[0])
+            val name = categoryOrNull(record[0])
             if (name != null) {
                 graph[name].labels.add(record[2])
             }
         }
         forEachTTLRecord(CategoryArticles, sample) { record ->
             if (record[1].endsWith("/terms/subject")) {
-                val name = category(record[0])
+                val name = categoryOrNull(record[0])
                 if (name != null) {
-                    val page = ProcessAndShardFullText.getKey(record[2])
+                    val page = getKey(record[2])
                     graph[name].pages.add(page)
                 }
             }
         }
         forEachTTLRecord(CategoryGraph, sample) { record ->
-            val name = category(record[0])!!
+            val name = categoryOrNull(record[0])!!
             if (record[1].endsWith("22-rdf-syntax-ns#type")) {
                 // skip the "isa Concept label"
             } else if (record[1].endsWith("#prefLabel")) {
                 graph[name].prefLabel = record[2]
             } else if (record[1].endsWith("/core#broader")) {
-                val name2 = category(record[2])!!
+                val name2 = categoryOrNull(record[2])!!
                 val parent = graph[name]
                 val child = graph[name2]
                 parent.children.add(child.id)
                 child.parents.add(parent.id)
             } else if (record[1].endsWith("/core#related")) {
-                val name2 = category(record[2])!!
+                val name2 = categoryOrNull(record[2])!!
                 val lhs = graph[name]
                 val rhs = graph[name2]
                 lhs.related.add(rhs.id)

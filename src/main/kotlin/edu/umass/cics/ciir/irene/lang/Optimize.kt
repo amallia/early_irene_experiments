@@ -49,6 +49,7 @@ fun computeQExprStats(index: RREnv, root: QExpr) {
 
 class CombineWeightsFixedPoint {
     var changed: Boolean = false
+    var iter = 0
 
     fun combineRedundantCombineChildren(q: CombineExpr): CombineExpr {
         // accumulate weights across redundant nodes:
@@ -106,6 +107,7 @@ fun combineWeights(q: QExpr): Pair<Boolean, QExpr> {
         ctx.changed = false
         reducedQ = combineWeights(reducedQ, ctx)
         anyChange = anyChange or ctx.changed
+        ctx.iter++
     } while(ctx.changed)
 
     return Pair(anyChange, reducedQ)
@@ -146,7 +148,7 @@ fun combineWeights(q: QExpr, ctx: CombineWeightsFixedPoint): QExpr = when(q) {
 
     // Leaf exprs: done.
     is WhitelistMatchExpr, is LengthsExpr, is TextExpr, is LuceneExpr,
-    is ConstCountExpr, is ConstBoolExpr, is ConstScoreExpr -> q
+    is ConstCountExpr, is ConstBoolExpr, is ConstScoreExpr -> q.deepCopy()
 
     // OpExprs, recurse:
     is MultExpr -> MultExpr(q.children.map { combineWeights(it, ctx) })
@@ -154,7 +156,14 @@ fun combineWeights(q: QExpr, ctx: CombineWeightsFixedPoint): QExpr = when(q) {
     is SynonymExpr -> SynonymExpr(q.children.map { combineWeights(it, ctx) })
     is AndExpr -> AndExpr(q.children.map { combineWeights(it, ctx) })
     is OrExpr -> OrExpr(q.children.map { combineWeights(it, ctx) })
-    is SmallerCountExpr -> SmallerCountExpr(q.children.map { combineWeights(it, ctx) })
+    is SmallerCountExpr -> {
+        if (q.children.size == 1) {
+            ctx.changed = true
+            combineWeights(q.children[0], ctx)
+        } else {
+            SmallerCountExpr(q.children.map { combineWeights(it, ctx) })
+        }
+    }
     is UnorderedWindowCeilingExpr -> UnorderedWindowCeilingExpr(q.children.map { combineWeights(it, ctx) })
     is OrderedWindowExpr -> OrderedWindowExpr(q.children.map { combineWeights(it, ctx) })
     is UnorderedWindowExpr -> UnorderedWindowExpr(q.children.map { combineWeights(it, ctx) })

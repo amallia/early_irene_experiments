@@ -6,6 +6,7 @@ import edu.umass.cics.ciir.irene.toQueryResults
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluator
+import edu.umass.cics.ciir.sprf.inqueryStop
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
 import java.io.File
@@ -16,7 +17,7 @@ import java.io.File
  */
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dsName = argp.get("dataset", "trec-core")
+    val dsName = argp.get("dataset", "nyt-cite")
     val dataset = DataPaths.get(dsName)
     val qrels = dataset.qrels
     val measure = getEvaluator("map")
@@ -46,9 +47,9 @@ fun main(args: Array<String>) {
 
                 // Prox does nothing for queries with single term.
                 if (judgments.size > 0 && qterms.size > 1) {
-                    println(qid)
+                    println("$qid $qtext $qterms")
 
-                    val sdmQ = SequentialDependenceModel(qterms, makeScorer = scorerFn)
+                    val sdmQ = SequentialDependenceModel(qterms, stopwords = inqueryStop, makeScorer = scorerFn)
                     val approxSDMQ = sdmQ.deepCopy()
 
                     approxSDMQ.visit { q ->

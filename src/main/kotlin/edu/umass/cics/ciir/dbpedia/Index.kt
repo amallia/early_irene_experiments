@@ -31,7 +31,6 @@ class MergedPageInfo(val name: String) {
     var redirectTexts = ArrayList<String>()
     var person = HashMap<String, String>()
     var categories = HashSet<String>()
-    fun wikiTitleToText(xyz: String): String = MergeShardData.wikiTitleToText(xyz)
 
     fun joinWS(x: Collection<String>, titleToText: Boolean = false): String {
         if (titleToText) {
@@ -125,17 +124,6 @@ object MergeShardData {
         }
         println("Processed $counted from ${input.name} in shard $shardNumber")
     }
-    fun wikiTitleToText(xyz: String): String {
-        val simplified = getCategory(xyz).replace('_', ' ')
-        val withoutCamels = simplified.split(" ").map { words ->
-            ProcessAndShardRelations.propToText(words.trim())
-        }.joinToString(separator = " ") { it.trim() }
-
-        if (simplified.toLowerCase() == withoutCamels) {
-            return simplified
-        }
-        return simplified+" "+withoutCamels
-    }
 
     fun indexShard(writer: IreneIndexer, input: File) {
         val data = PageInfoMap()
@@ -226,17 +214,8 @@ object MergeShardData {
     }
 
 
-    val ShortCategoryPrefix = "Category:"
-    fun getCategory(input: String): String {
-        if(input.startsWith(CategoryGraphAnalysis.CategoryPrefix)) {
-            return input.substring(CategoryGraphAnalysis.CategoryPrefix.length)
-        }
-        if (input.startsWith(ShortCategoryPrefix)) {
-            return input.substring(ShortCategoryPrefix.length)
-        }
-        return input
-    }
 }
+
 
 fun main(args: Array<String>) {
     IreneIndexer.build {

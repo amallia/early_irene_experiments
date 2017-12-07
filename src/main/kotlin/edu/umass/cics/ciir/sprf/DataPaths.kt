@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.sprf
 
+import edu.umass.cics.ciir.dbpedia.wikiTitleToText
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndex
 import edu.umass.cics.ciir.irene.example.NYT
@@ -145,7 +146,7 @@ open class NYTSource : IRDataset() {
         else -> notImpl(IRDataset.host)
     }
     override fun getIndexFile(): File = notImpl(IRDataset.host)
-    override val name: String = "nyt-ldc"
+    override val name: String get() = "nyt-ldc"
     val inputTarFiles: List<File> get() = when(IRDataset.host) {
         "oakey" -> NYT.Years.flatMap { year -> File("/mnt/scratch/jfoley/nyt-raw/data", year.toString()).listFiles().toList() }
         "gob" -> NYT.Years.map { year -> File("/media/jfoley/flash/raw/nyt/nyt-$year.tar") }
@@ -158,6 +159,7 @@ class TrecCoreNIST : NYTSource() {
     val nistQueryData: List<ParsedTrecCoreQuery> by lazy { parseNISTSGMLQueries(File(getQueryDir(), "trec_core/core_nist.txt")) }
     val crowdQueryData: List<ParsedTrecCoreQuery> by lazy { parseNISTSGMLQueries(File(getQueryDir(), "trec_core/core_crowd.txt")) }
     val queryData: List<ParsedTrecCoreQuery> by lazy { nistQueryData + crowdQueryData }
+    override val name: String get() = "trec-core"
 
     fun parseNISTSGMLQueries(fp: File): List<ParsedTrecCoreQuery> {
         val doc = Jsoup.parse(fp.readText(), "http://trec.nist.gov")
@@ -180,6 +182,33 @@ class TrecCoreNIST : NYTSource() {
         return nistQueryData.associate { Pair(it.qid, it.desc) }
     }
     override fun getQueryJudgmentsFile(): File = File(getQueryDir(), "trec_core/nist.qrels.txt")
+}
+
+data class NYTWikiCiteQuery(val qid: String, val pages: List<String>, val relevant: String) {
+    val queries: List<String> by lazy { pages.map { wikiTitleToText(it) }}
+}
+class NYTWikiCite : NYTSource() {
+    override val name: String get() = "nyt-cite"
+    val wcqs: List<NYTWikiCiteQuery> by lazy {
+        File(getQueryDir(), "trec_core/nyt.wikicites.jsonl").readLines().mapIndexed { i,line ->
+            val p = Parameters.parseStringOrDie(line)
+            NYTWikiCiteQuery(
+                    qid="%03d".format(i),
+                    pages=p.getAsList("titles", String::class.java),
+                    relevant=p.getStr("judgment"))
+        }
+    }
+
+    override fun getTitleQueries(): Map<String, String> {
+        return wcqs.associate { Pair(it.qid, it.queries[0]) }
+    }
+
+    override fun getQueryJudgments(): QuerySetJudgments {
+        val qrels = wcqs.associate {
+            Pair(it.qid, QueryJudgments(it.qid, mapOf(it.relevant to 1)))
+        }
+        return QuerySetJudgments(qrels)
+    }
 }
 
 open class WikiSource : IRDataset() {
@@ -323,11 +352,13 @@ object DataPaths {
     val WT10G = WT10G()
     val TrecCarT200 = TrecCarTest200()
     val TrecCoreNIST = TrecCoreNIST()
+    val NYTWikiCite = NYTWikiCite()
 
     val REWQ_Clue12: WikiSource = Clue12Rewq()
     val DBPE: WikiSource = DBPE()
 
     fun get(name: String): IRDataset = when(name) {
+        "nyt-cite" -> NYTWikiCite
         "trec-core" -> TrecCoreNIST
         "trec-car-test200", "trec-car" -> TrecCarT200
         "robust", "robust04" -> Robust

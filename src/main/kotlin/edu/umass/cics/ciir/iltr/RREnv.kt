@@ -42,7 +42,12 @@ abstract class RREnv {
     fun prepare(q: QExpr): QExpr {
         val pq = simplify(q)
         applyEnvironment(this, pq)
-        analyzeDataNeededRecursive(pq)
+        try {
+            analyzeDataNeededRecursive(pq)
+        } catch (err: TypeCheckError) {
+            System.err.println("$q")
+            throw err
+        }
         computeQExprStats(this, pq)
         return pq
     }
