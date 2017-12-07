@@ -42,8 +42,7 @@ fun MakeCheapWorstQuery(q: QExpr): QExpr = when(q) {
     is UnorderedWindowExpr -> TODO()
     is OrderedWindowExpr -> SmallerCountExpr(q.children.map { MakeCheapWorstQuery(it) })
 
-    is AlwaysMatchExpr -> NeverMatchExpr(MakeCheapWorstQuery(q.child))
-    is NeverMatchLeaf -> q
+    AlwaysMatchLeaf, NeverMatchLeaf -> q
     is DirQLExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
     is WeightExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
     is AbsoluteDiscountingQLExpr -> q.copy(child=MakeCheapWorstQuery(q.child))

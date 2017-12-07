@@ -22,7 +22,6 @@ fun createOptimizedMovementExpr(q: QExpr): QExpr = when(q) {
     is RequireExpr -> createOptimizedMovementExpr(q.cond)
 
     // Don't translate these subtrees, as their names give away their behavior! No point in instantiating them.
-    is AlwaysMatchExpr -> AlwaysMatchExpr(ConstBoolExpr(true))
-    is NeverMatchLeaf -> q
+    AlwaysMatchLeaf, NeverMatchLeaf -> q
 }
 

@@ -93,8 +93,8 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
         is UnorderedWindowCeilingExpr, is SmallerCountExpr -> TODO()
         // TODO, allow stats-hacking:
         is LengthsExpr -> GExpr("lengths").apply { setf("field", q.statsField) }
-        is AlwaysMatchExpr -> TODO()
-        is NeverMatchLeaf -> TODO()
+        AlwaysMatchLeaf -> TODO()
+        NeverMatchLeaf -> TODO()
         is WhitelistMatchExpr -> TODO()
         is ProxExpr -> TODO()
     }

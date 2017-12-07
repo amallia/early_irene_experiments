@@ -16,7 +16,7 @@ class FixedPointBooleanSimplification() {
         }
         val usefulChildren = ArrayList<QExpr>()
         for (child in q.children) {
-            if (child is AlwaysMatchExpr) {
+            if (child is AlwaysMatchLeaf) {
                 changed = true
                 continue
             } else if (child is AndExpr) {
@@ -40,7 +40,7 @@ class FixedPointBooleanSimplification() {
     }
 
     fun optimizeOr(q: OrExpr): QExpr {
-        q.children.find { it is AlwaysMatchExpr }?.let {
+        q.children.find { it is AlwaysMatchLeaf }?.let {
             changed = true
             return it
         }
@@ -167,7 +167,8 @@ fun simplifyBools(input: QExpr, ctx: FixedPointBooleanSimplification): QExpr {
         is ConstScoreExpr,
         is LengthsExpr,
         is LuceneExpr,
-        is NeverMatchLeaf,
+        NeverMatchLeaf,
+        AlwaysMatchLeaf,
         is TextExpr -> q
 
     // default, just pass through:
@@ -182,7 +183,6 @@ fun simplifyBools(input: QExpr, ctx: FixedPointBooleanSimplification): QExpr {
         is OrderedWindowExpr,
         is UnorderedWindowExpr,
         is ProxExpr,
-        is AlwaysMatchExpr,
         is WeightExpr,
         is DirQLExpr,
         is AbsoluteDiscountingQLExpr,

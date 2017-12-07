@@ -98,8 +98,9 @@ data class ConstBoolExpr(var x: Boolean): ConstExpr() {
  * For finding document candidates, consider this subtree to *always* cause a match.
  * Hope you put in an And (e.g., [AndExpr] or [OrderedWindowExpr]), or this will be extremely expensive.
  */
-data class AlwaysMatchExpr(override var child: QExpr) : SingleChildExpr() {
-    override fun map(mapper: (QExpr) -> QExpr): QExpr = AlwaysMatchExpr(mapper(child))
+fun AlwaysMatchExpr(child: QExpr) = RequireExpr(AlwaysMatchLeaf, child)
+object AlwaysMatchLeaf : LeafExpr() {
+    override fun copyLeaf() = this
 }
 
 /**

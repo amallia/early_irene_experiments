@@ -151,12 +151,12 @@ fun combineWeights(q: QExpr, ctx: CombineWeightsFixedPoint): QExpr = when(q) {
     is ConstScoreExpr,
     is LengthsExpr,
     is LuceneExpr,
-    is NeverMatchLeaf,
+    NeverMatchLeaf,
+    AlwaysMatchLeaf,
     is TextExpr -> q
 
     // recurse on all other expressions.
     is AbsoluteDiscountingQLExpr,
-    is AlwaysMatchExpr,
     is AndExpr,
     is BM25Expr,
     is BoolToScoreExpr,
@@ -192,7 +192,7 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded= DataNeeded.DOCS) {
         is LengthsExpr -> return
         is AndExpr, is OrExpr -> DataNeeded.DOCS
     // Pass through whatever at this point.
-        is WhitelistMatchExpr, is AlwaysMatchExpr, is NeverMatchLeaf, is MultiExpr -> childNeeds
+        is WhitelistMatchExpr, AlwaysMatchLeaf, NeverMatchLeaf, is MultiExpr -> childNeeds
         is LuceneExpr, is SynonymExpr -> childNeeds
         is WeightExpr, is CombineExpr, is MultExpr, is MaxExpr -> {
             DataNeeded.SCORES

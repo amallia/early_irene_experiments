@@ -15,13 +15,12 @@ private fun createMoverRec(q: QExpr, ctx: IQContext) : QueryMover = when(q) {
     is LuceneExpr -> TODO("LuceneExpr")
 
     // Never score these subtrees.
-    is NeverMatchLeaf -> NeverMatchMover("literal")
+    NeverMatchLeaf -> NeverMatchMover("literal")
     // Never score a document just because of a constant or prior.
     is ConstBoolExpr, is ConstScoreExpr, is ConstCountExpr -> NeverMatchMover(q.toString())
 
     // Always match these subtrees rather than create sophisticated children.
-    is AlwaysMatchExpr,
-    is LengthsExpr -> AlwaysMatchMover(q.toString(), ctx.numDocs())
+    AlwaysMatchLeaf, is LengthsExpr -> AlwaysMatchMover(q.toString(), ctx.numDocs())
 
 // AND nodes:
     is ProxExpr, is UnorderedWindowCeilingExpr, is SmallerCountExpr,

@@ -57,8 +57,8 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is AbsoluteDiscountingQLExpr -> error("No efficient method to implement AbsoluteDiscountingQLExpr in Irene backend; needs numUniqWords per document.")
     is MultiExpr -> MultiEvalNode(q.children.map { exprToEval(it, ctx) }, q.names)
     is LengthsExpr -> ctx.createLengths(q.statsField!!, q.stats!!)
-    is NeverMatchLeaf -> FixedMatchEvalNode(false, exprToEval(q.trySingleChild, ctx))
-    is AlwaysMatchExpr -> FixedMatchEvalNode(true, exprToEval(q.trySingleChild, ctx))
+    NeverMatchLeaf -> FixedMatchEvalNode(false, exprToEval(q.trySingleChild, ctx))
+    AlwaysMatchLeaf -> FixedMatchEvalNode(true, exprToEval(q.trySingleChild, ctx))
     is WhitelistMatchExpr -> WhitelistMatchEvalNode(TIntHashSet(ctx.selectRelativeDocIds(q.docIdentifiers!!)))
 }
 
