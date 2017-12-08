@@ -82,7 +82,7 @@ class CombineWeightsFixedPoint {
                 }
                 changed = true
             } else if (c is WeightExpr) {
-                //println("combine(...weight(x)..) -> combine(...x...)")
+                //println("combine(...weight(x)..) -> combine(...x...) ${c.weight} ${w} = ${c.weight * w}")
                 newChildren.add(c.child)
                 newWeights.add(c.weight * w)
                 changed = true

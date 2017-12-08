@@ -23,9 +23,21 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is SynonymExpr -> TODO()
     is AndExpr -> BooleanAndEval(q.children.map { exprToEval(it, ctx) })
     is OrExpr -> BooleanOrEval(q.children.map { exprToEval(it, ctx) })
-    is CombineExpr -> WeightedSumEval(
-            q.children.map { exprToEval(it, ctx) },
-            q.weights.map { it }.toDoubleArray())
+    is CombineExpr -> if(q.children.all { it is DirQLExpr }) {
+        // Ok, if this is query likelihood, optimize code gen:
+        WeightedLogSumEval(
+                q.children.map { c ->
+                    val d = c as DirQLExpr
+                    NoLogDirichletSmoothingEval(
+                            exprToEval(c.child, ctx) as CountEvalNode,
+                            d.mu!!)
+                },
+                q.weights.map { it }.toDoubleArray())
+    } else {
+        WeightedSumEval(
+                q.children.map { exprToEval(it, ctx) },
+                q.weights.map { it }.toDoubleArray())
+    }
     is MultExpr -> TODO()
     is MaxExpr -> MaxEval(q.children.map { exprToEval(it, ctx) })
     is WeightExpr -> WeightedEval(exprToEval(q.child, ctx), q.weight)

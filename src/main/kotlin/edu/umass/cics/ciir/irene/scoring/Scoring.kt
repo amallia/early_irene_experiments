@@ -309,6 +309,31 @@ internal class WeightedSumEval(children: List<QueryEvalNode>, val weights: Doubl
 }
 
 /**
+ * Created from [CombineExpr] using [exprToEval] iff all children are DirQLExpr.
+ * The JIT is much more likely to vectorize log expressions in a loop than past a virtual call.
+ * Also known as #combine for you galago/indri folks.
+ */
+internal class WeightedLogSumEval(children: List<QueryEvalNode>, val weights: DoubleArray) : OrEval<QueryEvalNode>(children) {
+    override fun score(): Double {
+        return (0 until children.size).sumByDouble {
+            weights[it] * Math.log(children[it].score())
+        }
+    }
+
+    override fun explain(): Explanation {
+        val expls = children.map { it.explain() }
+        if (matches()) {
+            return Explanation.match(score().toFloat(), "$className.Match ${weights.toList()}", expls)
+        }
+        return Explanation.noMatch("$className.Miss ${weights.toList()}", expls)
+    }
+
+    override fun count(): Int = error("Calling counts on WeightedLogSumEval is nonsense.")
+    init { assert(weights.size == children.size, {"Weights provided to WeightedLogSumEval must exist for all children."}) }
+}
+
+
+/**
  * Helper class to make scorers that will have one child (like [DirichletSmoothingEval] and [BM25ScoringEval]) easier to implement.
  */
 internal abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
@@ -367,19 +392,44 @@ internal class BM25ScoringEval(override val child: CountEvalNode, val b: Double,
         }
     }
 }
+
+/**
+ * BM25 does have an advantage over QL: you can optimize the snot out of it.
+ * The naive equation has many elements that can be precomputed.
+ *
+ * val num = count * (k+1.0)
+ * val denom = count + (k * (1.0 - b + (b * length / avgDL)))
+ * Naive: 3 multiplies, 1 division, 3 additions, 1 subtraction
+ *
+ * val num = count * KPlusOne
+ * val denom = count + KTimesOneMinusB + KTimesBOverAvgDL * length
+ * Optimized: 2 multiplies, 2 additions
+ *
+ * QL, on the other hand:
+ * return Math.log((c + background) / (length + mu))
+ * 2 additions, 1 division, and a LOG.
+ *
+ */
 internal class BM25InnerScoringEval(override val child: CountEvalNode, val b: Double, val k: Double): SingleChildEval<CountEvalNode>() {
     private val stats = child.getCountStats()
     private val avgDL = stats.avgDL()
 
+    //val num = count * (k+1.0)
+    //val denom = count + (k * (1.0 - b + (b * length / avgDL)))
     val OneMinusB = 1.0 - b
     val KPlusOne = k+1.0
     val BOverAvgDL = b / avgDL
+
+    // val denom = count + (k * (OneMinusB + (BOverAvgDL * length)))
+    // val denom = count + (k*OneMinuB + k*BOverAvgDL*length)
+    val KTimesOneMinusB = k * OneMinusB
+    val KTimesBOverAvgDL = k * BOverAvgDL
 
     override fun score(): Double {
         val count = child.count().toDouble()
         val length = child.length().toDouble()
         val num = count * KPlusOne
-        val denom = count + (k * (OneMinusB + (BOverAvgDL * length)))
+        val denom = count + KTimesOneMinusB + KTimesBOverAvgDL * length
         return num / denom
     }
 
@@ -388,9 +438,9 @@ internal class BM25InnerScoringEval(override val child: CountEvalNode, val b: Do
         val c = child.count()
         val length = child.length()
         if (c > 0) {
-            return Explanation.match(score().toFloat(), "$c/$length with b=$b, k=$k with BM25. ${stats}", listOf(child.explain()))
+            return Explanation.match(score().toFloat(), "$c/$length with b=$b, k=$k with BM25Inner. ${stats}", listOf(child.explain()))
         } else {
-            return Explanation.noMatch("score=${score()} or $c/$length with b=$b, k=$k with BM25. ${stats}", listOf(child.explain()))
+            return Explanation.noMatch("score=${score()} or $c/$length with b=$b, k=$k with BM25Inner. ${stats}", listOf(child.explain()))
         }
     }
 }
@@ -409,6 +459,33 @@ internal class DirichletSmoothingEval(override val child: CountEvalNode, val mu:
         val c = child.count().toDouble()
         val length = child.length().toDouble()
         return Math.log((c + background) / (length + mu))
+    }
+    override fun count(): Int = TODO("not yet")
+    override fun explain(): Explanation {
+        val c = child.count()
+        val length = child.length()
+        if (c > 0) {
+            return Explanation.match(score().toFloat(), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. ${child.getCountStats()}", listOf(child.explain()))
+        } else {
+            return Explanation.noMatch("score=${score()} or $c/$length with mu=$mu, bg=$background dirichlet smoothing ${child.getCountStats()} ${child.getCountStats().nonzeroCountProbability()}.", listOf(child.explain()))
+        }
+    }
+}
+
+/**
+ * Created from [DirQLExpr] via [exprToEval] sometimes.
+ */
+internal class NoLogDirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
+    val background = mu * child.getCountStats().nonzeroCountProbability()
+    init {
+        assert(java.lang.Double.isFinite(background)) {
+            "child.stats=${child.getCountStats()}"
+        }
+    }
+    override fun score(): Double {
+        val c = child.count().toDouble()
+        val length = child.length().toDouble()
+        return (c + background) / (length + mu)
     }
     override fun count(): Int = TODO("not yet")
     override fun explain(): Explanation {
