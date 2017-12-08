@@ -1,5 +1,7 @@
 package edu.umass.cics.ciir.irene.example
 
+import edu.umass.cics.ciir.chai.StreamingStats
+import edu.umass.cics.ciir.chai.timed
 import edu.umass.cics.ciir.chai.use
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.toQueryResults
@@ -22,7 +24,7 @@ fun main(args: Array<String>) {
     val qrels = dataset.qrels
     val measure = getEvaluator("map")
     val info = NamedMeasures()
-    val scorer = argp.get("scorer", "ql")
+    val scorer = argp.get("scorer", "bm25")
     val qtype = argp.get("qtype", "title")
     val estStats = argp.get("stats", "min")
     val proxType = argp.get("prox", "prox")
@@ -37,6 +39,8 @@ fun main(args: Array<String>) {
         "ql" -> {{DirQLExpr(it)}}
         else -> error("scorer=$scorer")
     }
+
+    val times = StreamingStats()
 
     Pair(File("$dsName.sdm.$scorer.$qtype.$estStats.trecrun").printWriter(), File("$dsName.sdm-${proxType}.$scorer.$qtype.$estStats.trecrun").printWriter()).use { w1, w2 ->
         dataset.getIreneIndex().use { index ->
@@ -65,7 +69,10 @@ fun main(args: Array<String>) {
                     }
 
                     val exactR = index.search(sdmQ, 1000).toQueryResults(index, qid)
-                    val approxR = index.search(approxSDMQ, 1000).toQueryResults(index, qid)
+                    val (time, topApprox) = timed {index.search(approxSDMQ, 1000)}
+                    val approxR = topApprox.toQueryResults(index, qid)
+
+                    times.push(time)
 
                     exactR.outputTrecrun(w1, "sdm")
                     approxR.outputTrecrun(w2, "sdm-$proxType")
@@ -73,9 +80,10 @@ fun main(args: Array<String>) {
                     info.push("ap1", measure.evaluate(exactR, judgments))
                     info.push("ap2", measure.evaluate(approxR, judgments))
 
-                    println("\t${info}")
+                    println("\t${info} ${times.mean} ${times}")
                 }
             }
         }
+        println("\t${info} ${times.mean} ${times}")
     }
 }
