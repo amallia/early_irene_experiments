@@ -103,7 +103,9 @@ class LuceneTermPositions(stats: CountStats, postings: PostingsEnum, lengths: Nu
     var positions = IntList()
     override fun positions(): PositionsIter {
         val doc = env.doc
+        syncTo(doc)
         assert(postings.docID() != NO_MORE_DOCS) { "Requested positions from term that is finished!" }
+        assert(postings.docID() == doc)
         if (posDoc != doc) {
             posDoc = doc
             positions.clear()

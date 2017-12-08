@@ -151,14 +151,14 @@ abstract class CountWindow(val stats: CountStatsStrategy, children: List<Positio
         if (doc == lastDoc) return lastCount
 
         // otherwise, compute!
-        val iters = children.map {
-            val count = it.count()
+        val iters = children.map { child ->
+            val count = child.count()
             if (count == 0) {
                 lastDoc = doc
                 lastCount = 0
                 return 0
             }
-            it.positions()
+            child.positions()
         }
 
         lastDoc = doc

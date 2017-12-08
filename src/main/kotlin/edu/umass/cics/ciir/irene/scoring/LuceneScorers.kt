@@ -19,7 +19,7 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
     val searcher = iqm.index.searcher
     val lengths = HashMap<String, NumericDocValues>()
     val iterNeeds = HashMap<Term, DataNeeded>()
-    val iterCache = HashMap<Term, Optional<PostingsEnum>>()
+    val iterCache = HashMap<Term, QueryEvalNode>()
 
     private fun getLengths(field: String) = lengths.computeIfAbsent(field, { missing ->
         lucene_try { context.reader().getNormValues(missing) } ?: error("Couldn't find norms for ``$missing'' ND=${context.reader().numDocs()} F=${context.reader().fieldInfos.map { it.name }}.")
@@ -42,15 +42,30 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
         return output
     }
 
-    private fun termCached(term: Term, needed: DataNeeded): Optional<PostingsEnum> {
-        if (env.shareIterators) {
+    private fun termRaw(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): QueryEvalNode {
+        val result = termSeek(term, needed)
+        return if (!result.isPresent) {
+            LuceneMissingTerm(term, stats, lengths)
+        } else {
+            val postings = result.get()
+            when(needed) {
+                DataNeeded.DOCS -> LuceneTermDocs(stats, postings)
+                DataNeeded.COUNTS -> LuceneTermCounts(stats, postings, lengths)
+                DataNeeded.POSITIONS -> LuceneTermPositions(stats, postings, lengths)
+                DataNeeded.SCORES -> error("Impossible!")
+            }
+        }
+    }
+
+    private fun termCached(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): QueryEvalNode {
+        return if (env.shareIterators) {
             val entry = iterNeeds[term]
             if (entry == null || entry < needed) {
                 error("Forgot to call .setup(q) on IQContext. While constructing $term $needed $entry...")
             }
-            return iterCache.computeIfAbsent(term, { termSeek(term, entry) })
+            iterCache.computeIfAbsent(term, { termRaw(term, entry, stats, lengths) })
         } else {
-            return termSeek(term, needed)
+            termRaw(term, needed, stats, lengths)
         }
     }
     fun termMover(term: Term): QueryMover {
@@ -72,22 +87,7 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
     }
 
     fun create(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): QueryEvalNode {
-        val optPostings = termCached(term, needed)
-        if (!optPostings.isPresent) {
-            return LuceneMissingTerm(term, stats, lengths)
-        }
-        val postings = optPostings.get()
-        //val termContext = TermContext.build(searcher.topReaderContext, term)!!
-        //val state = termContext[context.ord] ?: return LuceneMissingTerm(term, stats, lengths)
-        //val termIter = context.reader().terms(term.field()).iterator()
-        //termIter.seekExact(term.bytes(), state)
-        //val postings = termIter.iter(null, needed.textFlags())
-        return when(needed) {
-            DataNeeded.DOCS -> LuceneTermDocs(stats, postings)
-            DataNeeded.COUNTS -> LuceneTermCounts(stats, postings, lengths)
-            DataNeeded.POSITIONS -> LuceneTermPositions(stats, postings, lengths)
-            DataNeeded.SCORES -> error("Impossible!")
-        }
+        return termCached(term, needed, stats, lengths)
     }
     fun shardIdentity(): Any = context.id()
     fun numDocs(): Int = context.reader().numDocs()

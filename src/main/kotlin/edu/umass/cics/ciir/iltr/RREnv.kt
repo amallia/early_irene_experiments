@@ -18,7 +18,7 @@ abstract class RREnv {
     open var estimateStats: String? = "min"
     open var optimizeMovement = true
     // And movement is currently unsafe for sharing.
-    open var shareIterators: Boolean = false
+    open var shareIterators: Boolean = true
 
     // nullable so it can be used to determine if this index has the given field.
     abstract fun fieldStats(field: String): CountStats
