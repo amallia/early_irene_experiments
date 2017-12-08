@@ -159,6 +159,9 @@ data class TextExpr(var text: String, private var field: String? = null, private
         if (statsField == null) {
             statsField = env.defaultField
         }
+        if (stats == null) {
+            env.getStats(text, statsField())
+        }
     }
     fun countsField(): String = field ?: error("No primary field for $this")
     fun statsField(): String = statsField ?: field ?: error("No stats field for $this")

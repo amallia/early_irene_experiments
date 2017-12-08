@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.irene.lang
 
 import edu.umass.cics.ciir.chai.forAllPairs
 import edu.umass.cics.ciir.chai.forEachSeqPair
+import edu.umass.cics.ciir.chai.mapEachSeqPair
 
 /**
  *
@@ -37,10 +38,23 @@ fun SequentialDependenceModel(terms: List<String>, field: String?=null, statsFie
     val unigrams: List<QExpr> = bestTerms
             .map { makeScorer(TextExpr(it, field, statsField)) }
 
+    val smartPairs = terms.mapEachSeqPair { lhs, rhs ->
+        val tokens = listOf(lhs, rhs).map { TextExpr(it, field, statsField) }
+        val bothStop = terms.all { stopwords.contains(it) }
+        Pair(bothStop, tokens)
+    }
+
+    val usePairs = if (smartPairs.all { it.first }) {
+        // all stopwords, generate dependencies
+        smartPairs.map { it.second }
+    } else {
+        // only pairs that aren't both stopwords.
+        smartPairs.filter { !it.first }.map { it.second }
+    }
+
     val bigrams = ArrayList<QExpr>()
     val ubigrams = ArrayList<QExpr>()
-    terms.forEachSeqPair { lhs, rhs ->
-        val ts = listOf(lhs, rhs).map { TextExpr(it, field, statsField) }
+    usePairs.forEach { ts ->
         bigrams.add(makeScorer(OrderedWindowExpr(ts, odStep)))
     }
     bestTerms.forEachSeqPair { lhs, rhs ->

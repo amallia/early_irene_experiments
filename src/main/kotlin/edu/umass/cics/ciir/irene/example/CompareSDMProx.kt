@@ -15,19 +15,28 @@ import java.io.File
 
 /**
  *
+ * Robust, bm25, min, prox:
+ * with idf-extract: AP=0.263, 21.5 ms vs. 41.9 ms
+ * without idf-extract: 24.1ms vs. 42.0 ms
+ * ql, min, prox:
+ * with log-extract: AP=0.257, 27.6 ms vs. 49.4 ms
+ * without log-extract: ... about the same
+ *
+ * SC is a really neat "optimization" because it *improves* performance on desription queries.
+ *
  * @author jfoley.
  */
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dsName = argp.get("dataset", "nyt-cite")
+    val dsName = argp.get("dataset", "robust")
     val dataset = DataPaths.get(dsName)
     val qrels = dataset.qrels
     val measure = getEvaluator("map")
     val info = NamedMeasures()
-    val scorer = argp.get("scorer", "bm25")
-    val qtype = argp.get("qtype", "title")
+    val scorer = argp.get("scorer", "ql")
+    val qtype = argp.get("qtype", "desc")
     val estStats = argp.get("stats", "min")
-    val proxType = argp.get("prox", "prox")
+    val proxType = argp.get("prox", "sc")
 
     val queries = when(qtype) {
         "title" -> dataset.title_qs
@@ -41,6 +50,7 @@ fun main(args: Array<String>) {
     }
 
     val times = StreamingStats()
+    val baseTimes = StreamingStats()
 
     Pair(File("$dsName.sdm.$scorer.$qtype.$estStats.trecrun").printWriter(), File("$dsName.sdm-${proxType}.$scorer.$qtype.$estStats.trecrun").printWriter()).use { w1, w2 ->
         dataset.getIreneIndex().use { index ->
@@ -53,26 +63,30 @@ fun main(args: Array<String>) {
                 if (judgments.size > 0 && qterms.size > 1) {
                     println("$qid $qtext $qterms")
 
-                    val sdmQ = SequentialDependenceModel(qterms, stopwords = inqueryStop, makeScorer = scorerFn)
-                    val approxSDMQ = sdmQ.deepCopy()
-
-                    approxSDMQ.visit { q ->
+                    val sdmQ = SequentialDependenceModel(qterms, makeScorer = scorerFn)
+                    val approxSDMQ = SequentialDependenceModel(qterms, stopwords = inqueryStop, makeScorer = scorerFn).map { q ->
                         // Swap UW nodes with Prox nodes.
-                        if (q is DirQLExpr && q.child is UnorderedWindowExpr) {
-                            val uw = q.child as? UnorderedWindowExpr ?: error("Concurrent Access.")
+                        if (q is UnorderedWindowExpr) {
                             when (proxType) {
-                                "sc" -> q.child = SmallerCountExpr(uw.children)
-                                "prox" -> q.child = ProxExpr(uw.children, uw.width)
+                                "sc" -> SmallerCountExpr(q.children)
+                                "prox" -> ProxExpr(q.children, q.width)
                                 else -> error("No type $proxType!")
                             }
+                        } else {
+                            q
                         }
                     }
 
-                    val exactR = index.search(sdmQ, 1000).toQueryResults(index, qid)
+                    // cache term statistics so timing is fair.
+                    sdmQ.visit { it.applyEnvironment(index.env) }
+
+                    val (timeExact, topExact) = timed { index.search(sdmQ, 1000) }
+                    val exactR = topExact.toQueryResults(index, qid)
                     val (time, topApprox) = timed {index.search(approxSDMQ, 1000)}
                     val approxR = topApprox.toQueryResults(index, qid)
 
                     times.push(time)
+                    baseTimes.push(timeExact)
 
                     exactR.outputTrecrun(w1, "sdm")
                     approxR.outputTrecrun(w2, "sdm-$proxType")
@@ -80,7 +94,7 @@ fun main(args: Array<String>) {
                     info.push("ap1", measure.evaluate(exactR, judgments))
                     info.push("ap2", measure.evaluate(approxR, judgments))
 
-                    println("\t${info} ${times.mean} ${times}")
+                    println("\t${info} ${times.mean} ${baseTimes.mean}")
                 }
             }
         }

@@ -17,8 +17,9 @@ abstract class RREnv {
     open var absoluteDiscountingDelta = 0.7
     open var estimateStats: String? = "min"
     open var optimizeMovement = true
-    // And movement is currently unsafe for sharing.
     open var shareIterators: Boolean = true
+    open var optimizeBM25 = false
+    open var optimizeDirLog = false
 
     // nullable so it can be used to determine if this index has the given field.
     abstract fun fieldStats(field: String): CountStats
@@ -51,7 +52,7 @@ abstract class RREnv {
         computeQExprStats(this, pq)
 
         // Optimize BM25:
-        if (this is IreneQueryLanguage) {
+        if (optimizeBM25) {
             // Only our system supports "lifting" the idf out of a BM25Expr.
             val bq = pq.map { c ->
                 if (c is BM25Expr && !c.extractedIDF) {
