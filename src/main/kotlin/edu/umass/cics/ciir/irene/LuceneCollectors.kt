@@ -101,8 +101,8 @@ class PoolingCollectorManager(val mq: MultiExpr, val poolSize: Int): CollectorMa
                     // TODO: offer a variant that scores all for any match.
                     // score any matching sub-expressions:
                     eval.children.forEachIndexed { i, node ->
-                        if (node.matches(env)) {
-                            val score = node.score(env)
+                        if (node.matches()) {
+                            val score = node.score()
                             heaps[i].offer(score, { IreneScoredDoc(score, gdoc) })
                         }
                     }

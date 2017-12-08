@@ -121,7 +121,9 @@ private class IQModelWeight(val q: QExpr, val m: QExpr, val iqm: IreneQueryModel
     override fun explain(context: LeafReaderContext, doc: Int): Explanation {
         val ctx = IQContext(iqm, context)
         ctx.setup(q)
-        return exprToEval(q, ctx).explain(ScoringEnv(doc))
+        val eval = exprToEval(q, ctx)
+        eval.setup(ScoringEnv(doc))
+        return eval.explain()
     }
 
     override fun scorer(context: LeafReaderContext): Scorer {
@@ -135,7 +137,7 @@ private class IQModelWeight(val q: QExpr, val m: QExpr, val iqm: IreneQueryModel
 }
 
 class OptimizedMovementIter(val movement: QueryMover, val score: QueryEvalNode): DocIdSetIterator() {
-    val env = ScoringEnv()
+    val env = score.setup(ScoringEnv())
     val firstMatch: Int = advance(0)
     override fun docID(): Int = movement.docID()
     override fun nextDoc(): Int = advance(docID()+1)
@@ -146,7 +148,7 @@ class OptimizedMovementIter(val movement: QueryMover, val score: QueryEvalNode):
             val nextMatch = movement.nextMatching(dest)
             if (nextMatch == NO_MORE_DOCS) break
             env.doc = nextMatch
-            if (score.matches(env)) {
+            if (score.matches()) {
                 return nextMatch
             } else {
                 dest = maxOf(dest+1, nextMatch+1)
@@ -156,11 +158,11 @@ class OptimizedMovementIter(val movement: QueryMover, val score: QueryEvalNode):
     }
     fun score(doc: Int): Float {
         env.doc = doc
-        return score.score(env)
+        return score.score()
     }
     fun count(doc: Int): Int {
         env.doc = doc
-        return score.count(env)
+        return score.count()
     }
 }
 
@@ -176,7 +178,7 @@ class IreneQueryScorer(val q: QExpr, val iter: OptimizedMovementIter) : Scorer(n
     override fun score(): Float {
         val returned = iter.score(docID())
         if (java.lang.Float.isInfinite(returned)) {
-            throw RuntimeException("Infinite response for document: ${iter.docID()} ${eval.explain(ScoringEnv(iter.docID()))}")
+            throw RuntimeException("Infinite response for document: ${iter.docID()}@${env.doc} ${eval.explain()}")
             //return -Float.MAX_VALUE
         }
         return returned
