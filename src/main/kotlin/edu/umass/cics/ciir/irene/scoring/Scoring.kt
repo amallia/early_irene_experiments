@@ -14,7 +14,12 @@ class ScoringEnv(var doc: Int=-1) {
 }
 
 const val NO_MORE_DOCS = DocIdSetIterator.NO_MORE_DOCS
+
+/**
+ * Try not to implement this directly, use one of [RecursiveEval], if you expect to have children [SingleChildEval] if you have a single child, or [LeafEvalNode] if you expect to have no children.
+ */
 interface QueryEvalNode {
+    val children: List<QueryEvalNode>
     // Return a score for a document.
     fun score(env: ScoringEnv): Float
     // Return an count for a document.
@@ -27,6 +32,32 @@ interface QueryEvalNode {
     // Used to accelerate AND and OR matching if accurate.
     fun estimateDF(): Long
     fun setHeapMinimum(target: Float) {}
+
+    fun visit(fn: (QueryEvalNode)->Unit) {
+        fn(this)
+        for (c in children) {
+            c.visit(fn)
+        }
+    }
+
+    // Suggested implementation:
+    // lateinit var env: ScoringEnv
+    // fun init(env: ScoringEnv) { this.env = env }
+    fun init(env: ScoringEnv)
+
+    // Recursively calls [init] on tree.
+    fun setup(env: ScoringEnv) {
+        init(env)
+        for (c in children) {
+            c.setup(env)
+        }
+    }
+}
+
+abstract class LeafEvalNode : QueryEvalNode {
+    lateinit var env: ScoringEnv
+    override val children: List<QueryEvalNode> = emptyList()
+    override fun init(env: ScoringEnv) { this.env = env }
 }
 
 internal class FixedMatchEvalNode(val matchAnswer: Boolean, override val child: QueryEvalNode): SingleChildEval<QueryEvalNode>() {
@@ -40,7 +71,7 @@ internal class FixedMatchEvalNode(val matchAnswer: Boolean, override val child: 
     }
 }
 
-internal class WhitelistMatchEvalNode(val allowed: TIntHashSet): QueryEvalNode {
+internal class WhitelistMatchEvalNode(val allowed: TIntHashSet): LeafEvalNode() {
     val N = allowed.size().toLong()
     override fun estimateDF(): Long = N
     override fun matches(doc: ScoringEnv): Boolean = allowed.contains(doc.doc)
@@ -91,7 +122,7 @@ interface PositionsEvalNode : CountEvalNode {
     fun positions(doc: ScoringEnv): PositionsIter
 }
 
-class ConstCountEvalNode(val count: Int, val lengths: CountEvalNode) : CountEvalNode {
+class ConstCountEvalNode(val count: Int, val lengths: CountEvalNode) : LeafEvalNode(), CountEvalNode {
     override fun count(doc: ScoringEnv): Int = count
     override fun matches(doc: ScoringEnv): Boolean = lengths.matches(doc)
     override fun explain(doc: ScoringEnv): Explanation = Explanation.match(count.toFloat(), "ConstCountEvalNode", listOf(lengths.explain(doc)))
@@ -100,7 +131,7 @@ class ConstCountEvalNode(val count: Int, val lengths: CountEvalNode) : CountEval
     override fun length(doc: ScoringEnv): Int = lengths.length(doc)
 }
 
-class ConstTrueNode(val numDocs: Int) : QueryEvalNode {
+class ConstTrueNode(val numDocs: Int) : LeafEvalNode() {
     override fun setHeapMinimum(target: Float) { }
     override fun score(doc: ScoringEnv): Float = 1f
     override fun count(doc: ScoringEnv): Int = 1
@@ -112,7 +143,7 @@ class ConstTrueNode(val numDocs: Int) : QueryEvalNode {
 /**
  * Created from [ConstScoreExpr] via [exprToEval]
  */
-class ConstEvalNode(val count: Int, val score: Float) : QueryEvalNode {
+class ConstEvalNode(val count: Int, val score: Float) : LeafEvalNode() {
     constructor(count: Int) : this(count, count.toFloat())
     constructor(score: Float) : this(1, score)
 
@@ -129,6 +160,8 @@ class ConstEvalNode(val count: Int, val score: Float) : QueryEvalNode {
  * Created from [RequireExpr] via [exprToEval]
  */
 internal class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val miss: Float=-Float.MAX_VALUE): QueryEvalNode {
+    lateinit var env: ScoringEnv
+    override val children: List<QueryEvalNode> = listOf(cond, score)
     override fun score(doc: ScoringEnv): Float = if (cond.matches(doc)) { score.score(doc) } else miss
     override fun count(doc: ScoringEnv): Int = if (cond.matches(doc)) { score.count(doc) } else 0
     /**
@@ -146,14 +179,16 @@ internal class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, va
     }
     override fun setHeapMinimum(target: Float) { score.setHeapMinimum(target) }
     override fun estimateDF(): Long = minOf(score.estimateDF(), cond.estimateDF())
+    override fun init(env: ScoringEnv) { this.env = env }
 }
 
 /**
  * Helper class to generate Lucene's [Explanation] for subclasses of [AndEval] and  [OrEval] like [WeightedSumEval] or even [OrderedWindow].
  */
-abstract class RecursiveEval<out T : QueryEvalNode>(val children: List<T>) : QueryEvalNode {
+abstract class RecursiveEval<out T : QueryEvalNode>(override val children: List<T>) : QueryEvalNode {
     val className = this.javaClass.simpleName
     val N = children.size
+    lateinit var env: ScoringEnv
     override fun explain(doc: ScoringEnv): Explanation {
         val expls = children.map { it.explain(doc) }
         if (matches(doc)) {
@@ -161,6 +196,7 @@ abstract class RecursiveEval<out T : QueryEvalNode>(val children: List<T>) : Que
         }
         return Explanation.noMatch("$className.Miss", expls)
     }
+    override fun init(env: ScoringEnv) { this.env = env }
 }
 
 /**
@@ -274,11 +310,14 @@ internal class WeightedSumEval(children: List<QueryEvalNode>, val weights: Doubl
  * Helper class to make scorers that will have one child (like [DirichletSmoothingEval] and [BM25ScoringEval]) easier to implement.
  */
 internal abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
+    lateinit var env: ScoringEnv
     abstract val child: T
+    override val children: List<QueryEvalNode> = listOf(child)
     override fun estimateDF(): Long = child.estimateDF()
     override fun matches(doc: ScoringEnv): Boolean {
         return child.matches(doc)
     }
+    override fun init(env: ScoringEnv) { this.env = env }
 }
 
 internal class WeightedEval(override val child: QueryEvalNode, val weight: Float): SingleChildEval<QueryEvalNode>() {

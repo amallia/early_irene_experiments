@@ -11,7 +11,7 @@ import org.apache.lucene.search.Explanation
  * Created from [TextExpr] via [exprToEval]
  * @author jfoley.
  */
-data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths: NumericDocValues) : PositionsEvalNode, QueryEvalNode {
+data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths: NumericDocValues) : PositionsEvalNode, LeafEvalNode() {
     override fun positions(doc: ScoringEnv): PositionsIter = error("Don't ask for positions if count is zero!")
     override fun count(doc: ScoringEnv) = 0
     override fun matches(doc: ScoringEnv) = false
@@ -30,7 +30,7 @@ data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths:
     }
 }
 
-data class LuceneDocLengths(val stats: CountStats, val lengths: NumericDocValues): CountEvalNode {
+data class LuceneDocLengths(val stats: CountStats, val lengths: NumericDocValues): CountEvalNode, LeafEvalNode() {
     override fun count(doc: ScoringEnv): Int = 0
     override fun matches(doc: ScoringEnv): Boolean = lengths.docID() == doc.doc
     override fun explain(doc: ScoringEnv): Explanation = Explanation.match(length(doc).toFloat(), "lengths: $stats")
@@ -48,7 +48,7 @@ data class LuceneDocLengths(val stats: CountStats, val lengths: NumericDocValues
     }
 }
 
-abstract class LuceneTermFeature(val stats: CountStats, val postings: PostingsEnum) : QueryEvalNode {
+abstract class LuceneTermFeature(val stats: CountStats, val postings: PostingsEnum) : LeafEvalNode() {
     fun docID(): Int = postings.docID()
     fun syncTo(target: Int): Int {
         if (postings.docID() < target) {
