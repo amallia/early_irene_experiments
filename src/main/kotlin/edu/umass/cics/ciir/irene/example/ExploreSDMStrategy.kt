@@ -7,6 +7,7 @@ import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.IreneQueryScorer
 import edu.umass.cics.ciir.irene.scoring.MultiEvalNode
 import edu.umass.cics.ciir.irene.scoring.QueryEvalNode
+import edu.umass.cics.ciir.irene.scoring.ScoringEnv
 import edu.umass.cics.ciir.sprf.DataPaths
 import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.search.*
@@ -216,12 +217,14 @@ class MaxMinCollectorManager(val mq: MultiExpr, val poolSize: Int, val epsilon: 
 
     inner class MaxMinLeafCollector(val plausibleCandidates: ArrayList<MaxMinScoreDoc>, val docBase: Int, val numDocs: Int) : LeafCollector {
         var localMin = -Float.MAX_VALUE
+        lateinit var env: ScoringEnv
         lateinit var baseExpr: QueryEvalNode
         lateinit var bestExpr: QueryEvalNode
         lateinit var worstExpr: QueryEvalNode
         lateinit var trueExpr: QueryEvalNode
         override fun setScorer(scorer: Scorer) {
             val eval = (scorer as IreneQueryScorer).eval as MultiEvalNode
+            env = scorer.env
             baseExpr = eval.children[baseIndex]
             bestExpr = eval.children[bestIndex]
             worstExpr = eval.children[worstIndex]
@@ -229,19 +232,20 @@ class MaxMinCollectorManager(val mq: MultiExpr, val poolSize: Int, val epsilon: 
         }
         override fun collect(docNo: Int) {
             val gdoc = docNo + docBase
+            assert(docNo == env.doc)
             totalHits.incrementAndGet()
 
             // Get bounds on expression.
-            val base = baseExpr.score(docNo)
-            val best = bestExpr.score(docNo)
-            val worst = worstExpr.score(docNo)
+            val base = baseExpr.score(env)
+            val best = bestExpr.score(env)
+            val worst = worstExpr.score(env)
 
             // Throw in an epsilon here to avoid rounding/floating point errors causing loss.
             val max = base + best + epsilon
             val min = base + worst - epsilon
 
             if (java.lang.Float.isInfinite(min)) {
-                println(worstExpr.explain(docNo))
+                println(worstExpr.explain(env))
                 return
             }
 
@@ -282,7 +286,8 @@ class MaxMinCollectorManager(val mq: MultiExpr, val poolSize: Int, val epsilon: 
                     continue
                 }
                 val doc = mmsd.id - docBase
-                val delta = trueExpr.score(doc)
+                env.doc = doc
+                val delta = trueExpr.score(env)
                 val exactScore = mmsd.baseScore + delta
 
                 assert(exactScore >= mmsd.minScore && exactScore <= mmsd.maxScore) {

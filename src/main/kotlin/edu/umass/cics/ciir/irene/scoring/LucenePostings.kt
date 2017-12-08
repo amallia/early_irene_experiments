@@ -12,13 +12,14 @@ import org.apache.lucene.search.Explanation
  * @author jfoley.
  */
 data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths: NumericDocValues) : PositionsEvalNode, QueryEvalNode {
-    override fun positions(doc: Int): PositionsIter = error("Don't ask for positions if count is zero!")
-    override fun count(doc: Int) = 0
-    override fun matches(doc: Int) = false
-    override fun explain(doc: Int) = Explanation.match(0.0f, "MissingTerm-$term length=${length(doc)}")
+    override fun positions(doc: ScoringEnv): PositionsIter = error("Don't ask for positions if count is zero!")
+    override fun count(doc: ScoringEnv) = 0
+    override fun matches(doc: ScoringEnv) = false
+    override fun explain(doc: ScoringEnv) = Explanation.match(0.0f, "MissingTerm-$term length=${length(doc)}")
     override fun estimateDF() = 0L
     override fun getCountStats(): CountStats = stats
-    override fun length(doc: Int): Int {
+    override fun length(env: ScoringEnv): Int {
+        val doc = env.doc
         if (lengths.docID() < doc) {
             lengths.advance(doc)
         }
@@ -30,12 +31,13 @@ data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths:
 }
 
 data class LuceneDocLengths(val stats: CountStats, val lengths: NumericDocValues): CountEvalNode {
-    override fun count(doc: Int): Int = 0
-    override fun matches(doc: Int): Boolean = lengths.docID() == doc
-    override fun explain(doc: Int): Explanation = Explanation.match(length(doc).toFloat(), "lengths: $stats")
+    override fun count(doc: ScoringEnv): Int = 0
+    override fun matches(doc: ScoringEnv): Boolean = lengths.docID() == doc.doc
+    override fun explain(doc: ScoringEnv): Explanation = Explanation.match(length(doc).toFloat(), "lengths: $stats")
     override fun estimateDF(): Long = lengths.cost()
     override fun getCountStats(): CountStats = stats
-    override fun length(doc: Int): Int {
+    override fun length(env: ScoringEnv): Int {
+        val doc = env.doc
         if (lengths.docID() < doc) {
             lengths.advance(doc)
         }
@@ -55,12 +57,13 @@ abstract class LuceneTermFeature(val stats: CountStats, val postings: PostingsEn
         return postings.docID()
     }
 
-    override fun matches(doc: Int): Boolean {
+    override fun matches(env: ScoringEnv): Boolean {
+        val doc = env.doc
         syncTo(doc)
         return docID() == doc
     }
 
-    override fun explain(doc: Int): Explanation {
+    override fun explain(doc: ScoringEnv): Explanation {
         if (matches(doc)) {
             return Explanation.match(count(doc).toFloat(), "${this.javaClass.simpleName} @doc=$doc")
         } else {
@@ -72,19 +75,20 @@ abstract class LuceneTermFeature(val stats: CountStats, val postings: PostingsEn
 }
 
 open class LuceneTermDocs(stats: CountStats, postings: PostingsEnum) : LuceneTermFeature(stats, postings) {
-    override fun score(doc: Int): Float = count(doc).toFloat()
-    override fun count(doc: Int): Int = if (matches(doc)) 1 else 0
+    override fun score(doc: ScoringEnv): Float = count(doc).toFloat()
+    override fun count(doc: ScoringEnv): Int = if (matches(doc)) 1 else 0
 }
 open class LuceneTermCounts(stats: CountStats, postings: PostingsEnum, val lengths: NumericDocValues) : LuceneTermDocs(stats, postings), CountEvalNode {
-    override fun score(doc: Int): Float = count(doc).toFloat()
-    override fun count(doc: Int): Int {
+    override fun score(doc: ScoringEnv): Float = count(doc).toFloat()
+    override fun count(doc: ScoringEnv): Int {
         if(matches(doc)) {
             return postings.freq()
         }
         return 0
     }
     override fun getCountStats(): CountStats = stats
-    override fun length(doc: Int): Int {
+    override fun length(env: ScoringEnv): Int {
+        val doc = env.doc
         if (lengths.docID() < doc) {
             lengths.advance(doc)
         }
@@ -97,12 +101,13 @@ open class LuceneTermCounts(stats: CountStats, postings: PostingsEnum, val lengt
 class LuceneTermPositions(stats: CountStats, postings: PostingsEnum, lengths: NumericDocValues) : LuceneTermCounts(stats, postings, lengths), PositionsEvalNode {
     var posDoc = -1
     var positions = IntList()
-    override fun positions(doc: Int): PositionsIter {
+    override fun positions(env: ScoringEnv): PositionsIter {
+        val doc = env.doc
         assert(postings.docID() != NO_MORE_DOCS) { "Requested positions from term that is finished!" }
         if (posDoc != doc) {
             posDoc = doc
             positions.clear()
-            val count = count(doc)
+            val count = count(env)
             if (count == 0) error("Don't ask for positions when count is zero.")
 
             (0 until count).forEach {
@@ -117,7 +122,7 @@ class LuceneTermPositions(stats: CountStats, postings: PostingsEnum, lengths: Nu
         return PositionsIter(positions.unsafeArray(), positions.fill)
     }
 
-    override fun explain(doc: Int): Explanation {
+    override fun explain(doc: ScoringEnv): Explanation {
         if (matches(doc)) {
             return Explanation.match(count(doc).toFloat(), "@doc=$doc, lengths@${lengths.docID()} positions=${positions(doc)}")
         } else {

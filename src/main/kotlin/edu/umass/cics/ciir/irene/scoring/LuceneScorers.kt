@@ -121,7 +121,7 @@ private class IQModelWeight(val q: QExpr, val m: QExpr, val iqm: IreneQueryModel
     override fun explain(context: LeafReaderContext, doc: Int): Explanation {
         val ctx = IQContext(iqm, context)
         ctx.setup(q)
-        return exprToEval(q, ctx).explain(doc)
+        return exprToEval(q, ctx).explain(ScoringEnv(doc))
     }
 
     override fun scorer(context: LeafReaderContext): Scorer {
@@ -135,6 +135,7 @@ private class IQModelWeight(val q: QExpr, val m: QExpr, val iqm: IreneQueryModel
 }
 
 class OptimizedMovementIter(val movement: QueryMover, val score: QueryEvalNode): DocIdSetIterator() {
+    val env = ScoringEnv()
     val firstMatch: Int = advance(0)
     override fun docID(): Int = movement.docID()
     override fun nextDoc(): Int = advance(docID()+1)
@@ -144,7 +145,8 @@ class OptimizedMovementIter(val movement: QueryMover, val score: QueryEvalNode):
         while (!movement.done) {
             val nextMatch = movement.nextMatching(dest)
             if (nextMatch == NO_MORE_DOCS) break
-            if (score.matches(nextMatch)) {
+            env.doc = nextMatch
+            if (score.matches(env)) {
                 return nextMatch
             } else {
                 dest = maxOf(dest+1, nextMatch+1)
@@ -153,15 +155,18 @@ class OptimizedMovementIter(val movement: QueryMover, val score: QueryEvalNode):
         return NO_MORE_DOCS
     }
     fun score(doc: Int): Float {
-        return score.score(doc)
+        env.doc = doc
+        return score.score(env)
     }
     fun count(doc: Int): Int {
-        return score.count(doc)
+        env.doc = doc
+        return score.count(env)
     }
 }
 
 class IreneQueryScorer(val q: QExpr, val iter: OptimizedMovementIter) : Scorer(null) {
     val eval: QueryEvalNode = iter.score
+    val env: ScoringEnv = iter.env
     override fun docID(): Int {
         val docid = iter.docID()
         //println(docid)
@@ -171,7 +176,7 @@ class IreneQueryScorer(val q: QExpr, val iter: OptimizedMovementIter) : Scorer(n
     override fun score(): Float {
         val returned = iter.score(docID())
         if (java.lang.Float.isInfinite(returned)) {
-            throw RuntimeException("Infinite response for document: ${iter.docID()} ${eval.explain(iter.docID())}")
+            throw RuntimeException("Infinite response for document: ${iter.docID()} ${eval.explain(ScoringEnv(iter.docID()))}")
             //return -Float.MAX_VALUE
         }
         return returned

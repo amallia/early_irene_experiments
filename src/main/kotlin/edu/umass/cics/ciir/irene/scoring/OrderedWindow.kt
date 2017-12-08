@@ -146,41 +146,42 @@ abstract class CountWindow(val stats: CountStatsStrategy, children: List<Positio
     var lastDoc = -1
     var lastCount = 0
     abstract fun compute(iters: List<PositionsIter>): Int
-    override fun count(doc: Int): Int {
+    override fun count(env: ScoringEnv): Int {
+        val doc = env.doc
         if (doc == lastDoc) return lastCount
 
         // otherwise, compute!
         val iters = children.map {
-            val count = it.count(doc)
+            val count = it.count(env)
             if (count == 0) {
                 lastDoc = doc
                 lastCount = 0
                 return 0
             }
-            it.positions(doc)
+            it.positions(env)
         }
 
         lastDoc = doc
         lastCount = compute(iters)
         return lastCount
     }
-    override fun matches(doc: Int): Boolean {
+    override fun matches(doc: ScoringEnv): Boolean {
         if (super.matches(doc)) {
             return count(doc) > 0
         }
         return false
     }
     override fun getCountStats(): CountStats = stats.get()
-    override fun length(doc: Int): Int = children[0].length(doc)
+    override fun length(doc: ScoringEnv): Int = children[0].length(doc)
 }
 
 class OrderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val step: Int) : CountWindow(stats, children) {
     override fun compute(iters: List<PositionsIter>): Int = countOrderedWindows(iters, step)
 
     /** TODO is the minimum possible at this document is always zero for a [CountEvalNode]? */
-    fun min(doc: Int): Int = 0
+    fun min(doc: ScoringEnv): Int = 0
     /** Custom maximization logic for [OrderedWindow]. This is the same as [SmallerCountWindow] */
-    fun max(doc: Int): Int {
+    fun max(doc: ScoringEnv): Int {
         var min = Integer.MAX_VALUE
         for (c in children) {
             val cc = c.count(doc)
@@ -205,7 +206,7 @@ class SmallerCountWindow(val stats: CountStatsStrategy, children: List<CountEval
     init {
         assert(children.size > 1)
     }
-    override fun count(doc: Int): Int {
+    override fun count(doc: ScoringEnv): Int {
         if (!matches(doc)) return 0
         var min = Integer.MAX_VALUE
         for (c in children) {
@@ -216,7 +217,7 @@ class SmallerCountWindow(val stats: CountStatsStrategy, children: List<CountEval
         return min
     }
     override fun getCountStats(): CountStats = stats.get()
-    override fun length(doc: Int): Int = children[0].length(doc)
+    override fun length(doc: ScoringEnv): Int = children[0].length(doc)
 }
 
 /** From [UnorderedWindowCeilingExpr], for estimating the ceiling of [UnorderedWindow] nodes.
@@ -227,7 +228,7 @@ class UnorderedWindowCeiling(val stats: CountStatsStrategy, val width: Int, chil
     init {
         assert(children.size > 1)
     }
-    override fun count(doc: Int): Int {
+    override fun count(doc: ScoringEnv): Int {
         if (!matches(doc)) return 0
         var max = 0
         var min = Integer.MAX_VALUE
@@ -239,5 +240,5 @@ class UnorderedWindowCeiling(val stats: CountStatsStrategy, val width: Int, chil
         return max * minOf(min, width)
     }
     override fun getCountStats(): CountStats = stats.get()
-    override fun length(doc: Int): Int = children[0].length(doc)
+    override fun length(doc: ScoringEnv): Int = children[0].length(doc)
 }
