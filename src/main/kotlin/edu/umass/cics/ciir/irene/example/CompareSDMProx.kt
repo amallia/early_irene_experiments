@@ -22,10 +22,10 @@ fun main(args: Array<String>) {
     val qrels = dataset.qrels
     val measure = getEvaluator("map")
     val info = NamedMeasures()
-    val scorer = argp.get("scorer", "ql")
+    val scorer = argp.get("scorer", "bm25")
     val qtype = argp.get("qtype", "title")
-    val estStats = argp.get("stats", "exact")
-    val proxType = argp.get("prox", "prox")
+    val estStats = argp.get("stats", "min")
+    val proxType = argp.get("prox", "sc")
 
     val queries = when(qtype) {
         "title" -> dataset.title_qs

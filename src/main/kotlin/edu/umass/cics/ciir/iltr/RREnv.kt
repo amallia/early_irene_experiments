@@ -49,7 +49,25 @@ abstract class RREnv {
             throw err
         }
         computeQExprStats(this, pq)
-        return pq
+
+        // Optimize BM25:
+        val bq = pq.map { c ->
+            if (c is BM25Expr && !c.extractedIDF) {
+                val inner = c.child
+                if (inner is TextExpr && inner.stats != null) {
+                    c.extractedIDF = true
+                    val stats = inner.stats!!
+                    val idf = Math.log(stats.dc / (stats.df + 0.5))
+                    c.weighted(idf)
+                } else {
+                    c
+                }
+            } else {
+                c
+            }
+        }
+
+        return simplify(bq)
     }
 
     fun fromQExpr(q: QExpr): RRExpr = when(q) {

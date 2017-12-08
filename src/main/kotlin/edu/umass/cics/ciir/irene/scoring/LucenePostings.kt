@@ -75,11 +75,11 @@ abstract class LuceneTermFeature(val stats: CountStats, val postings: PostingsEn
 }
 
 open class LuceneTermDocs(stats: CountStats, postings: PostingsEnum) : LuceneTermFeature(stats, postings) {
-    override fun score(): Float = count().toFloat()
+    override fun score(): Double = count().toDouble()
     override fun count(): Int = if (matches()) 1 else 0
 }
 open class LuceneTermCounts(stats: CountStats, postings: PostingsEnum, val lengths: NumericDocValues) : LuceneTermDocs(stats, postings), CountEvalNode {
-    override fun score(): Float = count().toFloat()
+    override fun score(): Double = count().toDouble()
     override fun count(): Int {
         if(matches()) {
             return postings.freq()
@@ -112,6 +112,7 @@ class LuceneTermPositions(stats: CountStats, postings: PostingsEnum, lengths: Nu
             val count = count()
             if (count == 0) error("Don't ask for positions when count is zero.")
 
+            positions.reserve(count)
             (0 until count).forEach {
                 try {
                     positions.push(postings.nextPosition())

@@ -235,10 +235,6 @@ fun applyEnvironment(env: RREnv, root: QExpr) {
             is AbsoluteDiscountingQLExpr -> if (q.delta == null) {
                 q.delta = env.absoluteDiscountingDelta
             }
-            is BM25Expr -> {
-                if (q.b == null) q.b = env.defaultBM25b
-                if (q.k == null) q.k = env.defaultBM25k
-            }
             else -> q.applyEnvironment(env)
         }
     }

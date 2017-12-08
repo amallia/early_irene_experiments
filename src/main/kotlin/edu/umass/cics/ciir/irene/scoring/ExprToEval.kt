@@ -28,9 +28,13 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
             q.weights.map { it }.toDoubleArray())
     is MultExpr -> TODO()
     is MaxExpr -> MaxEval(q.children.map { exprToEval(it, ctx) })
-    is WeightExpr -> WeightedEval(exprToEval(q.child, ctx), q.weight.toFloat())
+    is WeightExpr -> WeightedEval(exprToEval(q.child, ctx), q.weight)
     is DirQLExpr -> DirichletSmoothingEval(exprToEval(q.child, ctx) as CountEvalNode, q.mu!!)
-    is BM25Expr -> BM25ScoringEval(exprToEval(q.child, ctx) as CountEvalNode, q.b!!, q.k!!)
+    is BM25Expr -> if (q.extractedIDF) {
+        BM25InnerScoringEval(exprToEval(q.child, ctx) as CountEvalNode, q.b!!, q.k!!)
+    } else {
+        BM25ScoringEval(exprToEval(q.child, ctx) as CountEvalNode, q.b!!, q.k!!)
+    }
     is CountToScoreExpr -> TODO()
     is BoolToScoreExpr -> TODO()
     is CountToBoolExpr -> TODO()
@@ -51,7 +55,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
             computeCountStats(q, ctx),
             q.width,
             q.children.map { exprToEval(it, ctx) as CountEvalNode })
-    is ConstScoreExpr -> ConstEvalNode(q.x.toFloat())
+    is ConstScoreExpr -> ConstEvalNode(q.x)
     is ConstCountExpr -> ConstCountEvalNode(q.x, exprToEval(q.lengths, ctx) as CountEvalNode)
     is ConstBoolExpr -> if(q.x) ConstTrueNode(ctx.numDocs()) else ConstEvalNode(0)
     is AbsoluteDiscountingQLExpr -> error("No efficient method to implement AbsoluteDiscountingQLExpr in Irene backend; needs numUniqWords per document.")

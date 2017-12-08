@@ -155,6 +155,7 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
     private val exprStatsCache = Caffeine.newBuilder().maximumSize(100_000).build<QExpr, ForkJoinTask<CountStats>>()
     private val fieldStatsCache = ConcurrentHashMap<String, CountStats?>()
     private val nameToIdCache: Cache<String, Int> = Caffeine.newBuilder().maximumSize(100_000).build()
+    private val idToNameCache: Cache<Int, String> = Caffeine.newBuilder().maximumSize(100_000).build()
 
     override fun close() {
         reader.close()
@@ -163,7 +164,11 @@ class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
 
     fun getField(doc: Int, name: String): IndexableField? = searcher.doc(doc, setOf(name))?.getField(name)
     fun getDocumentName(doc: Int): String? {
-        return getField(doc, idFieldName)?.stringValue()
+        val resp = idToNameCache.get(doc, {
+            getField(doc, idFieldName)?.stringValue() ?: ""
+        }) ?: return null
+        if (resp.isBlank()) return null
+        return resp
     }
     fun docAsParameters(doc: Int): Parameters? {
         val ldoc = document(doc) ?: return null

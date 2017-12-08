@@ -19,7 +19,7 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
     val searcher = iqm.index.searcher
     val lengths = HashMap<String, NumericDocValues>()
     val iterNeeds = HashMap<Term, DataNeeded>()
-    val iterCache = HashMap<Term, QueryEvalNode>()
+    val evalCache = HashMap<Term, QueryEvalNode>()
 
     private fun getLengths(field: String) = lengths.computeIfAbsent(field, { missing ->
         lucene_try { context.reader().getNormValues(missing) } ?: error("Couldn't find norms for ``$missing'' ND=${context.reader().numDocs()} F=${context.reader().fieldInfos.map { it.name }}.")
@@ -43,17 +43,13 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
     }
 
     private fun termRaw(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): QueryEvalNode {
-        val result = termSeek(term, needed)
-        return if (!result.isPresent) {
-            LuceneMissingTerm(term, stats, lengths)
-        } else {
-            val postings = result.get()
-            when(needed) {
-                DataNeeded.DOCS -> LuceneTermDocs(stats, postings)
-                DataNeeded.COUNTS -> LuceneTermCounts(stats, postings, lengths)
-                DataNeeded.POSITIONS -> LuceneTermPositions(stats, postings, lengths)
-                DataNeeded.SCORES -> error("Impossible!")
-            }
+        val postings = termSeek(term, needed)
+                ?: return LuceneMissingTerm(term, stats, lengths)
+        return when(needed) {
+            DataNeeded.DOCS -> LuceneTermDocs(stats, postings)
+            DataNeeded.COUNTS -> LuceneTermCounts(stats, postings, lengths)
+            DataNeeded.POSITIONS -> LuceneTermPositions(stats, postings, lengths)
+            DataNeeded.SCORES -> error("Impossible!")
         }
     }
 
@@ -63,27 +59,25 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
             if (entry == null || entry < needed) {
                 error("Forgot to call .setup(q) on IQContext. While constructing $term $needed $entry...")
             }
-            iterCache.computeIfAbsent(term, { termRaw(term, entry, stats, lengths) })
+            evalCache.computeIfAbsent(term, { termRaw(term, entry, stats, lengths) })
         } else {
             termRaw(term, needed, stats, lengths)
         }
     }
     fun termMover(term: Term): QueryMover {
-        val result = termSeek(term, DataNeeded.DOCS)
-        if (result.isPresent) {
-            return LuceneDocsMover(term.toString(), result.get())
-        }
-        return NeverMatchMover(term.toString())
+        val result = termSeek(term, DataNeeded.DOCS) ?: return NeverMatchMover(term.toString())
+
+        return LuceneDocsMover(term.toString(), result)
     }
-    private fun termSeek(term: Term, needed: DataNeeded): Optional<PostingsEnum> {
+    private fun termSeek(term: Term, needed: DataNeeded): PostingsEnum? {
         val termContext = TermContext.build(searcher.topReaderContext, term)!!
-        val state = termContext[context.ord] ?: return Optional.empty()
+        val state = termContext[context.ord] ?: return null
         val termIter = context.reader().terms(term.field()).iterator()
         termIter.seekExact(term.bytes(), state)
         val postings = termIter.postings(null, needed.textFlags())
         // Lucene requires we call nextDoc() before doing anything else.
         postings.nextDoc()
-        return Optional.ofNullable(postings)
+        return postings
     }
 
     fun create(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): QueryEvalNode {
@@ -158,7 +152,7 @@ class OptimizedMovementIter(val movement: QueryMover, val score: QueryEvalNode):
     }
     fun score(doc: Int): Float {
         env.doc = doc
-        return score.score()
+        return score.score().toFloat()
     }
     fun count(doc: Int): Int {
         env.doc = doc
@@ -190,7 +184,6 @@ class IreneQueryModel(val index: IreneIndex, val env: IreneQueryLanguage, q: QEx
     val exec = env.prepare(q)
     var movement = if (env.optimizeMovement) {
         val m = env.prepare(createOptimizedMovementExpr(exec))
-        //println(m)
         m
     } else {
         exec

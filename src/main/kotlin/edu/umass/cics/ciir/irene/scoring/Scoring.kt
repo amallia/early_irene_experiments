@@ -21,7 +21,7 @@ const val NO_MORE_DOCS = DocIdSetIterator.NO_MORE_DOCS
 interface QueryEvalNode {
     val children: List<QueryEvalNode>
     // Return a score for a document.
-    fun score(): Float
+    fun score(): Double
     // Return an count for a document.
     fun count(): Int
     // Return an boolean for a document. (must be true if you want this to be ranked).
@@ -31,7 +31,7 @@ interface QueryEvalNode {
 
     // Used to accelerate AND and OR matching if accurate.
     fun estimateDF(): Long
-    fun setHeapMinimum(target: Float) {}
+    fun setHeapMinimum(target: Double) {}
 
     fun visit(fn: (QueryEvalNode)->Unit) {
         fn(this)
@@ -64,10 +64,10 @@ abstract class LeafEvalNode : QueryEvalNode {
 
 internal class FixedMatchEvalNode(val matchAnswer: Boolean, override val child: QueryEvalNode): SingleChildEval<QueryEvalNode>() {
     override fun matches(): Boolean = matchAnswer
-    override fun score(): Float = child.score()
+    override fun score(): Double = child.score()
     override fun count(): Int = child.count()
     override fun explain(): Explanation = if (matchAnswer) {
-        Explanation.match(child.score(), "AlwaysMatchNode", child.explain())
+        Explanation.match(child.score().toFloat(), "AlwaysMatchNode", child.explain())
     } else {
         Explanation.noMatch("NeverMatchNode", child.explain())
     }
@@ -77,10 +77,10 @@ internal class WhitelistMatchEvalNode(val allowed: TIntHashSet): LeafEvalNode() 
     val N = allowed.size().toLong()
     override fun estimateDF(): Long = N
     override fun matches(): Boolean = allowed.contains(env.doc)
-    override fun score(): Float = if (matches()) { 1f } else { 0f }
+    override fun score(): Double = if (matches()) { 1.0 } else { 0.0 }
     override fun count(): Int = if (matches()) { 1 } else { 0 }
     override fun explain(): Explanation = if (matches()) {
-        Explanation.match(score(), "WhitelistMatchEvalNode N=$N")
+        Explanation.match(score().toFloat(), "WhitelistMatchEvalNode N=$N")
     } else {
         Explanation.noMatch("WhitelistMatchEvalNode N=$N")
     }
@@ -88,12 +88,12 @@ internal class WhitelistMatchEvalNode(val allowed: TIntHashSet): LeafEvalNode() 
 
 // Going to execute this many times per document? Takes a while? Optimize that.
 private class CachedQueryEvalNode(override val child: QueryEvalNode) : SingleChildEval<QueryEvalNode>() {
-    var cachedScore = -Float.MAX_VALUE
+    var cachedScore = -Double.MAX_VALUE
     var cachedScoreDoc = -1
     var cachedCount = 0
     var cachedCountDoc = -1
 
-    override fun score(): Float {
+    override fun score(): Double {
         if (env.doc == cachedScoreDoc) {
             cachedScoreDoc = env.doc
             cachedScore = child.score()
@@ -116,7 +116,7 @@ private class CachedQueryEvalNode(override val child: QueryEvalNode) : SingleChi
 }
 
 interface CountEvalNode : QueryEvalNode {
-    override fun score() = count().toFloat()
+    override fun score() = count().toDouble()
     fun getCountStats(): CountStats
     fun length(): Int
 }
@@ -134,8 +134,8 @@ class ConstCountEvalNode(val count: Int, val lengths: CountEvalNode) : LeafEvalN
 }
 
 class ConstTrueNode(val numDocs: Int) : LeafEvalNode() {
-    override fun setHeapMinimum(target: Float) { }
-    override fun score(): Float = 1f
+    override fun setHeapMinimum(target: Double) { }
+    override fun score(): Double = 1.0
     override fun count(): Int = 1
     override fun matches(): Boolean = true
     override fun explain(): Explanation = Explanation.match(1f, "ConstTrueNode")
@@ -145,12 +145,12 @@ class ConstTrueNode(val numDocs: Int) : LeafEvalNode() {
 /**
  * Created from [ConstScoreExpr] via [exprToEval]
  */
-class ConstEvalNode(val count: Int, val score: Float) : LeafEvalNode() {
-    constructor(count: Int) : this(count, count.toFloat())
-    constructor(score: Float) : this(1, score)
+class ConstEvalNode(val count: Int, val score: Double) : LeafEvalNode() {
+    constructor(count: Int) : this(count, count.toDouble())
+    constructor(score: Double) : this(1, score)
 
-    override fun setHeapMinimum(target: Float) { }
-    override fun score(): Float = score
+    override fun setHeapMinimum(target: Double) { }
+    override fun score(): Double = score
     override fun count(): Int = count
     override fun matches(): Boolean = false
 
@@ -161,10 +161,10 @@ class ConstEvalNode(val count: Int, val score: Float) : LeafEvalNode() {
 /**
  * Created from [RequireExpr] via [exprToEval]
  */
-internal class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val miss: Float=-Float.MAX_VALUE): QueryEvalNode {
+internal class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val miss: Double=-Double.MAX_VALUE): QueryEvalNode {
     lateinit var env: ScoringEnv
     override val children: List<QueryEvalNode> = listOf(cond, score)
-    override fun score(): Float = if (cond.matches()) { score.score() } else miss
+    override fun score(): Double = if (cond.matches()) { score.score() } else miss
     override fun count(): Int = if (cond.matches()) { score.count() } else 0
     /**
      * Note: Galago semantics, don't look at whether score matches.
@@ -174,12 +174,12 @@ internal class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, va
     override fun explain(): Explanation {
         val expls = listOf(cond, score).map { it.explain() }
         return if (cond.matches()) {
-            Explanation.match(score.score(), "require-match", expls)
+            Explanation.match(score.score().toFloat(), "require-match", expls)
         } else {
             Explanation.noMatch("${score.score()} for require-miss", expls)
         }
     }
-    override fun setHeapMinimum(target: Float) { score.setHeapMinimum(target) }
+    override fun setHeapMinimum(target: Double) { score.setHeapMinimum(target) }
     override fun estimateDF(): Long = minOf(score.estimateDF(), cond.estimateDF())
     override fun init(env: ScoringEnv) { this.env = env }
 }
@@ -194,7 +194,7 @@ abstract class RecursiveEval<out T : QueryEvalNode>(override val children: List<
     override fun explain(): Explanation {
         val expls = children.map { it.explain() }
         if (matches()) {
-            return Explanation.match(score(), "$className.Match", expls)
+            return Explanation.match(score().toFloat(), "$className.Match", expls)
         }
         return Explanation.noMatch("$className.Miss", expls)
     }
@@ -207,7 +207,7 @@ abstract class RecursiveEval<out T : QueryEvalNode>(override val children: List<
 class MultiEvalNode(children: List<QueryEvalNode>, val names: List<String>) : OrEval<QueryEvalNode>(children) {
     val primary: Int = Math.max(0, names.indexOf("primary"))
     override fun count(): Int = children[primary].count()
-    override fun score(): Float = children[primary].score()
+    override fun score(): Double = children[primary].score()
 
     override fun explain(): Explanation {
         val expls = children.map { it.explain() }
@@ -250,14 +250,14 @@ abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval
  * Created from [OrExpr] using [exprToEval]
  */
 internal class BooleanOrEval(children: List<QueryEvalNode>): OrEval<QueryEvalNode>(children) {
-    override fun score(): Float = if (matches()) { 1f } else { 0f }
+    override fun score(): Double = if (matches()) { 1.0 } else { 0.0 }
     override fun count(): Int = if (matches()) { 1 } else { 0 }
 }
 /**
  * Created from [AndExpr] using [exprToEval]
  */
 internal class BooleanAndEval(children: List<QueryEvalNode>): AndEval<QueryEvalNode>(children) {
-    override fun score(): Float = if (matches()) { 1f } else { 0f }
+    override fun score(): Double = if (matches()) { 1.0 } else { 0.0 }
     override fun count(): Int = if (matches()) { 1 } else { 0 }
 }
 
@@ -265,8 +265,8 @@ internal class BooleanAndEval(children: List<QueryEvalNode>): AndEval<QueryEvalN
  * Created from [MaxExpr] using [exprToEval]
  */
 internal class MaxEval(children: List<QueryEvalNode>) : OrEval<QueryEvalNode>(children) {
-    override fun score(): Float {
-        var sum = 0f
+    override fun score(): Double {
+        var sum = 0.0
         children.forEach {
             sum = maxOf(sum, it.score())
         }
@@ -280,7 +280,7 @@ internal class MaxEval(children: List<QueryEvalNode>) : OrEval<QueryEvalNode>(ch
         return sum
     }
     // Getting over the "min" is the same for any child of a max node.
-    override fun setHeapMinimum(target: Float) {
+    override fun setHeapMinimum(target: Double) {
         children.forEach { it.setHeapMinimum(target) }
     }
 }
@@ -290,16 +290,16 @@ internal class MaxEval(children: List<QueryEvalNode>) : OrEval<QueryEvalNode>(ch
  * Also known as #combine for you galago/indri folks.
  */
 internal class WeightedSumEval(children: List<QueryEvalNode>, val weights: DoubleArray) : OrEval<QueryEvalNode>(children) {
-    override fun score(): Float {
+    override fun score(): Double {
         return (0 until children.size).sumByDouble {
             weights[it] * children[it].score()
-        }.toFloat()
+        }
     }
 
     override fun explain(): Explanation {
         val expls = children.map { it.explain() }
         if (matches()) {
-            return Explanation.match(score(), "$className.Match ${weights.toList()}", expls)
+            return Explanation.match(score().toFloat(), "$className.Match ${weights.toList()}", expls)
         }
         return Explanation.noMatch("$className.Miss ${weights.toList()}", expls)
     }
@@ -320,19 +320,19 @@ internal abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
     override fun init(env: ScoringEnv) { this.env = env }
 }
 
-internal class WeightedEval(override val child: QueryEvalNode, val weight: Float): SingleChildEval<QueryEvalNode>() {
-    override fun setHeapMinimum(target: Float) {
+internal class WeightedEval(override val child: QueryEvalNode, val weight: Double): SingleChildEval<QueryEvalNode>() {
+    override fun setHeapMinimum(target: Double) {
         // e.g., if this is 2*child, and target is 5
         // child target is 5 / 2
         child.setHeapMinimum(target / weight)
     }
 
-    override fun score(): Float = weight * child.score()
+    override fun score(): Double = weight * child.score()
     override fun count(): Int = error("Weighted($weight).count()")
     override fun explain(): Explanation {
         val orig = child.score()
         return if (child.matches()) {
-            Explanation.match(weight*orig, "Weighted@${env.doc} = $weight * $orig", child.explain())
+            Explanation.match(score().toFloat(), "Weighted@${env.doc} = $weight * $orig", child.explain())
         } else {
             Explanation.noMatch("Weighted.Miss@${env.doc} (${weight*orig} = $weight * $orig)", child.explain())
         }
@@ -348,12 +348,12 @@ internal class BM25ScoringEval(override val child: CountEvalNode, val b: Double,
     private val avgDL = stats.avgDL()
     private val idf = Math.log(stats.dc / (stats.df + 0.5))
 
-    override fun score(): Float {
+    override fun score(): Double {
         val count = child.count().toDouble()
         val length = child.length().toDouble()
         val num = count * (k+1.0)
         val denom = count + (k * (1.0 - b + (b * length / avgDL)))
-        return (idf * (num / denom)).toFloat()
+        return idf * (num / denom)
     }
 
     override fun count(): Int = error("count() not implemented for ScoreNode")
@@ -361,7 +361,34 @@ internal class BM25ScoringEval(override val child: CountEvalNode, val b: Double,
         val c = child.count()
         val length = child.length()
         if (c > 0) {
-            return Explanation.match(score(), "$c/$length with b=$b, k=$k with BM25. ${stats}", listOf(child.explain()))
+            return Explanation.match(score().toFloat(), "$c/$length with b=$b, k=$k with BM25. ${stats}", listOf(child.explain()))
+        } else {
+            return Explanation.noMatch("score=${score()} or $c/$length with b=$b, k=$k with BM25. ${stats}", listOf(child.explain()))
+        }
+    }
+}
+internal class BM25InnerScoringEval(override val child: CountEvalNode, val b: Double, val k: Double): SingleChildEval<CountEvalNode>() {
+    private val stats = child.getCountStats()
+    private val avgDL = stats.avgDL()
+
+    val OneMinusB = 1.0 - b
+    val KPlusOne = k+1.0
+    val BOverAvgDL = b / avgDL
+
+    override fun score(): Double {
+        val count = child.count().toDouble()
+        val length = child.length().toDouble()
+        val num = count * KPlusOne
+        val denom = count + (k * (OneMinusB + (BOverAvgDL * length)))
+        return num / denom
+    }
+
+    override fun count(): Int = error("count() not implemented for ScoreNode")
+    override fun explain(): Explanation {
+        val c = child.count()
+        val length = child.length()
+        if (c > 0) {
+            return Explanation.match(score().toFloat(), "$c/$length with b=$b, k=$k with BM25. ${stats}", listOf(child.explain()))
         } else {
             return Explanation.noMatch("score=${score()} or $c/$length with b=$b, k=$k with BM25. ${stats}", listOf(child.explain()))
         }
@@ -378,17 +405,17 @@ internal class DirichletSmoothingEval(override val child: CountEvalNode, val mu:
             "child.stats=${child.getCountStats()}"
         }
     }
-    override fun score(): Float {
+    override fun score(): Double {
         val c = child.count().toDouble()
         val length = child.length().toDouble()
-        return Math.log((c + background) / (length + mu)).toFloat()
+        return Math.log((c + background) / (length + mu))
     }
     override fun count(): Int = TODO("not yet")
     override fun explain(): Explanation {
         val c = child.count()
         val length = child.length()
         if (c > 0) {
-            return Explanation.match(score(), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. ${child.getCountStats()}", listOf(child.explain()))
+            return Explanation.match(score().toFloat(), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. ${child.getCountStats()}", listOf(child.explain()))
         } else {
             return Explanation.noMatch("score=${score()} or $c/$length with mu=$mu, bg=$background dirichlet smoothing ${child.getCountStats()} ${child.getCountStats().nonzeroCountProbability()}.", listOf(child.explain()))
         }

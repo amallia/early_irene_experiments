@@ -236,8 +236,13 @@ data class DirQLExpr(override var child: QExpr, var mu: Double? = null): SingleC
 data class AbsoluteDiscountingQLExpr(override var child: QExpr, var delta: Double? = null): SingleChildExpr() {
     override fun map(mapper: (QExpr) -> QExpr): QExpr = AbsoluteDiscountingQLExpr(mapper(child), delta)
 }
-data class BM25Expr(override var child: QExpr, var b: Double? = null, var k: Double? = null): SingleChildExpr() {
-    override fun map(mapper: (QExpr) -> QExpr): QExpr = BM25Expr(mapper(child), b, k)
+data class BM25Expr(override var child: QExpr, var b: Double? = null, var k: Double? = null, var extractedIDF: Boolean = false): SingleChildExpr() {
+    override fun map(mapper: (QExpr) -> QExpr): QExpr = BM25Expr(mapper(child), b, k, extractedIDF)
+
+    override fun applyEnvironment(env: RREnv) {
+        if (b == null) b = env.defaultBM25b
+        if (k == null) k = env.defaultBM25k
+    }
 }
 data class CountToScoreExpr(override var child: QExpr): SingleChildExpr() {
     override fun map(mapper: (QExpr) -> QExpr): QExpr = CountToScoreExpr(mapper(child))
