@@ -22,6 +22,9 @@ import java.io.File
  * with log-extract: AP=0.257, 27.6 ms vs. 49.4 ms
  * without log-extract: ... about the same
  *
+ * With faster-log:
+ *	ap1=0.258 ap2=0.257 21.7ms 37.3ms
+ *
  * SC is a really neat "optimization" because it *improves* performance on desription queries.
  *
  * @author jfoley.
@@ -34,7 +37,7 @@ fun main(args: Array<String>) {
     val measure = getEvaluator("map")
     val info = NamedMeasures()
     val scorer = argp.get("scorer", "ql")
-    val qtype = argp.get("qtype", "desc")
+    val qtype = argp.get("qtype", "title")
     val estStats = argp.get("stats", "min")
     val proxType = argp.get("prox", "sc")
 
@@ -79,6 +82,7 @@ fun main(args: Array<String>) {
 
                     // cache term statistics so timing is fair.
                     sdmQ.visit { it.applyEnvironment(index.env) }
+                    approxSDMQ.visit { it.applyEnvironment(index.env) }
 
                     val (timeExact, topExact) = timed { index.search(sdmQ, 1000) }
                     val exactR = topExact.toQueryResults(index, qid)
@@ -100,4 +104,5 @@ fun main(args: Array<String>) {
         }
         println("\t${info} ${times.mean} ${times}")
     }
+
 }

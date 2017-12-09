@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.chai.Fraction
+import edu.umass.cics.ciir.chai.ApproxLog
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.sprf.*
@@ -316,7 +317,7 @@ internal class WeightedSumEval(children: List<QueryEvalNode>, val weights: Doubl
 internal class WeightedLogSumEval(children: List<QueryEvalNode>, val weights: DoubleArray) : OrEval<QueryEvalNode>(children) {
     override fun score(): Double {
         return (0 until children.size).sumByDouble {
-            weights[it] * Math.log(children[it].score())
+            weights[it] * ApproxLog.faster_log(children[it].score())
         }
     }
 
@@ -473,7 +474,7 @@ internal class DirichletSmoothingEval(override val child: CountEvalNode, val mu:
 }
 
 /**
- * Created from [DirQLExpr] via [exprToEval] sometimes.
+ * Created from [DirQLExpr] via [exprToEval] sometimes, inside of [WeightedLogSumEval]
  */
 internal class NoLogDirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
     val background = mu * child.getCountStats().nonzeroCountProbability()
