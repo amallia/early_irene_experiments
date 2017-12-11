@@ -125,6 +125,8 @@ private class IQModelWeight(val q: QExpr, val m: QExpr, val iqm: IreneQueryModel
         ctx.setup(q)
         val qExpr = exprToEval(q, ctx)
         val mExpr = createMover(m, ctx)
+        //println("mExpr: $mExpr")
+        //println("qExpr: $qExpr")
         val iter = OptimizedMovementIter(mExpr, qExpr)
         return IreneQueryScorer(q, iter)
     }
@@ -142,6 +144,7 @@ class OptimizedMovementIter(val movement: QueryMover, val score: QueryEvalNode):
             val nextMatch = movement.nextMatching(dest)
             if (nextMatch == NO_MORE_DOCS) break
             env.doc = nextMatch
+            //println("Consider candidate: $nextMatch matching... ${score.matches()} ${score.explain()}")
             if (score.matches()) {
                 return nextMatch
             } else {

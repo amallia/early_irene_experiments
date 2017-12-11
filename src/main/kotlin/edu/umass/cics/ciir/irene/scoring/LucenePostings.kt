@@ -31,17 +31,22 @@ data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths:
 }
 
 data class LuceneDocLengths(val stats: CountStats, val lengths: NumericDocValues): CountEvalNode, LeafEvalNode() {
-    override fun count(): Int = 0
-    override fun matches(): Boolean = lengths.docID() == env.doc
-    override fun explain(): Explanation = Explanation.match(length().toFloat(), "lengths: $stats")
-    override fun estimateDF(): Long = lengths.cost()
-    override fun getCountStats(): CountStats = stats
-    override fun length(): Int {
+    override fun count(): Int = length()
+    override fun matches(): Boolean {
         val doc = env.doc
         if (lengths.docID() < doc) {
             lengths.advance(doc)
         }
         if (lengths.docID() == doc) {
+            return true
+        }
+        return false
+    }
+    override fun explain(): Explanation = Explanation.match(length().toFloat(), "lengths: $stats")
+    override fun estimateDF(): Long = lengths.cost()
+    override fun getCountStats(): CountStats = stats
+    override fun length(): Int {
+        if (matches()) {
             return lengths.longValue().toInt()
         }
         return 0

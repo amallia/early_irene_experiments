@@ -16,6 +16,17 @@ fun SmartStop(terms: List<String>, stopwords: Set<String>): List<String> {
     return nonStop
 }
 
+fun phraseQuery(terms: List<String>, field: String? = null, statsField: String? = null) = when {
+    terms.isEmpty() -> NeverMatchLeaf
+    terms.size == 1 -> TextExpr(terms[0], field, statsField)
+    else -> OrderedWindowExpr(terms.map { TextExpr(it, field, statsField) })
+}
+
+// Do we find the exact phrasing, and do we
+fun generateExactMatchQuery(qterms: List<String>, field: String?=null, statsField: String?=null): QExpr {
+    return AndExpr(listOf(phraseQuery(qterms, field, statsField), CountEqualsExpr(LengthsExpr(field), qterms.size)))
+}
+
 // Easy "model"-based constructor.
 fun QueryLikelihood(terms: List<String>, field: String?=null, statsField: String?=null, mu: Double? = null): QExpr {
     return UnigramRetrievalModel(terms, { DirQLExpr(it, mu) }, field, statsField)
