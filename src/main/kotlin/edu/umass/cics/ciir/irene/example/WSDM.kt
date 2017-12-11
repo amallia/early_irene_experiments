@@ -1,13 +1,13 @@
 package edu.umass.cics.ciir.irene.example
 
 import edu.umass.cics.ciir.chai.*
+import edu.umass.cics.ciir.iltr.LTRDoc
+import edu.umass.cics.ciir.iltr.toRRExpr
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndex
 import edu.umass.cics.ciir.irene.IreneIndexer
-import edu.umass.cics.ciir.irene.lang.TextExpr
-import edu.umass.cics.ciir.irene.lang.UnorderedWindowExpr
-import edu.umass.cics.ciir.irene.lang.generateExactMatchQuery
-import edu.umass.cics.ciir.irene.lang.phraseQuery
+import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.learning.*
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.utility.Parameters
 import java.io.File
@@ -16,6 +16,8 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.*
 import kotlin.collections.HashSet
+
+typealias IVector = edu.umass.cics.ciir.learning.Vector
 
 /**
  * @author jfoley
@@ -136,7 +138,7 @@ fun proxQuery(terms: List<String>, field: String? = null, statsField: String? = 
 object CollectWSDMFeatures {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)
-        val dsName = argp.get("dataset", "gov2")
+        val dsName = argp.get("dataset", "robust")
         val dataset = DataPaths.get(dsName)
         val output = File("$dsName.wsdmf.json")
 
@@ -242,7 +244,159 @@ object CollectWSDMFeatures {
                 }
             }
         }
+    }
+}
 
+val wsdmFeatureNames = listOf(
+        // SDM-p
+        "t", "od", "bi",
+        // WSDM-p
+        "cf", "df", "wt.cf", "wt.df", "wt.exact", "msn.cf", "msn.df", "msn.exact", "gfe", "inqueryStop")
+
+fun wsdmFeatureVector(p: Parameters): SimpleDenseVector {
+    val out = SimpleDenseVector(wsdmFeatureNames.size)
+    p.entries.forEach { (name, value) ->
+        val i = wsdmFeatureNames.indexOf(name)
+        if (i == -1) error("Bad feature: $name")
+        val y = when (value) {
+            is Boolean -> if (value) 1.0 else 0.0
+            is Number -> value.toDouble()
+            is String -> 0.0
+            else -> error("value=$value for $name")
+        }
+        out[i] = y
+    }
+    return out
+}
+
+data class WSDMComponent(val features: IVector, val score: Double) {
+    fun weight(w: IVector) = w.dotp(features)
+}
+
+data class WSDMCliqueEval(val components: List<WSDMComponent> = emptyList()) {
+    fun eval(w: IVector): Double {
+        if (components.isEmpty()) return 0.0
+
+        val weights = components.map { it.weight(w) }.normalize()
+
+        return weights.zip(components).sumByDouble { (normW, base) ->
+            normW * base.score
+        }
+    }
+}
+
+data class WSDMTopLevel(val relevant: Boolean, val t: WSDMCliqueEval, val od: WSDMCliqueEval, val uw: WSDMCliqueEval) {
+    fun eval(w: IVector): Double {
+        val tw = w[0]
+        val odw = w[1]
+        val uww  = w[2]
+
+        return tw * t.eval(w) + odw * od.eval(w) + uww * uw.eval(w)
+    }
+}
+
+data class SimplePrediction(override val score: Double, override val correct: Boolean): Prediction { }
+
+object LearnWSDMParameters {
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val dsName = argp.get("dataset", "gov2")
+        val dataset = DataPaths.get(dsName)
+        val features = Parameters.parseFile(File("$dsName.wsdmf.json"))
+
+        val unF = features.getMap("t").entries.map { (term, kv) ->
+            Pair(term, wsdmFeatureVector(kv as Parameters))
+        }.associate { it }
+        val odF = features.getMap("od").entries.map { (terms, kv) ->
+            Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters))
+        }.associate { it }
+        val uwF = features.getMap("uw").entries.map { (terms, kv) ->
+            Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters))
+        }.associate { it }
+
+        println(unF["the"])
+
+        val qrels = dataset.qrels
+        val queries = dataset.title_qs
+
+        dataset.getIreneIndex().use { index ->
+            val fields = setOf(index.idFieldName, index.defaultField)
+            val env = index.env
+            val ramPool = queries.entries.map { (qid, qtext) ->
+                val judgments = qrels[qid] ?: return@map Pair(qid, emptyList<WSDMTopLevel>())
+                val qterms = index.tokenize(qtext)
+                val sdmQ = SequentialDependenceModel(qterms)
+                println("$qid .. $qterms")
+                val results = index.search(sdmQ, 300)
+                println("$qid .. $qterms .. ${results.totalHits}")
+
+                val pool = results.scoreDocs.mapNotNull { index.reader.document(it.doc, fields) }.associateByTo(HashMap()) { it[index.idFieldName] }
+                val missingJudged = judgments.keys.filterNot { pool.containsKey(it) }
+                for (name in missingJudged) {
+                    if (name == null) continue
+                    val num = index.documentById(name) ?: continue
+                    val json = index.reader.document(num, fields) ?: continue
+                    pool[name] = json
+                }
+
+                println("$qid ${pool.size}")
+
+                val wsdm = listOf(
+                        qterms.map { Pair(unF[it]!!, DirQLExpr(TextExpr(it)).toRRExpr(env)) },
+                        qterms.mapEachSeqPair { lhs, rhs ->
+                            Pair(odF[Pair(lhs, rhs)]!!, DirQLExpr(OrderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))).toRRExpr(env))
+                        },
+                        qterms.mapEachSeqPair { lhs, rhs ->
+                            Pair(odF[Pair(lhs, rhs)]!!, DirQLExpr(UnorderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))).toRRExpr(env))
+                        })
+
+
+                val docs = pool.values.map { p ->
+                    val body = p.getField(index.defaultField)?.stringValue() ?: ""
+                    val name = p[index.idFieldName]
+                    val scorable = LTRDoc(name, body, index.tokenizer)
+
+                    val parts = wsdm.map { wsdmx ->
+                        WSDMCliqueEval(wsdmx.map { (fv, expr) ->
+                            WSDMComponent(fv, expr.eval(scorable))
+                        })
+                    }
+                    WSDMTopLevel(qrels[qid].isRelevant(name), parts[0], parts[1], parts[2])
+                }
+
+
+                Pair(qid, docs)
+            }.associate { it }
+
+            val nRel = ramPool.mapValues { (_, v) -> v.count { it.relevant } }
+
+            val opt = object : GenericOptimizable(wsdmFeatureNames.size, "AP") {
+                override fun beginOptimizing(fid: Int, weights: DoubleArray) {
+                }
+                override fun score(weights: DoubleArray): Double {
+                    assert(weights.size == wsdmFeatureNames.size)
+                    val vec = SimpleDenseVector(weights.size, weights)
+
+                    val ss = StreamingStats()
+                    ramPool.forEach { qid, xs ->
+                        val preds = xs.map { x -> SimplePrediction(x.eval(vec), x.relevant) }
+                        ss.push(computeAP(preds.sorted(), nRel[qid] ?: 0))
+                    }
+                    return ss.mean
+                }
+            }
+
+            val ca = GenericOptimizer(opt)
+            ca.nRestart = 1
+            ca.nMaxIteration = 10
+            ca.learn()
+
+            val model = wsdmFeatureNames.zip(ca.weight.toList()).associate { it }
+            println(model)
+            File("$dsName.model.json").smartPrint { out ->
+                out.println(Parameters.wrap(model).toPrettyString())
+            }
+        }
 
     }
 }

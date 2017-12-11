@@ -76,6 +76,10 @@ fun <T> Map<T, Double>.normalize(): Map<T, Double> {
     val norm = this.values.sum()
     return this.mapValues { (_,v) -> v/norm }
 }
+fun List<Double>.normalize(): List<Double> {
+    val norm = this.sum()
+    return this.map { v -> v/norm }
+}
 
 fun <T> Collection<T>.pfor(doFn: (T)->Unit) {
     this.parallelStream().forEach(doFn)

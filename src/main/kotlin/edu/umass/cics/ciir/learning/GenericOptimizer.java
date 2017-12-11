@@ -1,7 +1,9 @@
 package edu.umass.cics.ciir.learning;
 
 import java.io.PrintStream;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Random;
 
 /**
@@ -78,10 +80,17 @@ public class GenericOptimizer {
   }
 
   public int[] getShuffledFeatures() {
-    return new int[0];
-    //IntList ids = IntList(IntRange.exclusive(0, evaluator.numFeatures));
-    //Collections.shuffle(ids, this.rand);
-    //return ids.asArray();
+    ArrayList<Integer> features = new ArrayList<>();
+    for (int i = 0; i < getNumFeatures(); i++) {
+      features.add(i);
+    }
+    Collections.shuffle(features);
+
+    int[] out = new int[features.size()];
+    for (int i = 0; i < out.length; i++) {
+      out[i] = features.get(i);
+    }
+    return out;
   }
 
   private final static int[] sign = new int[]{1, 0, -1};

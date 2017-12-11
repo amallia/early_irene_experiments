@@ -93,8 +93,7 @@ fun computeMeanVector(vs: List<Vector>): SimpleDenseVector? {
     return output
 }
 
-class SimpleDenseVector(override val dim: Int) : MutableVector {
-    val data = DoubleArray(dim)
+class SimpleDenseVector(override val dim: Int, val data: DoubleArray = DoubleArray(dim)) : MutableVector {
     override fun get(i: Int): Double = data[i]
     override fun set(i: Int, y: Double) { data[i] = y }
     override fun toString(): String = data.joinToString { "%1.3f".format(it) }
