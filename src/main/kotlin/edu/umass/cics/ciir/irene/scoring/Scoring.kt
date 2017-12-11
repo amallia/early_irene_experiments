@@ -1,7 +1,7 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.chai.Fraction
 import edu.umass.cics.ciir.chai.ApproxLog
+import edu.umass.cics.ciir.chai.Fraction
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.sprf.*
@@ -143,6 +143,11 @@ class ConstTrueNode(val numDocs: Int) : LeafEvalNode() {
     override fun estimateDF(): Long = numDocs.toLong()
 }
 
+interface BooleanNode : QueryEvalNode {
+    override fun score(): Double = if (matches()) 1.0 else 0.0
+    override fun count(): Int = if (matches()) 1 else 0
+}
+
 /**
  * Created from [ConstScoreExpr] via [exprToEval]
  */
@@ -157,6 +162,15 @@ class ConstEvalNode(val count: Int, val score: Double) : LeafEvalNode() {
 
     override fun explain(): Explanation = Explanation.noMatch("ConstEvalNode(count=$count, score=$score)")
     override fun estimateDF(): Long = 0L
+}
+
+internal class CountEqualsNode(val count: Int, override val child: CountEvalNode) : SingleChildEval<CountEvalNode>(), BooleanNode {
+    override fun matches(): Boolean = child.matches() && (child.count() == count)
+    override fun explain(): Explanation = if(matches()) {
+        Explanation.match(1.0f, "count=$count? YES: ${child.count()}", child.explain())
+    } else {
+        Explanation.match(1.0f, "count=$count? NO: ${child.count()}", child.explain())
+    }
 }
 
 /**
@@ -250,17 +264,11 @@ abstract class AndEval<out T : QueryEvalNode>(children: List<T>) : RecursiveEval
 /**
  * Created from [OrExpr] using [exprToEval]
  */
-internal class BooleanOrEval(children: List<QueryEvalNode>): OrEval<QueryEvalNode>(children) {
-    override fun score(): Double = if (matches()) { 1.0 } else { 0.0 }
-    override fun count(): Int = if (matches()) { 1 } else { 0 }
-}
+internal class BooleanOrEval(children: List<QueryEvalNode>): OrEval<QueryEvalNode>(children), BooleanNode { }
 /**
  * Created from [AndExpr] using [exprToEval]
  */
-internal class BooleanAndEval(children: List<QueryEvalNode>): AndEval<QueryEvalNode>(children) {
-    override fun score(): Double = if (matches()) { 1.0 } else { 0.0 }
-    override fun count(): Int = if (matches()) { 1 } else { 0 }
-}
+internal class BooleanAndEval(children: List<QueryEvalNode>): AndEval<QueryEvalNode>(children), BooleanNode { }
 
 /**
  * Created from [MaxExpr] using [exprToEval]

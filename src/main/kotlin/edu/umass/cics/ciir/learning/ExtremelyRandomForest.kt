@@ -128,12 +128,6 @@ data class QDoc(val label: Float, val qid: String, val features: FloatArray, val
     val perceptronLabel: Int = if (label > 0) { 1 } else { -1 }
 }
 
-fun String.splitAt(c: Char): Pair<String, String>? {
-    val pos = this.indexOf(c)
-    if (pos < 0) return null
-    return Pair(this.substring(0, pos), this.substring(pos+1))
-}
-
 data class CVSplit(val id: Int, val trainIds: Set<String>, val valiIds: Set<String>, val testIds: Set<String>) {
 
     fun evaluate(dataset: Map<String, List<QDoc>>, measure: QueryEvaluator, qrels: QuerySetJudgments, tree: TreeNode): Double {

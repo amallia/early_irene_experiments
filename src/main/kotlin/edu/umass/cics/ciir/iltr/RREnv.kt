@@ -114,6 +114,7 @@ abstract class RREnv {
         // These movement hints mean nothing in RR context.
         AlwaysMatchLeaf, NeverMatchLeaf, is WhitelistMatchExpr -> fromQExpr(q.trySingleChild)
         is ProxExpr -> TODO()
+        is CountEqualsExpr -> TODO()
     }
 
 

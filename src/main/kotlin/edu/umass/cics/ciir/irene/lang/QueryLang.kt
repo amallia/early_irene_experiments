@@ -233,6 +233,10 @@ data class WeightExpr(override var child: QExpr, var weight: Double = 1.0) : Sin
     override fun map(mapper: (QExpr) -> QExpr): QExpr = WeightExpr(mapper(child), weight)
 }
 
+data class CountEqualsExpr(override var child: QExpr, var target: Int): SingleChildExpr() {
+    override fun map(mapper: (QExpr) -> QExpr): QExpr = CountEqualsExpr(mapper(child), target)
+}
+
 data class DirQLExpr(override var child: QExpr, var mu: Double? = null): SingleChildExpr() {
     override fun map(mapper: (QExpr) -> QExpr): QExpr = DirQLExpr(mapper(child), mu)
 }

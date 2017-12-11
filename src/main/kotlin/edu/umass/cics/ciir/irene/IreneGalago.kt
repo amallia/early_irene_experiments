@@ -97,6 +97,7 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
         NeverMatchLeaf -> TODO()
         is WhitelistMatchExpr -> TODO()
         is ProxExpr -> TODO()
+        is CountEqualsExpr -> TODO()
     }
 }
 

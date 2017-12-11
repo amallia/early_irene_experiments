@@ -76,6 +76,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     NeverMatchLeaf -> FixedMatchEvalNode(false, exprToEval(q.trySingleChild, ctx))
     AlwaysMatchLeaf -> FixedMatchEvalNode(true, exprToEval(q.trySingleChild, ctx))
     is WhitelistMatchExpr -> WhitelistMatchEvalNode(TIntHashSet(ctx.selectRelativeDocIds(q.docIdentifiers!!)))
+    is CountEqualsExpr -> CountEqualsNode(q.target, exprToEval(q.child, ctx) as CountEvalNode)
 }
 
 fun approxStats(q: QExpr, method: String): CountStatsStrategy {

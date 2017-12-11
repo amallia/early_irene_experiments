@@ -12,6 +12,9 @@ fun createOptimizedMovementExpr(q: QExpr): QExpr = when(q) {
     // Leaves:
     is WhitelistMatchExpr, is TextExpr, is LuceneExpr, is LengthsExpr, is ConstCountExpr, is ConstBoolExpr, is ConstScoreExpr -> q.deepCopy()
 
+    // Not sure how to approximate this, is kind of like a leaf.
+    is CountEqualsExpr -> q.deepCopy()
+
     // AND nodes:
     is AndExpr, is ProxExpr, is UnorderedWindowCeilingExpr, is SmallerCountExpr, is OrderedWindowExpr, is UnorderedWindowExpr -> AndExpr(q.children.map { createOptimizedMovementExpr(it) })
 

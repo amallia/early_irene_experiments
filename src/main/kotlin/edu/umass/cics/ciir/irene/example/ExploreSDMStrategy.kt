@@ -55,6 +55,7 @@ fun MakeCheapWorstQuery(q: QExpr): QExpr = when(q) {
     is WhitelistMatchExpr -> TODO()
     is UnorderedWindowCeilingExpr -> TODO()
     is ProxExpr -> TODO()
+    is CountEqualsExpr -> TODO()
 }
 
 fun main(args: Array<String>) {

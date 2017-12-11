@@ -160,6 +160,7 @@ fun combineWeights(q: QExpr, ctx: CombineWeightsFixedPoint): QExpr = when(q) {
     is AndExpr,
     is BM25Expr,
     is BoolToScoreExpr,
+    is CountEqualsExpr,
     is CountToBoolExpr,
     is CountToScoreExpr,
     is DirQLExpr,
@@ -213,6 +214,7 @@ fun analyzeDataNeededRecursive(q: QExpr, needed: DataNeeded= DataNeeded.DOCS) {
         is CountToScoreExpr ->  DataNeeded.COUNTS
         is BoolToScoreExpr -> DataNeeded.DOCS
         is CountToBoolExpr -> DataNeeded.COUNTS
+        is CountEqualsExpr -> DataNeeded.COUNTS
         is RequireExpr -> {
             analyzeDataNeededRecursive(q.cond, DataNeeded.DOCS)
             analyzeDataNeededRecursive(q.value, childNeeds)

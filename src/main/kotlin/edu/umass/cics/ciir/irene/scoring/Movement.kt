@@ -39,6 +39,8 @@ private fun createMoverRec(q: QExpr, ctx: IQContext) : QueryMover = when(q) {
             IntSetMover(matching)
         }
     }
+    // Ditch the equals part for mover... this is probably really slow...
+    is CountEqualsExpr -> createMoverRec(q.child, ctx)
 }
 
 /** Borrow this constant locally. */
