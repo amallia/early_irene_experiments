@@ -7,15 +7,13 @@ import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.TokenStream
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute
 import org.apache.lucene.analysis.tokenattributes.OffsetAttribute
-import org.apache.lucene.document.Field
-import org.apache.lucene.document.FieldType
-import org.apache.lucene.document.NumericDocValuesField
-import org.apache.lucene.document.StringField
+import org.apache.lucene.document.*
 import org.apache.lucene.index.IndexOptions
 import org.apache.lucene.index.IndexableField
 import org.apache.lucene.index.IndexableFieldType
 import org.apache.lucene.util.BytesRef
 import java.io.Reader
+import java.time.LocalDateTime
 
 /**
  * @author jfoley
@@ -54,6 +52,8 @@ class LDocBuilder(val params: IndexParams) {
     val NO = Field.Store.NO
     val fields = HashMap<String, List<IndexableField>>()
     val analyzer = params.analyzer
+
+    private fun storeBoolean(x: Boolean) = if(x) YES else NO
 
     fun setId(id: String) {
         if (fields.containsKey(params.idFieldName)) {
@@ -106,6 +106,44 @@ class LDocBuilder(val params: IndexParams) {
         //println(ldoc.fields.map { it.name() })
         return ldoc
     }
+
+    fun setStringField(field: String, categorical: String, stored: Boolean=true) {
+        if (fields.containsKey(field)) {
+            error("Already specified $field for this document $fields.")
+        }
+        fields[field] = listOf(StringField(field, categorical, storeBoolean(stored)))
+    }
+    fun setDenseIntField(field: String, num: Int, stored: Boolean=true) {
+        if (fields.containsKey(field)) {
+            error("Already specified $field for this document $fields.")
+        }
+        val keep  = arrayListOf<IndexableField>(
+                NumericDocValuesField(field, num.toLong())
+        )
+        if (stored) {
+            keep.add(StoredField(field, num))
+        }
+        fields[field] = keep
+    }
+    fun setDenseLongField(field: String, num: Long, stored: Boolean=true) {
+        if (fields.containsKey(field)) {
+            error("Already specified $field for this document $fields.")
+        }
+        val keep  = arrayListOf<IndexableField>(
+                NumericDocValuesField(field, num)
+        )
+        if (stored) {
+            keep.add(StoredField(field, num))
+        }
+        fields[field] = keep
+    }
+    fun setTimeField(field: String, ldt: LocalDateTime?, stored: Boolean=true) {
+        if(ldt == null) return
+        // Default to UTC if given a local-date-time.
+
+
+    }
+
 }
 
 class AlreadyTokenizedTextField(

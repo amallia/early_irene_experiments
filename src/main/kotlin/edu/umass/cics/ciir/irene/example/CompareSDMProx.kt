@@ -31,13 +31,13 @@ import java.io.File
  */
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dsName = argp.get("dataset", "robust")
+    val dsName = argp.get("dataset", "gov2")
     val dataset = DataPaths.get(dsName)
     val qrels = dataset.qrels
     val measure = getEvaluator("map")
     val info = NamedMeasures()
     val scorer = argp.get("scorer", "ql")
-    val qtype = argp.get("qtype", "title")
+    val qtype = argp.get("qtype", "desc")
     val estStats = argp.get("stats", "min")
     val proxType = argp.get("prox", "sc")
 
