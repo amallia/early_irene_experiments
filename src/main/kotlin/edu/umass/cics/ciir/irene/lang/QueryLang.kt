@@ -184,6 +184,7 @@ data class AndExpr(override var children: List<QExpr>) : OpExpr() {
 data class OrExpr(override var children: List<QExpr>) : OpExpr() {
     override fun map(mapper: (QExpr) -> QExpr): QExpr = OrExpr(mapChildren(mapper))
 }
+
 fun SumExpr(vararg children: QExpr) = SumExpr(children.toList())
 fun SumExpr(children: List<QExpr>) = CombineExpr(children, children.map { 1.0 })
 fun MeanExpr(vararg children: QExpr) = MeanExpr(children.toList())

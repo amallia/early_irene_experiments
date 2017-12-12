@@ -7,8 +7,10 @@ import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndex
 import edu.umass.cics.ciir.irene.IreneIndexer
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.toQueryResults
 import edu.umass.cics.ciir.learning.*
 import edu.umass.cics.ciir.sprf.*
+import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
 import java.io.File
 import java.time.LocalDateTime
@@ -329,7 +331,7 @@ object LearnWSDMParameters {
                 val qterms = index.tokenize(qtext)
                 val sdmQ = SequentialDependenceModel(qterms)
                 println("$qid .. $qterms")
-                val results = index.search(sdmQ, 300)
+                val results = index.search(sdmQ, 1000)
                 println("$qid .. $qterms .. ${results.totalHits}")
 
                 val pool = results.scoreDocs.mapNotNull { index.reader.document(it.doc, fields) }.associateByTo(HashMap()) { it[index.idFieldName] }
@@ -401,4 +403,77 @@ object LearnWSDMParameters {
         }
 
     }
+}
+
+object TestWSDM {
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val dsName = argp.get("dataset", "robust")
+        val dataset = DataPaths.get(dsName)
+        val features = Parameters.parseFile(File("$dsName.wsdmf.json"))
+        val model = wsdmFeatureVector(Parameters.parseFile(File("$dsName.model.json")))
+        val evals = getEvaluators("map", "ndcg", "p10", "p20", "ndcg20")
+
+        val sdmParams = model.toList().take(3).normalize()
+        println("SDM: $sdmParams")
+
+        val unF = features.getMap("t").entries.map { (term, kv) ->
+            Pair(term, wsdmFeatureVector(kv as Parameters))
+        }.associate { it }
+        val odF = features.getMap("od").entries.map { (terms, kv) ->
+            Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters))
+        }.associate { it }
+        val uwF = features.getMap("uw").entries.map { (terms, kv) ->
+            Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters))
+        }.associate { it }
+
+        println(unF["the"])
+
+        val qrels = dataset.qrels
+        val queries = dataset.title_qs
+        val msrs = NamedMeasures()
+
+        val sdmTrecrun = File("sdm.$dsName.trecrun").smartPrinter()
+        val wsdmTrecrun = File("wsdm.$dsName.trecrun").smartPrinter()
+
+        dataset.getIreneIndex().use { index ->
+            queries.forEach { qid, qtext ->
+                val judgments = qrels[qid] ?: QueryJudgments(qid, emptyMap())
+                val qterms = index.tokenize(qtext)
+
+                val ut = qterms.map { Pair(unF[it]!!, DirQLExpr(TextExpr(it))) }
+                val odt = qterms.mapEachSeqPair { lhs, rhs ->
+                    Pair(odF[Pair(lhs, rhs)]!!, DirQLExpr(OrderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
+                }
+                val bit = qterms.mapEachSeqPair { lhs, rhs ->
+                    Pair(uwF[Pair(lhs, rhs)]!!, DirQLExpr(UnorderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
+                }
+
+                val orig = SequentialDependenceModel(qterms)
+                val qExpr = SumExpr(
+                        CombineExpr(ut.map { it.second }, ut.map { model.dotp(it.first) }.normalize()).weighted(0.8),
+                        CombineExpr(odt.map { it.second }, ut.map { model.dotp(it.first) }.normalize()).weighted(0.15),
+                        CombineExpr(bit.map { it.second }, ut.map { model.dotp(it.first) }.normalize()).weighted(0.05)
+                )
+
+                println("$qid .. $qterms")
+                val results = index.pool(mapOf("sdm" to orig, "wsdm" to qExpr), 1000)
+                println("$qid .. $qterms .. ${results["wsdm"]!!.totalHits}")
+
+                results.forEach { name, res ->
+                    val qres = res.toQueryResults(index, qid)
+                    evals.forEach { metric, x ->
+                        msrs.push("$name.$metric", x.evaluate(qres, judgments))
+                    }
+                    if (name == "sdm") {
+                        qres.outputTrecrun(sdmTrecrun, name)
+                    } else if(name == "wsdm") {
+                        qres.outputTrecrun(wsdmTrecrun, name)
+                    }
+                }
+
+                println(msrs)
+            } // each query
+        } // with index
+    } // main
 }
