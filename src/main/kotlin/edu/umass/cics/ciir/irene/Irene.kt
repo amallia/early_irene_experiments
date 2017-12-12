@@ -136,18 +136,16 @@ class EmptyIndex(override val tokenizer: GenericTokenizer = WhitespaceTokenizer(
     override fun documentById(id: String): Int? = null
 }
 
-class IreneIndex(val io: RefCountedIO, params: IndexParams) : IIndex {
+class IreneIndex(val io: RefCountedIO, val params: IndexParams) : IIndex {
     constructor(params: IndexParams) : this(params.directory!!, params)
     val jobPool = ForkJoinPool.commonPool()
     val idFieldName = params.idFieldName
     val reader = DirectoryReader.open(io.open().use())
     val searcher = IndexSearcher(reader, jobPool)
     val analyzer = params.analyzer
-    val env = IreneQueryLanguage(this).apply {
-        defaultField = params.defaultField
-    }
+    val env = IreneQueryLanguage(this)
     override val tokenizer: LuceneTokenizer = LuceneTokenizer(analyzer)
-    override val defaultField: String get() = env.defaultField
+    override val defaultField: String get() = params.defaultField
     override val totalDocuments: Int get() = reader.numDocs()
     override fun getRREnv(): RREnv = env
 

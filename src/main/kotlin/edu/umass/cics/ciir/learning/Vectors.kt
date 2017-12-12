@@ -16,7 +16,11 @@ interface Vector {
     operator fun get(i: Int): Double
     fun dotp(v: Vector): Double {
         assert(v.dim == dim)
-        return (0 until dim).sumByDouble { i -> this[i] * v[i] }
+        var sum = 0.0
+        for (i in (0 until dim)) {
+            sum += this[i] * v[i]
+        }
+        return sum
     }
     fun cosineSimilarity(v: Vector): Double {
         val num = dotp(v)

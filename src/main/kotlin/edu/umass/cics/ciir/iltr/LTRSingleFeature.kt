@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.GenericTokenizer
+import edu.umass.cics.ciir.irene.WhitespaceTokenizer
 import edu.umass.cics.ciir.irene.lang.IreneQueryLanguage
 import edu.umass.cics.ciir.irene.lang.QueryLikelihood
 import edu.umass.cics.ciir.irene.lang.SequentialDependenceModel
@@ -65,7 +66,7 @@ data class LTRDoc(val name: String, val features: HashMap<String, Double>, val r
     fun terms(field: String) = field(field).terms
     fun freqs(field: String) = field(field).freqs
 
-    constructor(name: String, text: String, tokenizer: GenericTokenizer = WhitespaceTokenizer()): this(name, hashMapOf(), -1, hashMapOf(LTRDocField("document", text, tokenizer).toEntry()), "document")
+    constructor(name: String, text: String, field: String, tokenizer: GenericTokenizer = WhitespaceTokenizer()): this(name, hashMapOf(), -1, hashMapOf(LTRDocField(field, text, tokenizer).toEntry()), field)
 
     constructor(p: Parameters): this(p.getStr("id"),
             hashMapOf(

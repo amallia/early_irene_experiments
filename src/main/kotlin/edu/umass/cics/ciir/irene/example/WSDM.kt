@@ -101,7 +101,8 @@ object GoogleNGrams {
         return outputFreqs
     }
 
-    val numBigramLines = 10_000_000L * 31
+    const val numBigramLines = 10_000_000L * 31
+    const val bigramTotal = 9.10884463583e+11
 
     fun pullBigramStats(request: Set<Pair<String, String>>): Map<Pair<String,String>, Long> {
         val terms = request.toHashSet()
@@ -169,12 +170,12 @@ object CollectWSDMFeatures {
                         val gfe = gTerms[term] ?: 0L
 
                         val features = Parameters.parseArray(
-                                "cf", collection.cf, "df", collection.df,
-                                "wt.cf", wikiTitles.cf, "wt.df", wikiTitles.df,
+                                "cf", collection.nonzeroCountProbability(), "df", collection.binaryProbability(),
+                                "wt.cf", wikiTitles.nonzeroCountProbability(), "wt.df", wikiTitles.binaryProbability(),
                                 "wt.exact", wikiExact.cf,
-                                "msn.cf", msnCount.cf, "msn.df", msnCount.df,
+                                "msn.cf", msnCount.nonzeroCountProbability(), "msn.df", msnCount.binaryProbability(),
                                 "msn.exact", msnExact.cf,
-                                "gfe", gfe,
+                                "gfe", gfe / GoogleNGrams.numTerms.toDouble(),
                                 "inqueryStop", inqueryStop.contains(term))
                         println("$term $features")
 
@@ -193,12 +194,12 @@ object CollectWSDMFeatures {
                             gfe = minOf(gTerms[lhs] ?: gTerms[rhs] ?: 0L, gTerms[rhs] ?: gTerms[lhs] ?: 0L)
 
                         val features = Parameters.parseArray(
-                                "cf", collection.cf, "df", collection.df,
-                                "wt.cf", wikiTitles.cf, "wt.df", wikiTitles.df,
+                                "cf", collection.nonzeroCountProbability(), "df", collection.binaryProbability(),
+                                "wt.cf", wikiTitles.nonzeroCountProbability(), "wt.df", wikiTitles.binaryProbability(),
                                 "wt.exact", wikiExact.cf,
-                                "msn.cf", msnCount.cf, "msn.df", msnCount.df,
+                                "msn.cf", msnCount.nonzeroCountProbability(), "msn.df", msnCount.binaryProbability(),
                                 "msn.exact", msnExact.cf,
-                                "gfe", gfe,
+                                "gfe", gfe / GoogleNGrams.bigramTotal,
                                 "inqueryStop", inqueryStop.contains(lhs) && inqueryStop.contains(rhs))
 
                         msg.incr()?.let { upd ->
@@ -218,12 +219,12 @@ object CollectWSDMFeatures {
                         val gfe = bgTerms[Pair(lhs, rhs)] ?: 0L
 
                         val features = Parameters.parseArray(
-                                "cf", collection.cf, "df", collection.df,
-                                "wt.cf", wikiTitles.cf, "wt.df", wikiTitles.df,
+                                "cf", collection.nonzeroCountProbability(), "df", collection.binaryProbability(),
+                                "wt.cf", wikiTitles.nonzeroCountProbability(), "wt.df", wikiTitles.binaryProbability(),
                                 "wt.exact", wikiExact.cf,
-                                "msn.cf", msnCount.cf, "msn.df", msnCount.df,
+                                "msn.cf", msnCount.nonzeroCountProbability(), "msn.df", msnCount.binaryProbability(),
                                 "msn.exact", msnExact.cf,
-                                "gfe", gfe,
+                                "gfe", gfe / GoogleNGrams.bigramTotal,
                                 "inqueryStop", inqueryStop.contains(lhs) && inqueryStop.contains(rhs))
                         msg.incr()?.let { upd ->
                             println("bi: $lhs $rhs $features")
@@ -300,7 +301,7 @@ data class SimplePrediction(override val score: Double, override val correct: Bo
 object LearnWSDMParameters {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)
-        val dsName = argp.get("dataset", "gov2")
+        val dsName = argp.get("dataset", "robust")
         val dataset = DataPaths.get(dsName)
         val features = Parameters.parseFile(File("$dsName.wsdmf.json"))
 
@@ -319,6 +320,7 @@ object LearnWSDMParameters {
         val qrels = dataset.qrels
         val queries = dataset.title_qs
 
+        // hack for old index
         dataset.getIreneIndex().use { index ->
             val fields = setOf(index.idFieldName, index.defaultField)
             val env = index.env
@@ -347,14 +349,14 @@ object LearnWSDMParameters {
                             Pair(odF[Pair(lhs, rhs)]!!, DirQLExpr(OrderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))).toRRExpr(env))
                         },
                         qterms.mapEachSeqPair { lhs, rhs ->
-                            Pair(odF[Pair(lhs, rhs)]!!, DirQLExpr(UnorderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))).toRRExpr(env))
+                            Pair(uwF[Pair(lhs, rhs)]!!, DirQLExpr(UnorderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))).toRRExpr(env))
                         })
 
 
                 val docs = pool.values.map { p ->
                     val body = p.getField(index.defaultField)?.stringValue() ?: ""
                     val name = p[index.idFieldName]
-                    val scorable = LTRDoc(name, body, index.tokenizer)
+                    val scorable = LTRDoc(name, body, index.defaultField, index.tokenizer)
 
                     val parts = wsdm.map { wsdmx ->
                         WSDMCliqueEval(wsdmx.map { (fv, expr) ->
