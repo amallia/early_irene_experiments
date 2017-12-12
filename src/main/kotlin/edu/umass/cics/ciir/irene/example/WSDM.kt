@@ -254,7 +254,9 @@ val wsdmFeatureNames = listOf(
         // SDM-p
         "t", "od", "bi",
         // WSDM-p
-        "cf", "df", "wt.cf", "wt.df", "wt.exact", "msn.cf", "msn.df", "msn.exact", "gfe", "inqueryStop")
+        "cf", "df", "wt.cf", "wt.df", "wt.exact", "msn.cf", "msn.df", "msn.exact", "gfe", "inqueryStop",
+        // always 1.0, makes learning the linear model much easier
+        "const")
 
 fun wsdmFeatureVector(p: Parameters): SimpleDenseVector {
     val out = SimpleDenseVector(wsdmFeatureNames.size)
@@ -269,6 +271,8 @@ fun wsdmFeatureVector(p: Parameters): SimpleDenseVector {
         }
         out[i] = y
     }
+    // bias / const feature:
+    out[out.dim-1] = 1.0
     return out
 }
 
@@ -288,7 +292,7 @@ data class WSDMCliqueEval(val components: List<WSDMComponent> = emptyList()) {
     }
 }
 
-data class WSDMTopLevel(val relevant: Boolean, val t: WSDMCliqueEval, val od: WSDMCliqueEval, val uw: WSDMCliqueEval) {
+data class WSDMTopLevel(val name: String, val relevant: Boolean, val t: WSDMCliqueEval, val od: WSDMCliqueEval, val uw: WSDMCliqueEval) {
     fun eval(w: IVector): Double {
         val tw = w[0]
         val odw = w[1]
@@ -305,19 +309,8 @@ object LearnWSDMParameters {
         val argp = Parameters.parseArgs(args)
         val dsName = argp.get("dataset", "robust")
         val dataset = DataPaths.get(dsName)
-        val features = Parameters.parseFile(File("$dsName.wsdmf.json"))
-
-        val unF = features.getMap("t").entries.map { (term, kv) ->
-            Pair(term, wsdmFeatureVector(kv as Parameters))
-        }.associate { it }
-        val odF = features.getMap("od").entries.map { (terms, kv) ->
-            Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters))
-        }.associate { it }
-        val uwF = features.getMap("uw").entries.map { (terms, kv) ->
-            Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters))
-        }.associate { it }
-
-        println(unF["the"])
+        val depth = 300
+        val features = WSDMFeatureSource(Parameters.parseFile(File("$dsName.wsdmf.json")))
 
         val qrels = dataset.qrels
         val queries = dataset.title_qs
@@ -326,12 +319,24 @@ object LearnWSDMParameters {
         dataset.getIreneIndex().use { index ->
             val fields = setOf(index.idFieldName, index.defaultField)
             val env = index.env
-            val ramPool = queries.entries.map { (qid, qtext) ->
+            val qs = queries.mapValues { (_,qtext) -> index.tokenize(qtext) }
+
+            val exprs = qs.mapValues { (_, qterms) -> listOf(
+                    qterms.map { Pair(features.unF[it]!!, DirQLExpr(TextExpr(it)).toRRExpr(env)) },
+                    qterms.mapEachSeqPair { lhs, rhs ->
+                        Pair(features.odF[Pair(lhs, rhs)]!!, DirQLExpr(OrderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))).toRRExpr(env))
+                    },
+                    qterms.mapEachSeqPair { lhs, rhs ->
+                        Pair(features.uwF[Pair(lhs, rhs)]!!, DirQLExpr(UnorderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))).toRRExpr(env))
+                    })
+            }
+
+            var ramPool = queries.entries.map { (qid, qtext) ->
                 val judgments = qrels[qid] ?: return@map Pair(qid, emptyList<WSDMTopLevel>())
                 val qterms = index.tokenize(qtext)
                 val sdmQ = SequentialDependenceModel(qterms)
                 println("$qid .. $qterms")
-                val results = index.search(sdmQ, 1000)
+                val results = index.search(sdmQ, depth)
                 println("$qid .. $qterms .. ${results.totalHits}")
 
                 val pool = results.scoreDocs.mapNotNull { index.reader.document(it.doc, fields) }.associateByTo(HashMap()) { it[index.idFieldName] }
@@ -345,27 +350,17 @@ object LearnWSDMParameters {
 
                 println("$qid ${pool.size}")
 
-                val wsdm = listOf(
-                        qterms.map { Pair(unF[it]!!, DirQLExpr(TextExpr(it)).toRRExpr(env)) },
-                        qterms.mapEachSeqPair { lhs, rhs ->
-                            Pair(odF[Pair(lhs, rhs)]!!, DirQLExpr(OrderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))).toRRExpr(env))
-                        },
-                        qterms.mapEachSeqPair { lhs, rhs ->
-                            Pair(uwF[Pair(lhs, rhs)]!!, DirQLExpr(UnorderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))).toRRExpr(env))
-                        })
-
-
                 val docs = pool.values.map { p ->
                     val body = p.getField(index.defaultField)?.stringValue() ?: ""
                     val name = p[index.idFieldName]
                     val scorable = LTRDoc(name, body, index.defaultField, index.tokenizer)
 
-                    val parts = wsdm.map { wsdmx ->
+                    val parts = exprs[qid]!!.map { wsdmx ->
                         WSDMCliqueEval(wsdmx.map { (fv, expr) ->
                             WSDMComponent(fv, expr.eval(scorable))
                         })
                     }
-                    WSDMTopLevel(qrels[qid].isRelevant(name), parts[0], parts[1], parts[2])
+                    WSDMTopLevel(name, qrels[qid].isRelevant(name), parts[0], parts[1], parts[2])
                 }
 
 
@@ -393,11 +388,49 @@ object LearnWSDMParameters {
             val ca = GenericOptimizer(opt)
             ca.nRestart = 1
             ca.nMaxIteration = 10
+            // initial learning step.
             ca.learn()
 
-            val model = wsdmFeatureNames.zip(ca.weight.toList()).associate { it }
-            println(model)
-            File("$dsName.model.json").smartPrint { out ->
+            (0 until 2).forEach { iter ->
+                File("$dsName.model.i$iter.json").smartPrint { out ->
+                    val model = wsdmFeatureNames.zip(ca.weight.toList()).associate { it }
+                    println(model)
+                    out.println(Parameters.wrap(model).toPrettyString())
+                }
+
+                // make pool bigger, and then learn again
+                ramPool = ramPool.mapValues { (qid, pool) ->
+                    if (pool.isEmpty()) return@mapValues emptyList<WSDMTopLevel>()
+                    val already = pool.mapTo(HashSet()) { it.name }
+                    val q = makeWSDMQuery(qs[qid]!!, features, SimpleDenseVector(wsdmFeatureNames.size, ca.weight))
+                    val results = index.search(q, depth)
+
+                    val keep = ArrayList(pool)
+                    for (doc in results.scoreDocs) {
+                        val name = index.getDocumentName(doc.doc) ?: continue
+                        if (already.contains(name)) continue
+                        val body = index.getField(doc.doc, index.defaultField)?.stringValue() ?: continue
+                        val scorable = LTRDoc(name, body, index.defaultField, index.tokenizer)
+
+                        val parts = exprs[qid]!!.map { wsdmx ->
+                            WSDMCliqueEval(wsdmx.map { (fv, expr) ->
+                                WSDMComponent(fv, expr.eval(scorable))
+                            })
+                        }
+                        val includeMe = WSDMTopLevel(name, qrels[qid].isRelevant(name), parts[0], parts[1], parts[2])
+                        keep.add(includeMe)
+                    }
+                    println("Expanded qid=$qid from ${pool.size} to ${keep.size}")
+                    keep
+                }
+
+                // learn again.
+                ca.learn()
+            }
+
+            File("$dsName.model.final.json").smartPrint { out ->
+                val model = wsdmFeatureNames.zip(ca.weight.toList()).associate { it }
+                println(model)
                 out.println(Parameters.wrap(model).toPrettyString())
             }
         }
@@ -405,29 +438,45 @@ object LearnWSDMParameters {
     }
 }
 
+class WSDMFeatureSource(features: Parameters) {
+    val unF = features.getMap("t").entries.map { (term, kv) ->
+        Pair(term, wsdmFeatureVector(kv as Parameters))
+    }.associate { it }
+    val odF = features.getMap("od").entries.map { (terms, kv) ->
+        Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters))
+    }.associate { it }
+    val uwF = features.getMap("uw").entries.map { (terms, kv) ->
+        Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters))
+    }.associate { it }
+}
+
+fun makeWSDMQuery(qterms: List<String>, features: WSDMFeatureSource, model: SimpleDenseVector): QExpr {
+    val ut = qterms.map { Pair(features.unF[it]!!, DirQLExpr(TextExpr(it))) }
+    val odt = qterms.mapEachSeqPair { lhs, rhs ->
+        Pair(features.odF[Pair(lhs, rhs)]!!, DirQLExpr(OrderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
+    }
+    val bit = qterms.mapEachSeqPair { lhs, rhs ->
+        Pair(features.uwF[Pair(lhs, rhs)]!!, DirQLExpr(UnorderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
+    }
+
+    return SumExpr(
+            CombineExpr(ut.map { it.second }, ut.map { model.dotp(it.first) }.normalize()).weighted(model[0]),
+            CombineExpr(odt.map { it.second }, ut.map { model.dotp(it.first) }.normalize()).weighted(model[1]),
+            CombineExpr(bit.map { it.second }, ut.map { model.dotp(it.first) }.normalize()).weighted(model[2])
+    )
+}
+
 object TestWSDM {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)
         val dsName = argp.get("dataset", "robust")
         val dataset = DataPaths.get(dsName)
-        val features = Parameters.parseFile(File("$dsName.wsdmf.json"))
+        val features = WSDMFeatureSource(Parameters.parseFile(File("$dsName.wsdmf.json")))
         val model = wsdmFeatureVector(Parameters.parseFile(File("$dsName.model.json")))
         val evals = getEvaluators("map", "ndcg", "p10", "p20", "ndcg20")
 
         val sdmParams = model.toList().take(3).normalize()
         println("SDM: $sdmParams")
-
-        val unF = features.getMap("t").entries.map { (term, kv) ->
-            Pair(term, wsdmFeatureVector(kv as Parameters))
-        }.associate { it }
-        val odF = features.getMap("od").entries.map { (terms, kv) ->
-            Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters))
-        }.associate { it }
-        val uwF = features.getMap("uw").entries.map { (terms, kv) ->
-            Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters))
-        }.associate { it }
-
-        println(unF["the"])
 
         val qrels = dataset.qrels
         val queries = dataset.title_qs
@@ -441,20 +490,8 @@ object TestWSDM {
                 val judgments = qrels[qid] ?: QueryJudgments(qid, emptyMap())
                 val qterms = index.tokenize(qtext)
 
-                val ut = qterms.map { Pair(unF[it]!!, DirQLExpr(TextExpr(it))) }
-                val odt = qterms.mapEachSeqPair { lhs, rhs ->
-                    Pair(odF[Pair(lhs, rhs)]!!, DirQLExpr(OrderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
-                }
-                val bit = qterms.mapEachSeqPair { lhs, rhs ->
-                    Pair(uwF[Pair(lhs, rhs)]!!, DirQLExpr(UnorderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
-                }
-
+                val qExpr = makeWSDMQuery(qterms, features, model)
                 val orig = SequentialDependenceModel(qterms)
-                val qExpr = SumExpr(
-                        CombineExpr(ut.map { it.second }, ut.map { model.dotp(it.first) }.normalize()).weighted(0.8),
-                        CombineExpr(odt.map { it.second }, ut.map { model.dotp(it.first) }.normalize()).weighted(0.15),
-                        CombineExpr(bit.map { it.second }, ut.map { model.dotp(it.first) }.normalize()).weighted(0.05)
-                )
 
                 println("$qid .. $qterms")
                 val results = index.pool(mapOf("sdm" to orig, "wsdm" to qExpr), 1000)
