@@ -35,6 +35,17 @@ interface Vector {
         }
         return out
     }
+
+    fun concat(v: Vector): SimpleDenseVector {
+        val out = SimpleDenseVector(this.dim + v.dim)
+        (0 until dim).forEach { i ->
+            out[i] = this[i]
+        }
+        (0 until v.dim).forEach { j ->
+            out[j+dim] = v[j]
+        }
+        return out
+    }
 }
 data class BiasedVector(val inner: Vector) {
     val dim: Int = inner.dim + 1

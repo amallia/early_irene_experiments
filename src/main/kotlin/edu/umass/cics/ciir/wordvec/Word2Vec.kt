@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.wordvec
 
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
+import edu.umass.cics.ciir.irene.CountStats
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.toQueryResults
 import edu.umass.cics.ciir.learning.Vector
@@ -242,5 +243,51 @@ object ExactWordProb {
         }
 
         println(info)
+    }
+}
+
+object PredictIDFDataset {
+    @JvmStatic fun main(args: Array<String>) {
+
+        val argp = Parameters.parseArgs(args)
+        val inputPath = argp.get("vectors", "data/paragraphs.norm.fastText.vec")
+        val db = loadWord2VecTextFormat(File(inputPath))
+        println("Loaded ${db.N} vectors of dim ${db.dim}")
+        val dsName = argp.get("dataset", "robust")
+        val dataset = DataPaths.get(dsName)
+        val numSamples = 10000
+
+        val wikiTitles = DataPaths.Robust.getIreneIndex().use { wiki ->
+            (0 until wiki.totalDocuments).sample(numSamples).mapNotNull { i ->
+                wiki.getField(i, "title")?.stringValue()
+            }
+        }
+
+        println("Drew ${wikiTitles.size} titles from ''wiki'' index.")
+
+        dataset.getIreneIndex().use { index ->
+            val phrases = HashMap<Pair<String, String>, CountStats>()
+            for (title in wikiTitles) {
+                val terms = index.tokenize(title)
+                terms.forEachSeqPair {lhs, rhs ->
+                    // compute actual statistics
+                    phrases.computeIfAbsent(Pair(lhs, rhs), {
+                        index.getStats(OrderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs))))
+                    })
+                }
+            }
+
+            val wvec = phrases.keys.flatMapTo(HashSet()) { listOf(it.first, it.second) }.associate { Pair(it, db[it] ?: db.bgVector) }
+
+            File("idf_pred.libsvm.gz").smartPrint { printer ->
+                phrases.forEach { (kv, stats) ->
+                    val target = stats.binaryProbability()
+                    val lhs = wvec[kv.first]!!
+                    val rhs = wvec[kv.second]!!
+                    val ftrs = lhs.concat(rhs).toList().mapIndexed { i, value -> Pair(i+1, value) }
+                    printer.println(ftrs.joinToString(separator = " ", prefix = "$target ") { (fid,value) -> "$fid:$value" })
+                }
+            }
+        }
     }
 }
