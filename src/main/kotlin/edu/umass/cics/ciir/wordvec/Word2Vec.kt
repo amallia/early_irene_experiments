@@ -255,25 +255,31 @@ object PredictIDFDataset {
         println("Loaded ${db.N} vectors of dim ${db.dim}")
         val dsName = argp.get("dataset", "robust")
         val dataset = DataPaths.get(dsName)
-        val numSamples = 10000
+        val numSamples = 50000
 
-        val wikiTitles = DataPaths.Robust.getIreneIndex().use { wiki ->
-            (0 until wiki.totalDocuments).sample(numSamples).mapNotNull { i ->
-                wiki.getField(i, "title")?.stringValue()
+        val msg = CountingDebouncer(numSamples * 2L)
+        WikiSource().getIreneIndex().use { wiki ->
+            val wikiTitles =     (0 until wiki.totalDocuments).sample(numSamples).mapNotNull { i ->
+                val str = wiki.getField(i, "title")?.stringValue()
+                msg.incr()?.let { upd ->
+                    println("pulling titles $upd")
+                }
+                str
             }
-        }
 
-        println("Drew ${wikiTitles.size} titles from ''wiki'' index.")
+            println("Drew ${wikiTitles.size} titles from ''wiki'' index.")
 
-        dataset.getIreneIndex().use { index ->
             val phrases = HashMap<Pair<String, String>, CountStats>()
             for (title in wikiTitles) {
-                val terms = index.tokenize(title)
+                val terms = wiki.tokenize(title)
                 terms.forEachSeqPair {lhs, rhs ->
                     // compute actual statistics
                     phrases.computeIfAbsent(Pair(lhs, rhs), {
-                        index.getStats(OrderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs))))
+                        wiki.getStats(OrderedWindowExpr(listOf(TextExpr(lhs), TextExpr(rhs))))
                     })
+                }
+                msg.incr()?.let { upd ->
+                    println("computing stats $upd")
                 }
             }
 

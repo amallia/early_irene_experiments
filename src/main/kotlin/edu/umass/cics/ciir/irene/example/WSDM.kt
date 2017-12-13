@@ -258,10 +258,11 @@ val innerWSDMFeatureNames = listOf(
 val baseFeatureNames = listOf(
         // SDM-p
         "t", "od", "bi",
+        "cf", "df", "wt.cf", "wt.df", "wt.exact", "msn.cf", "msn.df", "msn.exact", "gfe", "inqueryStop",
         // always 1.0, makes learning the linear model much easier
         "const")
 
-val wsdmFeatureNames = baseFeatureNames + innerWSDMFeatureNames.map { "t.$it" } + innerWSDMFeatureNames.map { "b.$it" }
+val wsdmFeatureNames = baseFeatureNames // + innerWSDMFeatureNames.map { "t.$it" } + innerWSDMFeatureNames.map { "b.$it" }
 
 fun Parameters.getFeature(x: String): Double {
     val value = this[x]
@@ -299,13 +300,14 @@ data class WSDMComponent(val features: IVector, val score: Double) {
 }
 
 data class WSDMCliqueEval(val components: List<WSDMComponent> = emptyList()) {
+    val N = components.size
     fun eval(w: IVector): Double {
         if (components.isEmpty()) return 0.0
 
         val weights = components.map { it.weight(w) }.normalize()
 
-        return weights.zip(components).sumByDouble { (normW, base) ->
-            normW * base.score
+        return (0 until N).sumByDouble { i ->
+            weights[i] * components[i].score
         }
     }
 }
@@ -496,9 +498,9 @@ object TestWSDM {
         val dsName = argp.get("dataset", "robust")
         val dataset = DataPaths.get(dsName)
         val features = WSDMFeatureSource(Parameters.parseFile(File("$dsName.wsdmf.json")))
-        val model = wsdmFeatureVector(Parameters.parseFile(File("$dsName.model.final.json")))
+        val model = wsdmFeatureVector(Parameters.parseFile(File("ok_robust_ps/$dsName.model.final.json")))
         val evals = getEvaluators("map", "ndcg", "p10", "p20", "ndcg20")
-        val trainQueries = File("$dsName.wsdm.trainQ").smartReader().readLines().toSet()
+        val trainQueries = File("ok_robust_ps/$dsName.wsdm.trainQ").smartReader().readLines().toSet()
 
         val sdmParams = model.toList().take(3).normalize()
         println("SDM: $sdmParams")
