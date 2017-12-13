@@ -315,7 +315,7 @@ object LearnWSDMParameters {
         val argp = Parameters.parseArgs(args)
         val dsName = argp.get("dataset", "robust")
         val dataset = DataPaths.get(dsName)
-        val depth = 500
+        val depth = argp.get("depth", 1000)
         val features = WSDMFeatureSource(Parameters.parseFile(File("$dsName.wsdmf.json")))
 
         val qrels = dataset.qrels
