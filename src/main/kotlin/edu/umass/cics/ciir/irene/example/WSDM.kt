@@ -250,35 +250,47 @@ object CollectWSDMFeatures {
     }
 }
 
-val wsdmFeatureNames = listOf(
+val innerWSDMFeatureNames = listOf(
+        // WSDM-p
+        "cf", "df", "wt.cf", "wt.df", "wt.exact", "msn.cf", "msn.df", "msn.exact", "gfe", "inqueryStop"
+)
+
+val baseFeatureNames = listOf(
         // SDM-p
         "t", "od", "bi",
-        // WSDM-p
-        "cf", "df", "wt.cf", "wt.df", "wt.exact", "msn.cf", "msn.df", "msn.exact", "gfe", "inqueryStop",
         // always 1.0, makes learning the linear model much easier
         "const")
 
-fun wsdmFeatureVector(p: Parameters): SimpleDenseVector {
+val wsdmFeatureNames = baseFeatureNames + innerWSDMFeatureNames.map { "t.$it" } + innerWSDMFeatureNames.map { "b.$it" }
+
+fun Parameters.getFeature(x: String): Double {
+    val value = this[x]
+    return when (value) {
+        is Boolean -> if (value) 1.0 else 0.0
+        is Number -> value.toDouble()
+        is String -> 0.0
+        else -> error("value=$value for $x")
+    }
+}
+
+fun wsdmFeatureVector(p: Parameters, prefix: String = "t"): SimpleDenseVector {
     val out = SimpleDenseVector(wsdmFeatureNames.size)
-    p.entries.forEach { (name, value) ->
-        val i = wsdmFeatureNames.indexOf(name)
-        if (i == -1) error("Bad feature: $name")
-        val y = when (value) {
-            is Boolean -> if (value) 1.0 else 0.0
-            is Number -> value.toDouble()
-            is String -> 0.0
-            else -> error("value=$value for $name")
+    p.keys.forEach { name ->
+        var i = wsdmFeatureNames.indexOf(name)
+        if (i == -1) {
+            i = wsdmFeatureNames.indexOf("$prefix.$name")
         }
+        if (i == -1) error("Couldn't find feature: $name or $prefix.$name")
+        out[i] = p.getFeature(name)
 
         // log the probabilities.
         //when(name) {
-            //"cf", "df", "wt.cf", "wt.df", "msn.cf", "msn.df", "gfe" -> out[i] = Math.log(y)
-            //else -> out[i] = y
+        //"cf", "df", "wt.cf", "wt.df", "msn.cf", "msn.df", "gfe" -> out[i] = Math.log(y)
+        //else -> out[i] = y
         //}
-        out[i] = y
     }
     // bias / const feature:
-    out[out.dim-1] = 1.0
+    out[wsdmFeatureNames.indexOf("const")] = 1.0
     return out
 }
 
@@ -452,13 +464,13 @@ object LearnWSDMParameters {
 
 class WSDMFeatureSource(features: Parameters) {
     val unF = features.getMap("t").entries.map { (term, kv) ->
-        Pair(term, wsdmFeatureVector(kv as Parameters))
+        Pair(term, wsdmFeatureVector(kv as Parameters, "t"))
     }.associate { it }
     val odF = features.getMap("od").entries.map { (terms, kv) ->
-        Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters))
+        Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters, "b"))
     }.associate { it }
     val uwF = features.getMap("uw").entries.map { (terms, kv) ->
-        Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters))
+        Pair(terms.splitAt(' '), wsdmFeatureVector(kv as Parameters, "b"))
     }.associate { it }
 }
 
