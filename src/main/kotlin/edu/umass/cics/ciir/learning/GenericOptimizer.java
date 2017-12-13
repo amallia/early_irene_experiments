@@ -95,6 +95,8 @@ public class GenericOptimizer {
 
   private final static int[] sign = new int[]{1, 0, -1};
 
+  public boolean resetWeightVector = true;
+
   public void learn() {
     double[] regVector = new double[weight.length];
     copy(weight, regVector);//uniform weight distribution
@@ -113,7 +115,9 @@ public class GenericOptimizer {
       PRINTLN("[+] Random restart #" + (r+1) + "/" + nRestart + "...");
 
       //initialize weight vector
-      clearWeightVector();
+      if (r > 0 || resetWeightVector) {
+        clearWeightVector();
+      }
 
 
       double startScore = score();

@@ -269,6 +269,12 @@ fun wsdmFeatureVector(p: Parameters): SimpleDenseVector {
             is String -> 0.0
             else -> error("value=$value for $name")
         }
+
+        // log the probabilities.
+        //when(name) {
+            //"cf", "df", "wt.cf", "wt.df", "msn.cf", "msn.df", "gfe" -> out[i] = Math.log(y)
+            //else -> out[i] = y
+        //}
         out[i] = y
     }
     // bias / const feature:
@@ -309,7 +315,7 @@ object LearnWSDMParameters {
         val argp = Parameters.parseArgs(args)
         val dsName = argp.get("dataset", "robust")
         val dataset = DataPaths.get(dsName)
-        val depth = 300
+        val depth = 500
         val features = WSDMFeatureSource(Parameters.parseFile(File("$dsName.wsdmf.json")))
 
         val qrels = dataset.qrels
@@ -319,7 +325,15 @@ object LearnWSDMParameters {
         dataset.getIreneIndex().use { index ->
             val fields = setOf(index.idFieldName, index.defaultField)
             val env = index.env
-            val qs = queries.mapValues { (_,qtext) -> index.tokenize(qtext) }
+            val qs = queries.entries.toList().sample(200).toList().associate {Pair(it.key, index.tokenize(it.value))}
+            val nRel = qs.keys.associate { Pair(it, qrels[it]?.relevantJudgmentCount ?: 0) }
+
+            File("$dsName.wsdm.trainQ").smartPrint { p ->
+                qs.keys.forEach {
+                    p.println(it)
+                }
+            }
+            //val qs = queries..mapValues { (_,qtext) -> index.tokenize(qtext) }
 
             val exprs = qs.mapValues { (_, qterms) -> listOf(
                     qterms.map { Pair(features.unF[it]!!, DirQLExpr(TextExpr(it)).toRRExpr(env)) },
@@ -331,22 +345,21 @@ object LearnWSDMParameters {
                     })
             }
 
-            var ramPool = queries.entries.map { (qid, qtext) ->
+            var ramPool = qs.entries.map { (qid, qterms) ->
                 val judgments = qrels[qid] ?: return@map Pair(qid, emptyList<WSDMTopLevel>())
-                val qterms = index.tokenize(qtext)
                 val sdmQ = SequentialDependenceModel(qterms)
                 println("$qid .. $qterms")
                 val results = index.search(sdmQ, depth)
                 println("$qid .. $qterms .. ${results.totalHits}")
 
                 val pool = results.scoreDocs.mapNotNull { index.reader.document(it.doc, fields) }.associateByTo(HashMap()) { it[index.idFieldName] }
-                val missingJudged = judgments.keys.filterNot { pool.containsKey(it) }
-                for (name in missingJudged) {
-                    if (name == null) continue
-                    val num = index.documentById(name) ?: continue
-                    val json = index.reader.document(num, fields) ?: continue
-                    pool[name] = json
-                }
+                //val missingJudged = judgments.keys.filterNot { pool.containsKey(it) }
+                //for (name in missingJudged) {
+                    //if (name == null) continue
+                    //val num = index.documentById(name) ?: continue
+                    //val json = index.reader.document(num, fields) ?: continue
+                    //pool[name] = json
+                //}
 
                 println("$qid ${pool.size}")
 
@@ -367,8 +380,6 @@ object LearnWSDMParameters {
                 Pair(qid, docs)
             }.associate { it }
 
-            val nRel = ramPool.mapValues { (_, v) -> v.count { it.relevant } }
-
             val opt = object : GenericOptimizable(wsdmFeatureNames.size, "AP") {
                 override fun beginOptimizing(fid: Int, weights: DoubleArray) {
                 }
@@ -387,11 +398,11 @@ object LearnWSDMParameters {
 
             val ca = GenericOptimizer(opt)
             ca.nRestart = 1
-            ca.nMaxIteration = 10
+            ca.nMaxIteration = 25
             // initial learning step.
             ca.learn()
 
-            (0 until 2).forEach { iter ->
+            (0 until 5).forEach { iter ->
                 File("$dsName.model.i$iter.json").smartPrint { out ->
                     val model = wsdmFeatureNames.zip(ca.weight.toList()).associate { it }
                     println(model)
@@ -425,6 +436,7 @@ object LearnWSDMParameters {
                 }
 
                 // learn again.
+                //ca.resetWeightVector = false
                 ca.learn()
             }
 
@@ -472,8 +484,9 @@ object TestWSDM {
         val dsName = argp.get("dataset", "robust")
         val dataset = DataPaths.get(dsName)
         val features = WSDMFeatureSource(Parameters.parseFile(File("$dsName.wsdmf.json")))
-        val model = wsdmFeatureVector(Parameters.parseFile(File("$dsName.model.json")))
+        val model = wsdmFeatureVector(Parameters.parseFile(File("$dsName.model.final.json")))
         val evals = getEvaluators("map", "ndcg", "p10", "p20", "ndcg20")
+        val trainQueries = File("$dsName.wsdm.trainQ").smartReader().readLines().toSet()
 
         val sdmParams = model.toList().take(3).normalize()
         println("SDM: $sdmParams")
@@ -487,6 +500,9 @@ object TestWSDM {
 
         dataset.getIreneIndex().use { index ->
             queries.forEach { qid, qtext ->
+                // skip training queries.
+                if (qid in trainQueries) return@forEach
+
                 val judgments = qrels[qid] ?: QueryJudgments(qid, emptyMap())
                 val qterms = index.tokenize(qtext)
 
