@@ -496,11 +496,12 @@ object TestWSDM {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)
         val dsName = argp.get("dataset", "robust")
+        val dir = File(argp.get("modelDir", "ok_robust_ps"))
         val dataset = DataPaths.get(dsName)
         val features = WSDMFeatureSource(Parameters.parseFile(File("$dsName.wsdmf.json")))
-        val model = wsdmFeatureVector(Parameters.parseFile(File("ok_robust_ps/$dsName.model.final.json")))
-        val evals = getEvaluators("map", "ndcg", "p10", "p20", "ndcg20")
-        val trainQueries = File("ok_robust_ps/$dsName.wsdm.trainQ").smartReader().readLines().toSet()
+        val model = wsdmFeatureVector(Parameters.parseFile(File(dir, "$dsName.model.final.json")))
+        val evals = getEvaluators("map", "ndcg", "p10", "p20", "ndcg20", "r1000", "r200", "r500")
+        val trainQueries = File(dir, "$dsName.wsdm.trainQ").smartReader().readLines().toSet()
 
         val sdmParams = model.toList().take(3).normalize()
         println("SDM: $sdmParams")
