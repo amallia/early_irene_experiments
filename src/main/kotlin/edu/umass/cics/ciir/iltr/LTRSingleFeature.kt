@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.iltr
 
+import edu.umass.cics.ciir.irene.lang.QExpr
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.scoring.LTRDocField
 import edu.umass.cics.ciir.sprf.getStr
@@ -32,6 +33,7 @@ data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>
         Ranked.setRanksByScore(ranked)
         return QueryResults(ranked)
     }
+    fun toQResults(env: RREnv, qExpr: QExpr): QueryResults = toQResults(qExpr.toRRExpr(env))
     fun toQResults(rrExpr: RRExpr): QueryResults {
         val ranked = ranked(rrExpr)
         Ranked.setRanksByScore(ranked)

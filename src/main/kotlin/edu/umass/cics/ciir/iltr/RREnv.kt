@@ -71,55 +71,11 @@ abstract class RREnv {
         }
     }
 
-    fun fromQExpr(q: QExpr): RRExpr = when(q) {
-        is TextExpr -> RRTermExpr(this, q.text, q.countsField())
-        is LuceneExpr -> error("Can't support LuceneExpr.")
-        is SynonymExpr -> TODO()
-        is AndExpr -> TODO()
-        is OrExpr -> TODO()
-    // make sum of weighted:
-        is CombineExpr -> sum(q.children.zip(q.weights).map { (child, weight) ->
-            fromQExpr(child).weighted(weight)
-        })
-        is MultExpr -> RRMult(this, q.children.map { fromQExpr(it) })
-        is MaxExpr -> RRMax(this, q.children.map { fromQExpr(it) })
-        is OrderedWindowExpr -> RROrderedWindow(this,
-                q.children.map { fromQExpr(it) as RRCountExpr },
-                q.step)
-        is UnorderedWindowExpr -> RRUnorderedWindow(this,
-                q.children.map { fromQExpr(it) as RRCountExpr },
-                q.width)
-        is WeightExpr -> RRWeighted(this, q.weight, fromQExpr(q.child))
-        is DirQLExpr -> RRDirichletScorer(this, fromQExpr(q.child) as RRCountExpr, q.mu!!, q.stats!!)
-        is BM25Expr -> RRBM25Scorer(this, fromQExpr(q.child) as RRCountExpr, q.b!!, q.k!!, q.stats!!)
-        is AbsoluteDiscountingQLExpr -> RRAbsoluteDiscountingScorer(this, fromQExpr(q.child) as RRCountExpr, q.delta!!, q.stats!!)
-        is CountToScoreExpr -> TODO()
-        is BoolToScoreExpr -> TODO()
-        is CountToBoolExpr -> TODO()
-        is RequireExpr -> TODO()
-        is ConstScoreExpr -> RRConst(this, q.x)
-        is ConstCountExpr -> RRConst(this, q.x.toDouble())
-        is ConstBoolExpr -> RRConst(this, if (q.x) 1.0 else 0.0)
-        is MultiExpr -> TODO()
-        is UnorderedWindowCeilingExpr, is SmallerCountExpr -> TODO()
-        is LengthsExpr -> RRDocLength(this, q.statsField!!)
-
-        // These movement hints mean nothing in RR context.
-        AlwaysMatchLeaf, NeverMatchLeaf, is WhitelistMatchExpr -> fromQExpr(q.trySingleChild)
-        is ProxExpr -> TODO()
-        is CountEqualsExpr -> TODO()
-    }
-
 
     fun mean(exprs: List<RRExpr>) = RRMean(this, exprs)
-    fun mean(vararg exprs: RRExpr) = RRMean(this, exprs.toList())
     fun sum(exprs: List<RRExpr>) = RRSum(this, exprs)
-    fun sum(vararg exprs: RRExpr) = RRSum(this, exprs.toList())
-    fun term(term: String) = RRDirichletScorer(this, RRTermExpr(this, term, defaultField), defaultDirichletMu, getStats(term, defaultField))
     fun feature(name: String) = RRFeature(this, name)
 
-    fun ql(terms: List<String>) = mean(terms.map { this.term(it) })
-    fun bm25(terms: List<String>, field: String = defaultField) = sum(terms.map { RRBM25Scorer(this, RRTermExpr(this, it, field), defaultBM25b, defaultBM25k, getStats(it, defaultField)) })
     fun mult(vararg exprs: RRExpr) = RRMult(this, exprs.toList())
     fun const(x: Double) = RRConst(this, x)
 }

@@ -2,10 +2,7 @@ package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.chai.mean
 import edu.umass.cics.ciir.chai.push
-import edu.umass.cics.ciir.irene.lang.BM25Expr
-import edu.umass.cics.ciir.irene.lang.DirQLExpr
-import edu.umass.cics.ciir.irene.lang.MeanExpr
-import edu.umass.cics.ciir.irene.lang.TextExpr
+import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.getEvaluators
 import org.lemurproject.galago.utility.Parameters
@@ -20,7 +17,7 @@ interface HyperParam {
     override fun toString(): String
 }
 
-inline fun <P : HyperParam> kCrossFoldValidate(dsName: String, showTest: Boolean = false, kSplits: Int = 5, tune: String = "ap", crossinline compute: (RREnv, LTRQuery)->Map<P, RRExpr>) {
+inline fun <P : HyperParam> kCrossFoldValidate(dsName: String, showTest: Boolean = false, kSplits: Int = 5, tune: String = "ap", crossinline compute: (RREnv, LTRQuery)->Map<P, QExpr>) {
     val dataset = DataPaths.get(dsName)
     val tuningMeasure = getEvaluators(listOf(tune))[tune]!!
     val qrels = dataset.getQueryJudgments()
@@ -40,7 +37,7 @@ inline fun <P : HyperParam> kCrossFoldValidate(dsName: String, showTest: Boolean
             println("${q.qid} ${q.qterms}")
             val queryJudgments = qrels[q.qid]!!
             compute(env, q).mapValues { (hp, expr) ->
-                val ranked = q.toQResults(expr)
+                val ranked = q.toQResults(env, expr)
                 val score = tuningMeasure.evaluate(ranked, queryJudgments)
                 //println("\t\t$score . $hp")
                 hpResults.computeIfAbsent(hp,{ HashMap() }).put(q.qid, score)
@@ -87,11 +84,11 @@ object BM25Tuning {
         val bs = ks.toList()
 
         kCrossFoldValidate(dsName) { env, q ->
-            val out = HashMap<BM25HyperParam, RRExpr>()
+            val out = HashMap<BM25HyperParam, QExpr>()
             ks.forEach { k ->
                 bs.forEach { b ->
                     val expr = MeanExpr(q.qterms.map { BM25Expr(TextExpr(it, field), b, k) })
-                    out[BM25HyperParam(b, k)] = expr.toRRExpr(env)
+                    out[BM25HyperParam(b, k)] = expr
                 }
             }
             out
@@ -109,10 +106,10 @@ object TuneQL {
         val mus = arrayListOf(750,1000,1250,1500).map { it.toDouble() }
 
         kCrossFoldValidate(dsName) { env, q ->
-            val out = HashMap<QLHyperParam, RRExpr>()
+            val out = HashMap<QLHyperParam, QExpr>()
             mus.forEach { mu ->
                 val expr = MeanExpr(q.qterms.map { DirQLExpr(TextExpr(it, field), mu) })
-                out[QLHyperParam(mu)] = expr.toRRExpr(env)
+                out[QLHyperParam(mu)] = expr
             }
             out
         }
