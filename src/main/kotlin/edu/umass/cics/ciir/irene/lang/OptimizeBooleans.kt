@@ -148,51 +148,52 @@ class FixedPointBooleanSimplification() {
 }
 
 fun simplifyBools(input: QExpr, ctx: FixedPointBooleanSimplification): QExpr {
-    val q = ctx.optimizeDuplicates(input)
-    return when (q) {
+    return ctx.optimizeDuplicates(input).map { q ->
+        when (q) {
         // AND and OR
-        is AndExpr -> ctx.optimizeAnd(q)
-        is OrExpr -> {
-            val opt = ctx.optimizeOr(q)
-            if (opt is OrExpr) {
-                ctx.removeChildAnds(opt)
-            } else {
-                opt
+            is AndExpr -> ctx.optimizeAnd(q)
+            is OrExpr -> {
+                val opt = ctx.optimizeOr(q)
+                if (opt is OrExpr) {
+                    ctx.removeChildAnds(opt)
+                } else {
+                    opt
+                }
             }
-        }
 
         // Leaf expr:
-        is ConstBoolExpr,
-        is ConstCountExpr,
-        is ConstScoreExpr,
-        is LengthsExpr,
-        is LuceneExpr,
-        NeverMatchLeaf,
-        AlwaysMatchLeaf,
-        is TextExpr -> q
+            is ConstBoolExpr,
+            is ConstCountExpr,
+            is ConstScoreExpr,
+            is LengthsExpr,
+            is LuceneExpr,
+            NeverMatchLeaf,
+            AlwaysMatchLeaf,
+            is TextExpr -> q
 
-    // default, just pass through:
-        NeverMatchLeaf,
-        is AbsoluteDiscountingQLExpr,
-        is BM25Expr,
-        is BoolToScoreExpr,
-        is CombineExpr,
-        is CountToBoolExpr,
-        is CountToScoreExpr,
-        is CountEqualsExpr,
-        is DirQLExpr,
-        is MaxExpr,
-        is MultExpr,
-        is OrderedWindowExpr,
-        is ProxExpr,
-        is RequireExpr,
-        is SmallerCountExpr,
-        is SynonymExpr,
-        is UnorderedWindowCeilingExpr,
-        is UnorderedWindowExpr,
-        is WeightExpr,
-        is WhitelistMatchExpr,
-        is MultiExpr -> q.map { simplifyBools(it, ctx) }
+        // default, just pass through:
+            NeverMatchLeaf,
+            is AbsoluteDiscountingQLExpr,
+            is BM25Expr,
+            is BoolToScoreExpr,
+            is CombineExpr,
+            is CountToBoolExpr,
+            is CountToScoreExpr,
+            is CountEqualsExpr,
+            is DirQLExpr,
+            is MaxExpr,
+            is MultExpr,
+            is OrderedWindowExpr,
+            is ProxExpr,
+            is RequireExpr,
+            is SmallerCountExpr,
+            is SynonymExpr,
+            is UnorderedWindowCeilingExpr,
+            is UnorderedWindowExpr,
+            is WeightExpr,
+            is WhitelistMatchExpr,
+            is MultiExpr -> q
+        }
     }
 }
 

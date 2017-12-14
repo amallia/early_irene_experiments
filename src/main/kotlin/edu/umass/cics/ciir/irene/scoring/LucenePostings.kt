@@ -1,7 +1,6 @@
 package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.chai.IntList
-import edu.umass.cics.ciir.irene.CountStats
 import org.apache.lucene.index.NumericDocValues
 import org.apache.lucene.index.PostingsEnum
 import org.apache.lucene.index.Term
@@ -11,13 +10,12 @@ import org.apache.lucene.search.Explanation
  * Created from [TextExpr] via [exprToEval]
  * @author jfoley.
  */
-data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths: NumericDocValues) : PositionsEvalNode, LeafEvalNode() {
+data class LuceneMissingTerm(val term: Term, val lengths: NumericDocValues) : PositionsEvalNode, LeafEvalNode() {
     override fun positions(): PositionsIter = error("Don't ask for positions if count is zero!")
     override fun count() = 0
     override fun matches() = false
     override fun explain() = Explanation.match(0.0f, "MissingTerm-$term length=${length()}")
     override fun estimateDF() = 0L
-    override fun getCountStats(): CountStats = stats
     override fun length(): Int {
         val doc = env.doc
         if (lengths.docID() < doc) {
@@ -30,7 +28,7 @@ data class LuceneMissingTerm(val term: Term, val stats: CountStats, val lengths:
     }
 }
 
-data class LuceneDocLengths(val stats: CountStats, val lengths: NumericDocValues): CountEvalNode, LeafEvalNode() {
+data class LuceneDocLengths(val field: String, val lengths: NumericDocValues): CountEvalNode, LeafEvalNode() {
     override fun count(): Int = length()
     override fun matches(): Boolean {
         val doc = env.doc
@@ -42,9 +40,8 @@ data class LuceneDocLengths(val stats: CountStats, val lengths: NumericDocValues
         }
         return false
     }
-    override fun explain(): Explanation = Explanation.match(length().toFloat(), "lengths: $stats")
+    override fun explain(): Explanation = Explanation.match(length().toFloat(), "lengths.$field")
     override fun estimateDF(): Long = lengths.cost()
-    override fun getCountStats(): CountStats = stats
     override fun length(): Int {
         if (matches()) {
             return lengths.longValue().toInt()
@@ -53,7 +50,7 @@ data class LuceneDocLengths(val stats: CountStats, val lengths: NumericDocValues
     }
 }
 
-abstract class LuceneTermFeature(val stats: CountStats, val postings: PostingsEnum) : LeafEvalNode() {
+abstract class LuceneTermFeature(val term: Term, val postings: PostingsEnum) : LeafEvalNode() {
     fun docID(): Int = postings.docID()
     fun syncTo(target: Int): Int {
         if (postings.docID() < target) {
@@ -77,17 +74,16 @@ abstract class LuceneTermFeature(val stats: CountStats, val postings: PostingsEn
     }
 
     override fun toString(): String {
-        return "${this.javaClass.simpleName}(${stats.text})"
+        return "${this.javaClass.simpleName}($term)"
     }
-
-    override fun estimateDF(): Long = stats.df
+    override fun estimateDF(): Long = postings.cost()
 }
 
-open class LuceneTermDocs(stats: CountStats, postings: PostingsEnum) : LuceneTermFeature(stats, postings) {
+open class LuceneTermDocs(term: Term, postings: PostingsEnum) : LuceneTermFeature(term, postings) {
     override fun score(): Double = count().toDouble()
     override fun count(): Int = if (matches()) 1 else 0
 }
-open class LuceneTermCounts(stats: CountStats, postings: PostingsEnum, val lengths: NumericDocValues) : LuceneTermDocs(stats, postings), CountEvalNode {
+open class LuceneTermCounts(term: Term, postings: PostingsEnum, val lengths: NumericDocValues) : LuceneTermDocs(term, postings), CountEvalNode {
     override fun score(): Double = count().toDouble()
     override fun count(): Int {
         if(matches()) {
@@ -95,7 +91,6 @@ open class LuceneTermCounts(stats: CountStats, postings: PostingsEnum, val lengt
         }
         return 0
     }
-    override fun getCountStats(): CountStats = stats
     override fun length(): Int {
         val doc = env.doc
         if (lengths.docID() < doc) {
@@ -107,7 +102,7 @@ open class LuceneTermCounts(stats: CountStats, postings: PostingsEnum, val lengt
         return 0;
     }
 }
-class LuceneTermPositions(stats: CountStats, postings: PostingsEnum, lengths: NumericDocValues) : LuceneTermCounts(stats, postings, lengths), PositionsEvalNode {
+class LuceneTermPositions(term: Term, postings: PostingsEnum, lengths: NumericDocValues) : LuceneTermCounts(term, postings, lengths), PositionsEvalNode {
     var posDoc = -1
     var positions = IntList()
     override fun positions(): PositionsIter {

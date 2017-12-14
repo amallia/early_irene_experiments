@@ -98,7 +98,7 @@ class LDocBuilder(val params: IndexParams) {
         fields[field] = keep
     }
 
-    fun setEfficientTextField(field: String, text: String, stored: Boolean) {
+    fun setEfficientTextField(field: String, text: String, stored: Boolean=true) {
         if (fields.containsKey(field)) {
             error("Already specified $field for this document $fields.")
         }

@@ -1,7 +1,5 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.irene.CountStats
-import edu.umass.cics.ciir.irene.CountStatsStrategy
 import edu.umass.cics.ciir.irene.lang.ProxExpr
 import edu.umass.cics.ciir.irene.lang.SmallerCountExpr
 import edu.umass.cics.ciir.irene.lang.UnorderedWindowCeilingExpr
@@ -139,7 +137,7 @@ class PositionsIter(val data: IntArray, val size: Int=data.size, var index: Int 
     override fun toString() = (0 until size).map { data[it] }.toList().toString()
 }
 
-abstract class CountWindow(val stats: CountStatsStrategy, children: List<PositionsEvalNode>) : AndEval<PositionsEvalNode>(children), CountEvalNode {
+abstract class CountWindow(children: List<PositionsEvalNode>) : AndEval<PositionsEvalNode>(children), CountEvalNode {
     init {
         assert(children.size > 1)
     }
@@ -168,7 +166,6 @@ abstract class CountWindow(val stats: CountStatsStrategy, children: List<Positio
     override fun matches(): Boolean {
         return super.matches() && count() > 0
     }
-    override fun getCountStats(): CountStats = stats.get()
     override fun length(): Int = children[0].length()
 
     override fun toString(): String {
@@ -179,7 +176,7 @@ abstract class CountWindow(val stats: CountStatsStrategy, children: List<Positio
 /**
  * [OrderedWindowExpr]
  */
-class OrderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val step: Int) : CountWindow(stats, children) {
+class OrderedWindow(children: List<PositionsEvalNode>, val step: Int) : CountWindow(children) {
     override fun compute(iters: List<PositionsIter>): Int = countOrderedWindows(iters, step)
 
     /** TODO is the minimum possible at this document is always zero for a [CountEvalNode]? */
@@ -197,17 +194,17 @@ class OrderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>
 
 }
 
-class UnorderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val width: Int) : CountWindow(stats, children) {
+class UnorderedWindow(children: List<PositionsEvalNode>, val width: Int) : CountWindow(children) {
     override fun compute(iters: List<PositionsIter>): Int = countUnorderedWindows(iters, width)
 }
 
 /** From [ProxExpr] for computing something like [UnorderedWindow] but more realistically upper-bounded by MinCount(children). */
-class ProxWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val width: Int): CountWindow(stats, children) {
+class ProxWindow(children: List<PositionsEvalNode>, val width: Int): CountWindow(children) {
     override fun compute(iters: List<PositionsIter>): Int = countProxWindows(iters, width)
 }
 
 /** From [SmallerCountExpr], for estimating the ceiling of [OrderedWindow] nodes. */
-class SmallerCountWindow(val stats: CountStatsStrategy, children: List<CountEvalNode>) : AndEval<CountEvalNode>(children), CountEvalNode {
+class SmallerCountWindow(children: List<CountEvalNode>) : AndEval<CountEvalNode>(children), CountEvalNode {
     init {
         assert(children.size > 1)
     }
@@ -221,7 +218,6 @@ class SmallerCountWindow(val stats: CountStatsStrategy, children: List<CountEval
         }
         return min
     }
-    override fun getCountStats(): CountStats = stats.get()
     override fun length(): Int = children[0].length()
 
     override fun toString(): String {
@@ -233,7 +229,7 @@ class SmallerCountWindow(val stats: CountStatsStrategy, children: List<CountEval
  * Consider the terms (if two) as nodes in a bi-partite set, with counts p and q.
  * Therefore, the maximum possible output is the maximum number of nodes, or p * q.
  */
-class UnorderedWindowCeiling(val stats: CountStatsStrategy, val width: Int, children: List<CountEvalNode>) : AndEval<CountEvalNode>(children), CountEvalNode {
+class UnorderedWindowCeiling(val width: Int, children: List<CountEvalNode>) : AndEval<CountEvalNode>(children), CountEvalNode {
     init {
         assert(children.size > 1)
     }
@@ -248,6 +244,5 @@ class UnorderedWindowCeiling(val stats: CountStatsStrategy, val width: Int, chil
         }
         return max * minOf(min, width)
     }
-    override fun getCountStats(): CountStats = stats.get()
     override fun length(): Int = children[0].length()
 }

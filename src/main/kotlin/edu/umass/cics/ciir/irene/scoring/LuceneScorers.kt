@@ -28,8 +28,8 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
                 ?: error("Couldn't find norms for ``$missing'' ND=${context.reader().numDocs()} F=${context.reader().fieldInfos.map { it.name }}.")
     })
 
-    fun create(term: Term, needed: DataNeeded, stats: CountStats): QueryEvalNode {
-        return create(term, needed, stats, getLengths(term.field()))
+    fun create(term: Term, needed: DataNeeded): QueryEvalNode {
+        return create(term, needed, getLengths(term.field()))
     }
 
     fun selectRelativeDocIds(ids: List<Int>): IntList {
@@ -45,26 +45,26 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
         return output
     }
 
-    private fun termRaw(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): QueryEvalNode {
+    private fun termRaw(term: Term, needed: DataNeeded, lengths: NumericDocValues): QueryEvalNode {
         val postings = termSeek(term, needed)
-                ?: return LuceneMissingTerm(term, stats, lengths)
+                ?: return LuceneMissingTerm(term, lengths)
         return when(needed) {
-            DataNeeded.DOCS -> LuceneTermDocs(stats, postings)
-            DataNeeded.COUNTS -> LuceneTermCounts(stats, postings, lengths)
-            DataNeeded.POSITIONS -> LuceneTermPositions(stats, postings, lengths)
+            DataNeeded.DOCS -> LuceneTermDocs(term, postings)
+            DataNeeded.COUNTS -> LuceneTermCounts(term, postings, lengths)
+            DataNeeded.POSITIONS -> LuceneTermPositions(term, postings, lengths)
             DataNeeded.SCORES -> error("Impossible!")
         }
     }
 
-    private fun termCached(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): QueryEvalNode {
+    private fun termCached(term: Term, needed: DataNeeded, lengths: NumericDocValues): QueryEvalNode {
         return if (env.shareIterators) {
             val entry = iterNeeds[term]
             if (entry == null || entry < needed) {
                 error("Forgot to call .setup(q) on IQContext. While constructing $term $needed $entry...")
             }
-            evalCache.computeIfAbsent(term, { termRaw(term, entry, stats, lengths) })
+            evalCache.computeIfAbsent(term, { termRaw(term, entry, lengths) })
         } else {
-            termRaw(term, needed, stats, lengths)
+            termRaw(term, needed, lengths)
         }
     }
     fun termMover(term: Term): QueryMover {
@@ -83,18 +83,16 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
         return postings
     }
 
-    fun create(term: Term, needed: DataNeeded, stats: CountStats, lengths: NumericDocValues): QueryEvalNode {
-        return termCached(term, needed, stats, lengths)
+    fun create(term: Term, needed: DataNeeded, lengths: NumericDocValues): QueryEvalNode {
+        return termCached(term, needed, lengths)
     }
     fun shardIdentity(): Any = context.id()
     fun numDocs(): Int = context.reader().numDocs()
     fun createLengths(field: String, countStats: CountStats): QueryEvalNode {
-        return LuceneDocLengths(countStats, getLengths(field))
+        return LuceneDocLengths(field, getLengths(field))
     }
 
     fun setup(input: QExpr): QExpr {
-
-
         val foldOperators = if (!env.indexedBigrams) {
             input
         } else {
@@ -102,8 +100,7 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
                 if (q is OrderedWindowExpr && q.children.size == 2) {
                     val lhs = q.children[0] as TextExpr
                     val rhs = q.children[1] as TextExpr
-                    val stats = computeCountStats(q, this).get()
-                    TextExpr("${lhs.text} ${rhs.text}", field="bi:${lhs.countsField()}", statsField = "ERROR_PRECOMPUTED_STATS", stats = stats, needed = DataNeeded.COUNTS)
+                    TextExpr("${lhs.text} ${rhs.text}", field="od:${lhs.countsField()}", statsField = "ERROR_PRECOMPUTED_STATS", needed = DataNeeded.COUNTS)
                 } else q
             }
         }

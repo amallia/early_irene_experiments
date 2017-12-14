@@ -227,7 +227,7 @@ class IreneIndex(val io: RefCountedIO, val params: IndexParams) : IIndex {
     }
     override fun getStats(expr: QExpr): CountStats {
         if (expr is TextExpr) {
-            return expr.stats ?: getStats(expr.text, expr.statsField())
+            return getStats(expr.text, expr.statsField())
         }
         return getExprStats(expr)!!.join()
     }

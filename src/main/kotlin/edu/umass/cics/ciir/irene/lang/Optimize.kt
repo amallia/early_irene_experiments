@@ -32,20 +32,6 @@ fun simplify(q: QExpr): QExpr {
     return pq
 }
 
-fun computeQExprStats(index: RREnv, root: QExpr) {
-    root.visit { q ->
-        when (q) {
-            is TextExpr -> {
-                q.stats = index.getStats(q.text, q.statsField())
-            }
-            is LengthsExpr -> {
-                q.stats = index.fieldStats(q.statsField!!)
-            }
-            else -> { }
-        }
-    }
-}
-
 class CombineWeightsFixedPoint {
     var changed: Boolean = false
     var iter = 0
@@ -115,67 +101,69 @@ fun combineWeights(q: QExpr): QExpr? {
     return null
 }
 
-fun combineWeights(q: QExpr, ctx: CombineWeightsFixedPoint): QExpr = when(q) {
+fun combineWeights(input: QExpr, ctx: CombineWeightsFixedPoint): QExpr = qmap(input) { q ->
+    when (q) {
     // Flatten nested-weights.
-    is WeightExpr -> {
-        val c = q.child
-        if (c is WeightExpr) {
-            ctx.changed = true
-            // Merge nested weights:
-            WeightExpr(combineWeights(c.child, ctx), q.weight * c.weight)
-        } else if (c is CombineExpr) {
-            ctx.changed = true
-            // Push weight down into Combine.
-            CombineExpr(
-                    c.children.map { combineWeights(it, ctx)},
-                    c.weights.map { it * q.weight })
-        } else {
-            // Otherwise just recurse, no-changes:
-            WeightExpr(combineWeights(q.child, ctx), q.weight)
+        is WeightExpr -> {
+            val c = q.child
+            if (c is WeightExpr) {
+                ctx.changed = true
+                // Merge nested weights:
+                WeightExpr(combineWeights(c.child, ctx), q.weight * c.weight)
+            } else if (c is CombineExpr) {
+                ctx.changed = true
+                // Push weight down into Combine.
+                CombineExpr(
+                        c.children.map { combineWeights(it, ctx) },
+                        c.weights.map { it * q.weight })
+            } else {
+                // Otherwise just recurse, no-changes:
+                WeightExpr(combineWeights(q.child, ctx), q.weight)
+            }
         }
-    }
     // Pull weights up into CombineExpr.
-    is CombineExpr -> {
-        // Statically-combine any now-redundant-children in CombineExpr:
-        if (q.children.toSet().size < q.children.size) {
-            ctx.combineRedundantCombineChildren(q)
-        } else if (q.children.any { it is CombineExpr || it is WeightExpr }) {
-            ctx.flattenCombineExpr(q)
-        } else {
-            CombineExpr(q.children.map { combineWeights(it, ctx) }, q.weights)
+        is CombineExpr -> {
+            // Statically-combine any now-redundant-children in CombineExpr:
+            if (q.children.toSet().size < q.children.size) {
+                ctx.combineRedundantCombineChildren(q)
+            } else if (q.children.any { it is CombineExpr || it is WeightExpr }) {
+                ctx.flattenCombineExpr(q)
+            } else {
+                CombineExpr(q.children.map { combineWeights(it, ctx) }, q.weights)
+            }
         }
-    }
 
-    is ConstBoolExpr,
-    is ConstCountExpr,
-    is ConstScoreExpr,
-    is LengthsExpr,
-    is LuceneExpr,
-    NeverMatchLeaf,
-    AlwaysMatchLeaf,
-    is TextExpr -> q
+        is ConstBoolExpr,
+        is ConstCountExpr,
+        is ConstScoreExpr,
+        is LengthsExpr,
+        is LuceneExpr,
+        NeverMatchLeaf,
+        AlwaysMatchLeaf,
+        is TextExpr -> q
 
     // recurse on all other expressions.
-    is AbsoluteDiscountingQLExpr,
-    is AndExpr,
-    is BM25Expr,
-    is BoolToScoreExpr,
-    is CountEqualsExpr,
-    is CountToBoolExpr,
-    is CountToScoreExpr,
-    is DirQLExpr,
-    is MaxExpr,
-    is MultExpr,
-    is MultiExpr,
-    is OrExpr,
-    is OrderedWindowExpr,
-    is ProxExpr,
-    is RequireExpr,
-    is SmallerCountExpr,
-    is SynonymExpr,
-    is UnorderedWindowCeilingExpr,
-    is UnorderedWindowExpr,
-    is WhitelistMatchExpr -> q.map { combineWeights(it, ctx) }
+        is AbsoluteDiscountingQLExpr,
+        is AndExpr,
+        is BM25Expr,
+        is BoolToScoreExpr,
+        is CountEqualsExpr,
+        is CountToBoolExpr,
+        is CountToScoreExpr,
+        is DirQLExpr,
+        is MaxExpr,
+        is MultExpr,
+        is MultiExpr,
+        is OrExpr,
+        is OrderedWindowExpr,
+        is ProxExpr,
+        is RequireExpr,
+        is SmallerCountExpr,
+        is SynonymExpr,
+        is UnorderedWindowCeilingExpr,
+        is UnorderedWindowExpr,
+        is WhitelistMatchExpr -> q
+    }
 }
 
 class TypeCheckError(msg: String): Exception(msg)

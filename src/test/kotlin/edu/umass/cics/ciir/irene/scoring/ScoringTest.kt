@@ -39,7 +39,8 @@ class CommonTestIndexes : Closeable {
 
     val idField = "id"
     val docNumberField = "docNo"
-    val contentsField = "body"
+    // This is Galago's default field name, which is required if we want to share stats / prepare with one and execute with the other.
+    val contentsField = "document"
 
     val docs = listOf(doc1,doc2,doc3)
     val names = ArrayList<String>()

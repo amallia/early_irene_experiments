@@ -30,7 +30,7 @@ class LDocBuilderTest {
             IreneIndexer(params).use { writer2 ->
                 writer2.doc {
                     setId("test")
-                    setTextField(params.defaultField, document)
+                    setEfficientTextField(params.defaultField, document)
                 }
                 writer2.commit()
                 writer2.open()
@@ -52,7 +52,9 @@ class LDocBuilderTest {
 
                     run {
                         val scs = slowIndex.getStats(window1)
+                        println("SCS: $scs")
                         val fcs = fastIndex.getStats(window1)
+                        println("FCS: $scs")
 
                         assertEquals(scs.cl, fcs.cl)
                         assertEquals(scs.dc, fcs.dc)
@@ -72,6 +74,10 @@ class LDocBuilderTest {
                         val slowDoc = slowIndex.search(RequireExpr(AlwaysMatchLeaf, DirQLExpr(window1)), 1).scoreDocs[0]
                         val fastDoc = fastIndex.search(RequireExpr(AlwaysMatchLeaf, DirQLExpr(window1)), 1).scoreDocs[0]
 
+                        if (Math.abs(slowDoc.score - fastDoc.score) >= 1e-7f) {
+                            println(slowIndex.explain(DirQLExpr(window1), slowDoc.doc))
+                            println(fastIndex.explain(DirQLExpr(window1), fastDoc.doc))
+                        }
                         assertEquals(slowDoc.score, fastDoc.score, 1e-7f)
                     }
 

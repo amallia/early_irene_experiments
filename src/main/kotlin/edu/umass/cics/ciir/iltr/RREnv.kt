@@ -1,10 +1,7 @@
 package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.irene.CountStats
-import edu.umass.cics.ciir.irene.CountStatsStrategy
-import edu.umass.cics.ciir.irene.LazyCountStats
 import edu.umass.cics.ciir.irene.lang.*
-import edu.umass.cics.ciir.irene.scoring.approxStats
 import edu.umass.cics.ciir.sprf.inqueryStop
 import gnu.trove.map.hash.TObjectDoubleHashMap
 import org.lemurproject.galago.utility.MathUtils
@@ -26,23 +23,13 @@ abstract class RREnv {
     abstract fun fieldStats(field: String): CountStats
     abstract fun computeStats(q: QExpr): CountStats
     abstract fun getStats(term: String, field: String? =null): CountStats
-    fun statsComputation(q: QExpr): CountStatsStrategy {
-        if (q is OrderedWindowExpr || q is UnorderedWindowExpr) {
-            if (estimateStats == null || estimateStats == "exact") {
-                return LazyCountStats(q.deepCopy(), this)
-            } else {
-                return approxStats(q, estimateStats!!)
-            }
-        } else {
-            TODO("statsComputation($q)")
-        }
-    }
 
     /** @return a list of internal identifiers */
     abstract fun lookupNames(docNames: Set<String>): List<Int>
 
     fun prepare(q: QExpr): QExpr {
-        val pq = simplify(q)
+        var pq =
+                simplify(q)
                 .map { reduceSingleChildren(it) }
         applyEnvironment(this, pq)
         try {
@@ -51,7 +38,7 @@ abstract class RREnv {
             System.err.println("$q")
             throw err
         }
-        computeQExprStats(this, pq)
+        pq = insertStats(this, pq)
 
         // Optimize BM25:
         if (optimizeBM25) {
@@ -59,9 +46,9 @@ abstract class RREnv {
             val bq = pq.map { c ->
                 if (c is BM25Expr && !c.extractedIDF) {
                     val inner = c.child
-                    if (inner is TextExpr && inner.stats != null) {
+                    val stats = c.stats
+                    if (inner is TextExpr && stats != null) {
                         c.extractedIDF = true
-                        val stats = inner.stats!!
                         val idf = Math.log(stats.dc / (stats.df + 0.5))
                         //println("IDF: ${idf} for term=${inner.text}")
                         c.weighted(idf)
@@ -92,16 +79,14 @@ abstract class RREnv {
         is MaxExpr -> RRMax(this, q.children.map { fromQExpr(it) })
         is OrderedWindowExpr -> RROrderedWindow(this,
                 q.children.map { fromQExpr(it) as RRCountExpr },
-                q.step,
-                statsComputation(q))
+                q.step)
         is UnorderedWindowExpr -> RRUnorderedWindow(this,
                 q.children.map { fromQExpr(it) as RRCountExpr },
-                q.width,
-                statsComputation(q))
+                q.width)
         is WeightExpr -> RRWeighted(this, q.weight, fromQExpr(q.child))
-        is DirQLExpr -> RRDirichletScorer(this, fromQExpr(q.child) as RRCountExpr, q.mu!!)
-        is BM25Expr -> RRBM25Scorer(this, fromQExpr(q.child) as RRCountExpr, q.b!!, q.k!!)
-        is AbsoluteDiscountingQLExpr -> RRAbsoluteDiscountingScorer(this, fromQExpr(q.child) as RRCountExpr, q.delta!!)
+        is DirQLExpr -> RRDirichletScorer(this, fromQExpr(q.child) as RRCountExpr, q.mu!!, q.stats!!)
+        is BM25Expr -> RRBM25Scorer(this, fromQExpr(q.child) as RRCountExpr, q.b!!, q.k!!, q.stats!!)
+        is AbsoluteDiscountingQLExpr -> RRAbsoluteDiscountingScorer(this, fromQExpr(q.child) as RRCountExpr, q.delta!!, q.stats!!)
         is CountToScoreExpr -> TODO()
         is BoolToScoreExpr -> TODO()
         is CountToBoolExpr -> TODO()
@@ -124,11 +109,11 @@ abstract class RREnv {
     fun mean(vararg exprs: RRExpr) = RRMean(this, exprs.toList())
     fun sum(exprs: List<RRExpr>) = RRSum(this, exprs)
     fun sum(vararg exprs: RRExpr) = RRSum(this, exprs.toList())
-    fun term(term: String) = RRDirichletTerm(this, term)
+    fun term(term: String) = RRDirichletScorer(this, RRTermExpr(this, term, defaultField), defaultDirichletMu, getStats(term, defaultField))
     fun feature(name: String) = RRFeature(this, name)
 
-    fun ql(terms: List<String>) = mean(terms.map { RRDirichletTerm(this, it) })
-    fun bm25(terms: List<String>, field: String = defaultField) = sum(terms.map { RRBM25Term(this, it, field) })
+    fun ql(terms: List<String>) = mean(terms.map { this.term(it) })
+    fun bm25(terms: List<String>, field: String = defaultField) = sum(terms.map { RRBM25Scorer(this, RRTermExpr(this, it, field), defaultBM25b, defaultBM25k, getStats(it, defaultField)) })
     fun mult(vararg exprs: RRExpr) = RRMult(this, exprs.toList())
     fun const(x: Double) = RRConst(this, x)
 }

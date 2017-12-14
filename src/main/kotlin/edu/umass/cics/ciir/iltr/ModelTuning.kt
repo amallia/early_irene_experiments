@@ -2,6 +2,10 @@ package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.chai.mean
 import edu.umass.cics.ciir.chai.push
+import edu.umass.cics.ciir.irene.lang.BM25Expr
+import edu.umass.cics.ciir.irene.lang.DirQLExpr
+import edu.umass.cics.ciir.irene.lang.MeanExpr
+import edu.umass.cics.ciir.irene.lang.TextExpr
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.getEvaluators
 import org.lemurproject.galago.utility.Parameters
@@ -86,7 +90,8 @@ object BM25Tuning {
             val out = HashMap<BM25HyperParam, RRExpr>()
             ks.forEach { k ->
                 bs.forEach { b ->
-                    out[BM25HyperParam(b, k)] = env.mean(q.qterms.map { RRBM25Term(env, it, field, b, k) })
+                    val expr = MeanExpr(q.qterms.map { BM25Expr(TextExpr(it, field), b, k) })
+                    out[BM25HyperParam(b, k)] = expr.toRRExpr(env)
                 }
             }
             out
@@ -106,7 +111,8 @@ object TuneQL {
         kCrossFoldValidate(dsName) { env, q ->
             val out = HashMap<QLHyperParam, RRExpr>()
             mus.forEach { mu ->
-                out[QLHyperParam(mu)] = env.mean(q.qterms.map { RRDirichletTerm(env, it, field, mu) })
+                val expr = MeanExpr(q.qterms.map { DirQLExpr(TextExpr(it, field), mu) })
+                out[QLHyperParam(mu)] = expr.toRRExpr(env)
             }
             out
         }

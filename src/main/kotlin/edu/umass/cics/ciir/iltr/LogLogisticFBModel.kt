@@ -3,6 +3,8 @@ package edu.umass.cics.ciir.iltr
 import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.irene.lang.AndExpr
+import edu.umass.cics.ciir.irene.lang.DirQLExpr
+import edu.umass.cics.ciir.irene.lang.SumExpr
 import edu.umass.cics.ciir.irene.lang.TextExpr
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.getEvaluators
@@ -112,8 +114,9 @@ fun main(args: Array<String>) {
                         .forEach { numT ->
                             val hp = params.copy(fbTerms = numT)
                             val bestK = wts.sorted().take(hp.fbTerms).associate { Pair(it.term, it.score) }.normalize()
-                            val expr = env.sum(bestK.map { (term, score) -> RRDirichletTerm(env, term).weighted(score) })
-                            expQueries.put(hp, expr)
+
+                            val expr = SumExpr(bestK.map { (term,score) -> DirQLExpr(TextExpr(term)).weighted(score) })
+                            expQueries.put(hp, expr.toRRExpr(env))
                         }
             }
 

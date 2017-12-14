@@ -1,6 +1,5 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.chai.ApproxLog
 import edu.umass.cics.ciir.chai.Fraction
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.irene.lang.*
@@ -117,7 +116,6 @@ private class CachedQueryEvalNode(override val child: QueryEvalNode) : SingleChi
 
 interface CountEvalNode : QueryEvalNode {
     override fun score() = count().toDouble()
-    fun getCountStats(): CountStats
     fun length(): Int
 }
 interface PositionsEvalNode : CountEvalNode {
@@ -129,7 +127,6 @@ class ConstCountEvalNode(val count: Int, val lengths: CountEvalNode) : LeafEvalN
     override fun matches(): Boolean = lengths.matches()
     override fun explain(): Explanation = Explanation.match(count.toFloat(), "ConstCountEvalNode", listOf(lengths.explain()))
     override fun estimateDF(): Long = lengths.estimateDF()
-    override fun getCountStats(): CountStats = lengths.getCountStats()
     override fun length(): Int = lengths.length()
 }
 
@@ -324,7 +321,8 @@ internal class WeightedSumEval(children: List<QueryEvalNode>, val weights: Doubl
 internal class WeightedLogSumEval(children: List<QueryEvalNode>, val weights: DoubleArray) : OrEval<QueryEvalNode>(children) {
     override fun score(): Double {
         return (0 until children.size).sumByDouble {
-            weights[it] * ApproxLog.faster_log(children[it].score())
+            //weights[it] * ApproxLog.faster_log(children[it].score())
+            weights[it] * Math.log(children[it].score())
         }
     }
 
@@ -380,8 +378,7 @@ internal class WeightedEval(override val child: QueryEvalNode, val weight: Doubl
 /**
  * Created from [BM25Expr] via [exprToEval]
  */
-internal class BM25ScoringEval(override val child: CountEvalNode, val b: Double, val k: Double): SingleChildEval<CountEvalNode>() {
-    private val stats = child.getCountStats()
+internal class BM25ScoringEval(override val child: CountEvalNode, val b: Double, val k: Double, val stats: CountStats): SingleChildEval<CountEvalNode>() {
     private val avgDL = stats.avgDL()
     private val idf = Math.log(stats.dc / (stats.df + 0.5))
 
@@ -422,8 +419,7 @@ internal class BM25ScoringEval(override val child: CountEvalNode, val b: Double,
  * 2 additions, 1 division, and a LOG.
  *
  */
-internal class BM25InnerScoringEval(override val child: CountEvalNode, val b: Double, val k: Double): SingleChildEval<CountEvalNode>() {
-    private val stats = child.getCountStats()
+internal class BM25InnerScoringEval(override val child: CountEvalNode, val b: Double, val k: Double, val stats: CountStats): SingleChildEval<CountEvalNode>() {
     private val avgDL = stats.avgDL()
 
     //val num = count * (k+1.0)
@@ -460,12 +456,10 @@ internal class BM25InnerScoringEval(override val child: CountEvalNode, val b: Do
 /**
  * Created from [DirQLExpr] via [exprToEval]
  */
-internal class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
-    val background = mu * child.getCountStats().nonzeroCountProbability()
+internal class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double, val stats: CountStats) : SingleChildEval<CountEvalNode>() {
+    val background = mu * stats.nonzeroCountProbability()
     init {
-        assert(java.lang.Double.isFinite(background)) {
-            "child.stats=${child.getCountStats()}"
-        }
+        assert(java.lang.Double.isFinite(background)) { "stats=$stats" }
     }
     override fun score(): Double {
         val c = child.count().toDouble()
@@ -477,9 +471,9 @@ internal class DirichletSmoothingEval(override val child: CountEvalNode, val mu:
         val c = child.count()
         val length = child.length()
         if (c > 0) {
-            return Explanation.match(score().toFloat(), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. ${child.getCountStats()}", listOf(child.explain()))
+            return Explanation.match(score().toFloat(), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. $stats", listOf(child.explain()))
         } else {
-            return Explanation.noMatch("score=${score()} or $c/$length with mu=$mu, bg=$background dirichlet smoothing ${child.getCountStats()} ${child.getCountStats().nonzeroCountProbability()}.", listOf(child.explain()))
+            return Explanation.noMatch("score=${score()} or $c/$length with mu=$mu, bg=$background dirichlet smoothing $stats ${stats.nonzeroCountProbability()}.", listOf(child.explain()))
         }
     }
 }
@@ -487,12 +481,10 @@ internal class DirichletSmoothingEval(override val child: CountEvalNode, val mu:
 /**
  * Created from [DirQLExpr] via [exprToEval] sometimes, inside of [WeightedLogSumEval]
  */
-internal class NoLogDirichletSmoothingEval(override val child: CountEvalNode, val mu: Double) : SingleChildEval<CountEvalNode>() {
-    val background = mu * child.getCountStats().nonzeroCountProbability()
+internal class NoLogDirichletSmoothingEval(override val child: CountEvalNode, val mu: Double, val stats: CountStats) : SingleChildEval<CountEvalNode>() {
+    val background = mu * stats.nonzeroCountProbability()
     init {
-        assert(java.lang.Double.isFinite(background)) {
-            "child.stats=${child.getCountStats()}"
-        }
+        assert(java.lang.Double.isFinite(background)) { "stats=$stats" }
     }
     override fun score(): Double {
         val c = child.count().toDouble()
@@ -504,9 +496,9 @@ internal class NoLogDirichletSmoothingEval(override val child: CountEvalNode, va
         val c = child.count()
         val length = child.length()
         if (c > 0) {
-            return Explanation.match(score().toFloat(), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. ${child.getCountStats()}", listOf(child.explain()))
+            return Explanation.match(score().toFloat(), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. ${stats}", listOf(child.explain()))
         } else {
-            return Explanation.noMatch("score=${score()} or $c/$length with mu=$mu, bg=$background dirichlet smoothing ${child.getCountStats()} ${child.getCountStats().nonzeroCountProbability()}.", listOf(child.explain()))
+            return Explanation.noMatch("score=${score()} or $c/$length with mu=$mu, bg=$background dirichlet smoothing $stats ${stats.nonzeroCountProbability()}.", listOf(child.explain()))
         }
     }
 

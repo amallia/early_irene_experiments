@@ -2,8 +2,9 @@ package edu.umass.cics.ciir.iltr
 
 import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.chai.mean
-import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.CountStats
 import edu.umass.cics.ciir.irene.lang.QExpr
+import edu.umass.cics.ciir.irene.lazyIntMin
 import edu.umass.cics.ciir.irene.scoring.PositionsIter
 import edu.umass.cics.ciir.irene.scoring.countOrderedWindows
 import edu.umass.cics.ciir.irene.scoring.countUnorderedWindows
@@ -70,9 +71,8 @@ class RRMult(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
 }
 
 sealed class RRLeafExpr(env: RREnv) : RRExpr(env)
-fun RRDirichletTerm(env: RREnv, term: String, field: String = env.defaultField, mu: Double = env.defaultDirichletMu) = RRDirichletScorer(env, RRTermExpr(env, term, field), mu)
-class RRDirichletScorer(env: RREnv, val term: RRCountExpr, var mu: Double = env.defaultDirichletMu) : RRLeafExpr(env) {
-    private val bg = mu * term.stats.nonzeroCountProbability()
+class RRDirichletScorer(env: RREnv, val term: RRCountExpr, var mu: Double = env.defaultDirichletMu, val stats: CountStats) : RRLeafExpr(env) {
+    private val bg = mu * stats.nonzeroCountProbability()
     override fun eval(doc: LTRDoc): Double {
         val count = term.count(doc).toDouble()
         val length = term.length(doc) + mu
@@ -80,9 +80,8 @@ class RRDirichletScorer(env: RREnv, val term: RRCountExpr, var mu: Double = env.
     }
     override fun toString(): String = "RRDirichletScorer($term)"
 }
-fun RRAbsoluteDiscounting(env: RREnv, term: String, field: String = env.defaultField, delta: Double = env.absoluteDiscountingDelta) = RRAbsoluteDiscountingScorer(env, RRTermExpr(env, term, field), delta)
-class RRAbsoluteDiscountingScorer(env: RREnv, val term: RRCountExpr, var delta: Double = env.absoluteDiscountingDelta) : RRLeafExpr(env) {
-    val bg = term.stats.nonzeroCountProbability()
+class RRAbsoluteDiscountingScorer(env: RREnv, val term: RRCountExpr, var delta: Double = env.absoluteDiscountingDelta, val stats: CountStats) : RRLeafExpr(env) {
+    val bg = stats.nonzeroCountProbability()
     override fun eval(doc: LTRDoc): Double {
         val field = doc.field(term.field)
         val length = Math.max(1.0, field.length.toDouble())
@@ -105,8 +104,7 @@ class RRConst(env: RREnv, val value: Double) : RRLeafExpr(env) {
 }
 data class RRTermCacheKey(val term: String, val field: String, val doc: String)
 
-sealed class RRCountExpr(env: RREnv, val field: String, val css: CountStatsStrategy) : RRExpr(env) {
-    val stats: CountStats get() = css.get()
+sealed class RRCountExpr(env: RREnv, val field: String) : RRExpr(env) {
     override fun eval(doc: LTRDoc): Double = error("RRCountExpr has no inherent score.")
     abstract fun count(doc: LTRDoc) : Int
     abstract fun positions(doc: LTRDoc): PositionsIter
@@ -114,13 +112,12 @@ sealed class RRCountExpr(env: RREnv, val field: String, val css: CountStatsStrat
     fun field(doc: LTRDoc) = doc.field(field)
 }
 
-class RRTermExpr(env: RREnv, val term: String, field: String, stats: CountStatsStrategy): RRCountExpr(env, field, stats) {
+class RRTermExpr(env: RREnv, val term: String, field: String): RRCountExpr(env, field) {
     companion object {
         val posCache = Caffeine.newBuilder().maximumSize(1000*20).build<RRTermCacheKey, IntArray>()
     }
-    constructor(env: RREnv, term: String, field: String = env.defaultField) : this(env, term, field, ExactEnvStats(env, term, field))
 
-    override fun toString() = "$term.$field $stats"
+    override fun toString() = "$term.$field"
     override fun count(doc: LTRDoc) = doc.field(field).count(term)
     override fun positions(doc: LTRDoc): PositionsIter {
         val positions = posCache.get(RRTermCacheKey(term, field, doc.name)) { (mt, mf, _) ->
@@ -133,11 +130,9 @@ class RRTermExpr(env: RREnv, val term: String, field: String, stats: CountStatsS
     }
 }
 
-fun RRBM25Term(env: RREnv, term: String, field: String = env.defaultField, b: Double = env.defaultBM25b, k: Double = env.defaultBM25k) = RRBM25Scorer(env, RRTermExpr(env, term, field), b, k)
-
-class RRBM25Scorer(env: RREnv, val term: RRCountExpr, val b: Double = env.defaultBM25b, val k: Double = env.defaultBM25k) : RRLeafExpr(env) {
-    private val avgDL = term.stats.avgDL();
-    private val idf = Math.log(term.stats.dc / (term.stats.df + 0.5))
+class RRBM25Scorer(env: RREnv, val term: RRCountExpr, val b: Double = env.defaultBM25b, val k: Double = env.defaultBM25k, val stats: CountStats) : RRLeafExpr(env) {
+    private val avgDL = stats.avgDL();
+    private val idf = Math.log(stats.dc / (stats.df + 0.5))
 
     override fun eval(doc: LTRDoc): Double {
         val count = term.count(doc).toDouble()
@@ -212,7 +207,7 @@ class RRLogLogisticTFScore(env: RREnv, val term: String, val field: String = env
     }
 }
 
-class RROrderedWindow(env: RREnv, val terms: List<RRCountExpr>, val step: Int = 1, stats: CountStatsStrategy) : RRCountExpr(env, terms.map { it.field }.first(), stats) {
+class RROrderedWindow(env: RREnv, val terms: List<RRCountExpr>, val step: Int = 1) : RRCountExpr(env, terms.map { it.field }.first()) {
     init {
         assert(terms.map { it.field }.toSet().size == 1) { "Should only be a single field! ${terms}" }
     }
@@ -223,7 +218,7 @@ class RROrderedWindow(env: RREnv, val terms: List<RRCountExpr>, val step: Int = 
     }
     override fun positions(doc: LTRDoc): PositionsIter = error("Not implemented for now.")
 }
-class RRUnorderedWindow(env: RREnv, val terms: List<RRCountExpr>, val window: Int = 8, stats: CountStatsStrategy) : RRCountExpr(env, terms.map { it.field }.first(), stats) {
+class RRUnorderedWindow(env: RREnv, val terms: List<RRCountExpr>, val window: Int = 8) : RRCountExpr(env, terms.map { it.field }.first()) {
     init {
         assert(terms.map { it.field }.toSet().size == 1) { "Should only be a single field! ${terms}" }
     }

@@ -1,9 +1,5 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.irene.CountStatsStrategy
-import edu.umass.cics.ciir.irene.LazyCountStats
-import edu.umass.cics.ciir.irene.MinEstimatedCountStats
-import edu.umass.cics.ciir.irene.ProbEstimatedCountStats
 import edu.umass.cics.ciir.irene.lang.*
 import gnu.trove.set.hash.TIntHashSet
 import org.apache.lucene.index.Term
@@ -14,7 +10,7 @@ import org.apache.lucene.index.Term
  */
 fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is TextExpr -> try {
-        ctx.create(Term(q.countsField(), q.text), q.needed, q.stats ?: error("Missed computeQExprStats pass."))
+        ctx.create(Term(q.countsField(), q.text), q.needed)
     } catch (e: Exception) {
         println(q)
         throw e
@@ -30,7 +26,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
                     val d = c as DirQLExpr
                     NoLogDirichletSmoothingEval(
                             exprToEval(c.child, ctx) as CountEvalNode,
-                            d.mu!!)
+                            d.mu!!, c.stats!!)
                 },
                 q.weights.map { it }.toDoubleArray())
     } else {
@@ -41,30 +37,32 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is MultExpr -> TODO()
     is MaxExpr -> MaxEval(q.children.map { exprToEval(it, ctx) })
     is WeightExpr -> WeightedEval(exprToEval(q.child, ctx), q.weight)
-    is DirQLExpr -> DirichletSmoothingEval(exprToEval(q.child, ctx) as CountEvalNode, q.mu!!)
+    is DirQLExpr -> {
+        try {
+            DirichletSmoothingEval(exprToEval(q.child, ctx) as CountEvalNode, q.mu!!, q.stats!!)
+        } catch (npe: KotlinNullPointerException) {
+            println(q)
+            throw npe
+        }
+    }
     is BM25Expr -> if (q.extractedIDF) {
-        BM25InnerScoringEval(exprToEval(q.child, ctx) as CountEvalNode, q.b!!, q.k!!)
+        BM25InnerScoringEval(exprToEval(q.child, ctx) as CountEvalNode, q.b!!, q.k!!, q.stats!!)
     } else {
-        BM25ScoringEval(exprToEval(q.child, ctx) as CountEvalNode, q.b!!, q.k!!)
+        BM25ScoringEval(exprToEval(q.child, ctx) as CountEvalNode, q.b!!, q.k!!, q.stats!!)
     }
     is CountToScoreExpr -> TODO()
     is BoolToScoreExpr -> TODO()
     is CountToBoolExpr -> TODO()
     is RequireExpr -> RequireEval(exprToEval(q.cond, ctx), exprToEval(q.value, ctx))
     is OrderedWindowExpr -> OrderedWindow(
-            computeCountStats(q, ctx),
             q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.step)
     is UnorderedWindowExpr -> UnorderedWindow(
-            computeCountStats(q, ctx),
             q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.width)
     is ProxExpr -> ProxWindow(
-            computeCountStats(q, ctx),
             q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.width)
     is SmallerCountExpr -> SmallerCountWindow(
-            computeCountStats(q, ctx),
             q.children.map { exprToEval(it, ctx) as CountEvalNode })
     is UnorderedWindowCeilingExpr -> UnorderedWindowCeiling(
-            computeCountStats(q, ctx),
             q.width,
             q.children.map { exprToEval(it, ctx) as CountEvalNode })
     is ConstScoreExpr -> ConstEvalNode(q.x)
@@ -72,42 +70,10 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is ConstBoolExpr -> if(q.x) ConstTrueNode(ctx.numDocs()) else ConstEvalNode(0)
     is AbsoluteDiscountingQLExpr -> error("No efficient method to implement AbsoluteDiscountingQLExpr in Irene backend; needs numUniqWords per document.")
     is MultiExpr -> MultiEvalNode(q.children.map { exprToEval(it, ctx) }, q.names)
-    is LengthsExpr -> ctx.createLengths(q.statsField!!, q.stats!!)
+    is LengthsExpr -> ctx.createLengths(q.statsField ?: error("statsField not set"), q.stats ?: error("stats not set"))
     NeverMatchLeaf -> FixedMatchEvalNode(false, 0)
     AlwaysMatchLeaf -> FixedMatchEvalNode(true, ctx.numDocs().toLong())
     is WhitelistMatchExpr -> WhitelistMatchEvalNode(TIntHashSet(ctx.selectRelativeDocIds(q.docIdentifiers!!)))
     is CountEqualsExpr -> CountEqualsNode(q.target, exprToEval(q.child, ctx) as CountEvalNode)
-}
-
-fun approxStats(q: QExpr, method: String): CountStatsStrategy {
-    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is SmallerCountExpr || q is UnorderedWindowCeilingExpr || q is ProxExpr) {
-        val cstats = q.children.map { c ->
-            if (c is TextExpr) {
-                c.stats!!
-            } else if (c is ConstCountExpr) {
-                c.lengths.stats!!
-            } else if (c is LengthsExpr) {
-                c.stats!!
-            } else {
-                error("Can't estimate stats with non-TextExpr children. $c")
-            }
-        }
-        return when(method) {
-            "min" -> MinEstimatedCountStats(q.deepCopy(), cstats)
-            "prob" -> ProbEstimatedCountStats(q.deepCopy(), cstats)
-            else -> TODO("estimateStats strategy = $method")
-        }
-    } else {
-        TODO("approxStats($q)")
-    }
-}
-
-fun computeCountStats(q: QExpr, ctx: IQContext): CountStatsStrategy {
-    if (q is OrderedWindowExpr || q is UnorderedWindowExpr || q is SmallerCountExpr || q is UnorderedWindowCeilingExpr || q is ProxExpr) {
-        val method = ctx.env.estimateStats ?: return LazyCountStats(q.deepCopy(), ctx.env)
-        return approxStats(q, method)
-    } else {
-        TODO("computeCountStats($q)")
-    }
 }
 
