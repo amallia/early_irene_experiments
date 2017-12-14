@@ -242,3 +242,41 @@ fun applyEnvironment(env: RREnv, root: QExpr) {
     }
 }
 
+/** This function takes expressions that combine multiple children, e.g., [OpExpr] subclasses like [MaxExpr] and returns only the child if it has but a single child. */
+fun reduceSingleChildren(q: QExpr): QExpr = when(q) {
+    is OrExpr,
+    is CombineExpr,
+    is MultExpr,
+    is MaxExpr,
+    is SmallerCountExpr,
+    is UnorderedWindowCeilingExpr,
+    is OrderedWindowExpr,
+    is UnorderedWindowExpr,
+    is ProxExpr,
+    is AndExpr,
+    is SynonymExpr -> if (q.children.size == 1) {
+        q.trySingleChild
+    } else {
+        q
+    }
+    is MultiExpr,
+    is ConstScoreExpr,
+    is ConstCountExpr,
+    is ConstBoolExpr,
+    AlwaysMatchLeaf,
+    NeverMatchLeaf,
+    is WhitelistMatchExpr,
+    is LengthsExpr,
+    is TextExpr,
+    is LuceneExpr,
+    is WeightExpr,
+    is CountEqualsExpr,
+    is DirQLExpr,
+    is AbsoluteDiscountingQLExpr,
+    is BM25Expr,
+    is CountToScoreExpr,
+    is BoolToScoreExpr,
+    is CountToBoolExpr,
+    is RequireExpr -> q
+}
+

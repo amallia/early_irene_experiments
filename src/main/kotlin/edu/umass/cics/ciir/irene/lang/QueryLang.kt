@@ -46,6 +46,11 @@ sealed class QExpr {
         children.forEach { it.visit(each) }
     }
 
+    fun visitWithDepth(each: (QExpr, Int)->Unit, depth: Int = 0) {
+        each(this, depth)
+        children.forEach { it.visitWithDepth(each, depth+1) }
+    }
+
     fun getStatsFields(): Set<String> {
         val out = HashSet<String>()
         visit { c ->
@@ -133,7 +138,7 @@ data class LengthsExpr(var statsField: String?, var stats: CountStats? = null) :
 }
 sealed class OpExpr : QExpr() {
     abstract override var children: List<QExpr>
-    fun mapChildren(mapper: (QExpr)->QExpr): List<QExpr> = children.map { mapper(it) }
+    fun mapChildren(mapper: (QExpr)->QExpr): List<QExpr> = children.map { mapper(it.map(mapper)) }
 }
 sealed class SingleChildExpr : QExpr() {
     abstract var child: QExpr
@@ -194,7 +199,7 @@ data class CombineExpr(override var children: List<QExpr>, var weights: List<Dou
     override fun map(mapper: (QExpr) -> QExpr): QExpr {
         val newChildren = mapChildren(mapper)
         assert(newChildren.size == weights.size)
-        return CombineExpr(newChildren, weights)
+        return CombineExpr(newChildren, weights.toList())
     }
 }
 data class MultExpr(override var children: List<QExpr>) : OpExpr() {
@@ -231,21 +236,21 @@ data class ProxExpr(override var children: List<QExpr>, var width: Int=8): OpExp
 }
 
 data class WeightExpr(override var child: QExpr, var weight: Double = 1.0) : SingleChildExpr() {
-    override fun map(mapper: (QExpr) -> QExpr): QExpr = WeightExpr(mapper(child), weight)
+    override fun map(mapper: (QExpr) -> QExpr): QExpr = WeightExpr(mapper(child.map(mapper)), weight)
 }
 
 data class CountEqualsExpr(override var child: QExpr, var target: Int): SingleChildExpr() {
-    override fun map(mapper: (QExpr) -> QExpr): QExpr = CountEqualsExpr(mapper(child), target)
+    override fun map(mapper: (QExpr) -> QExpr): QExpr = CountEqualsExpr(mapper(child.map(mapper)), target)
 }
 
 data class DirQLExpr(override var child: QExpr, var mu: Double? = null): SingleChildExpr() {
-    override fun map(mapper: (QExpr) -> QExpr): QExpr = DirQLExpr(mapper(child), mu)
+    override fun map(mapper: (QExpr) -> QExpr): QExpr = DirQLExpr(mapper(child.map(mapper)), mu)
 }
 data class AbsoluteDiscountingQLExpr(override var child: QExpr, var delta: Double? = null): SingleChildExpr() {
-    override fun map(mapper: (QExpr) -> QExpr): QExpr = AbsoluteDiscountingQLExpr(mapper(child), delta)
+    override fun map(mapper: (QExpr) -> QExpr): QExpr = AbsoluteDiscountingQLExpr(mapper(child.map(mapper)), delta)
 }
 data class BM25Expr(override var child: QExpr, var b: Double? = null, var k: Double? = null, var extractedIDF: Boolean = false): SingleChildExpr() {
-    override fun map(mapper: (QExpr) -> QExpr): QExpr = BM25Expr(mapper(child), b, k, extractedIDF)
+    override fun map(mapper: (QExpr) -> QExpr): QExpr = BM25Expr(mapper(child.map(mapper)), b, k, extractedIDF)
 
     override fun applyEnvironment(env: RREnv) {
         if (b == null) b = env.defaultBM25b
@@ -253,12 +258,12 @@ data class BM25Expr(override var child: QExpr, var b: Double? = null, var k: Dou
     }
 }
 data class CountToScoreExpr(override var child: QExpr): SingleChildExpr() {
-    override fun map(mapper: (QExpr) -> QExpr): QExpr = CountToScoreExpr(mapper(child))
+    override fun map(mapper: (QExpr) -> QExpr): QExpr = CountToScoreExpr(mapper(child.map(mapper)))
 }
 data class BoolToScoreExpr(override var child: QExpr, var trueScore: Double=1.0, var falseScore: Double=0.0): SingleChildExpr() {
-    override fun map(mapper: (QExpr) -> QExpr): QExpr = BoolToScoreExpr(mapper(child), trueScore, falseScore)
+    override fun map(mapper: (QExpr) -> QExpr): QExpr = BoolToScoreExpr(mapper(child.map(mapper)), trueScore, falseScore)
 }
 data class CountToBoolExpr(override var child: QExpr, var gt: Int = 0): SingleChildExpr() {
-    override fun map(mapper: (QExpr) -> QExpr): QExpr = CountToBoolExpr(mapper(child), gt)
+    override fun map(mapper: (QExpr) -> QExpr): QExpr = CountToBoolExpr(mapper(child.map(mapper)), gt)
 }
 

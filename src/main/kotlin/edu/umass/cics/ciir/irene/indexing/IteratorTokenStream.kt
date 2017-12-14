@@ -5,6 +5,7 @@ import edu.umass.cics.ciir.irene.LDoc
 import edu.umass.cics.ciir.irene.tokenize
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.TokenStream
+import org.apache.lucene.analysis.shingle.ShingleFilter
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute
 import org.apache.lucene.analysis.tokenattributes.OffsetAttribute
 import org.apache.lucene.document.*
@@ -97,6 +98,21 @@ class LDocBuilder(val params: IndexParams) {
         fields[field] = keep
     }
 
+    fun setEfficientTextField(field: String, text: String, stored: Boolean) {
+        if (fields.containsKey(field)) {
+            error("Already specified $field for this document $fields.")
+        }
+        val terms = analyzer.tokenize(field, text)
+        val length = terms.size
+        val uniqLength = terms.toSet().size
+
+        val keep = ArrayList<IndexableField>()
+        keep.add(AlreadyTokenizedEfficientCountField(field, text, terms, stored))
+        keep.add(NumericDocValuesField("lengths:$field", length.toLong()))
+        keep.add(NumericDocValuesField("unique:$field", uniqLength.toLong()))
+        fields[field] = keep
+    }
+
     fun finish(): LDoc {
         if (!fields.containsKey(params.idFieldName)) {
             error("Generated document without an identifier field: ${params.idFieldName}!")
@@ -144,6 +160,44 @@ class LDocBuilder(val params: IndexParams) {
 
     }
 
+}
+
+class AlreadyTokenizedEfficientCountField(
+        val field: String,
+        val text: String,
+        val terms: List<String>,
+        val stored: Boolean
+) : IndexableField {
+    override fun name(): String = field
+    override fun stringValue(): String? = if (stored) { text } else null
+    override fun numericValue(): Number? = null
+    override fun binaryValue(): BytesRef? = null
+    override fun readerValue(): Reader? = null
+    override fun fieldType(): IndexableFieldType = if (stored) {
+        storedType
+    } else {
+        notStoredType
+    }
+    override fun tokenStream(analyzer: Analyzer?, reuse: TokenStream?): TokenStream {
+        val ts = ListTokenStream(terms)
+        // output bigrams as well:
+        val sf = ShingleFilter(ts, 2)
+        return sf
+    }
+
+    companion object {
+        val notStoredType = FieldType().apply {
+            setIndexOptions(IndexOptions.DOCS_AND_FREQS);
+            setTokenized(true);
+            freeze();
+        }
+        val storedType = FieldType().apply {
+            setIndexOptions(IndexOptions.DOCS_AND_FREQS);
+            setTokenized(true);
+            setStored(true);
+            freeze();
+        }
+    }
 }
 
 class AlreadyTokenizedTextField(

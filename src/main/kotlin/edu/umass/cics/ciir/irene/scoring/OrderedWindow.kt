@@ -172,6 +172,9 @@ abstract class CountWindow(val stats: CountStatsStrategy, children: List<Positio
     override fun length(): Int = children[0].length()
 }
 
+/**
+ * [OrderedWindowExpr]
+ */
 class OrderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val step: Int) : CountWindow(stats, children) {
     override fun compute(iters: List<PositionsIter>): Int = countOrderedWindows(iters, step)
 

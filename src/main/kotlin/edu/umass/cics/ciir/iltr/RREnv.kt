@@ -42,6 +42,7 @@ abstract class RREnv {
 
     fun prepare(q: QExpr): QExpr {
         val pq = simplify(q)
+                .map { reduceSingleChildren(it) }
         applyEnvironment(this, pq)
         try {
             analyzeDataNeededRecursive(pq)
