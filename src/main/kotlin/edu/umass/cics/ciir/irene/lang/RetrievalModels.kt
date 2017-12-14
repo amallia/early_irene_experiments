@@ -38,7 +38,16 @@ fun UnigramRetrievalModel(terms: List<String>, scorer: (TextExpr)-> QExpr, field
     return MeanExpr(terms.map { scorer(TextExpr(it, field, statsField)) })
 }
 
-fun SequentialDependenceModel(terms: List<String>, field: String?=null, statsField: String?=null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, fullProx: Double? = null, fullProxWidth:Int=12, makeScorer: (QExpr)-> QExpr = { DirQLExpr(it) }): QExpr {
+fun SequentialDependenceModel(terms: List<String>,
+                              field: String?=null,
+                              statsField: String?=null,
+                              stopwords: Set<String> =emptySet(),
+                              uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05,
+                              odStep: Int=1, uwWidth:Int=8,
+                              fullProx: Double? = null, fullProxWidth:Int=12,
+                              makeScorer: (QExpr)-> QExpr = { DirQLExpr(it) },
+        // SumExpr to match Galago, probably want MeanExpr if you're nesting...
+                              outerExpr: (List<QExpr>) -> QExpr = { SumExpr(it) }): QExpr {
     if (terms.isEmpty()) throw IllegalStateException("Empty SDM")
     if (terms.size == 1) {
         return makeScorer(TextExpr(terms[0], field, statsField))
@@ -83,8 +92,7 @@ fun SequentialDependenceModel(terms: List<String>, field: String?=null, statsFie
         exprs.add(makeScorer(UnorderedWindowExpr(fullProxTerms.map { TextExpr(it, field, statsField) }, fullProxWidth)).weighted(fullProx))
     }
 
-    // SumExpr to match Galago, probably want MeanExpr if you're nesting...
-    return SumExpr(exprs)
+    return outerExpr(exprs)
 }
 
 fun FullDependenceModel(terms: List<String>, field: String?=null, statsField: String? = null, stopwords: Set<String> =emptySet(), uniW: Double = 0.8, odW: Double = 0.15, uwW: Double = 0.05, odStep: Int=1, uwWidth:Int=8, fullProx: Double? = null, fullProxWidth:Int=12, makeScorer: (QExpr)-> QExpr = { DirQLExpr(it) }): QExpr {

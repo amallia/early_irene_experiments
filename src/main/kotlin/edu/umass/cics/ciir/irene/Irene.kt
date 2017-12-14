@@ -208,7 +208,7 @@ class IreneIndex(val io: RefCountedIO, val params: IndexParams) : IIndex {
         return response
     }
 
-    fun terms(doc: Int, field: String): List<String> {
+    fun terms(doc: Int, field: String = defaultField): List<String> {
         val text = getField(doc, field)?.stringValue() ?: return emptyList()
         return tokenize(text, field)
     }

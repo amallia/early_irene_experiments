@@ -169,11 +169,11 @@ internal class CountEqualsNode(val count: Int, override val child: QueryEvalNode
 /**
  * Created from [RequireExpr] via [exprToEval]
  */
-internal class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode, val miss: Double=-Double.MAX_VALUE): QueryEvalNode {
+internal class RequireEval(val cond: QueryEvalNode, val score: QueryEvalNode): QueryEvalNode {
     lateinit var env: ScoringEnv
     override val children: List<QueryEvalNode> = listOf(cond, score)
-    override fun score(): Double = if (cond.matches()) { score.score() } else miss
-    override fun count(): Int = if (cond.matches()) { score.count() } else 0
+    override fun score(): Double = score.score()
+    override fun count(): Int = score.count()
     /**
      * Note: Galago semantics, don't look at whether score matches.
      * @see createOptimizedMovementExpr

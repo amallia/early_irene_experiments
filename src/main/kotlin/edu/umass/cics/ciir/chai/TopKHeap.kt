@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.chai
 
+import gnu.trove.map.hash.TObjectDoubleHashMap
 import java.util.*
 
 /**
@@ -146,6 +147,22 @@ class TopKHeap<T: Any>(internal val maxSize: Int, internal val cmp: Comparator<T
 
 interface ScoredForHeap {
     val score: Float
+}
+data class ScoredWord(override val score: Float, val word: String): ScoredForHeap, Comparable<ScoredWord> {
+    override fun compareTo(other: ScoredWord): Int {
+        val cmp = score.compareTo(other.score)
+        if (cmp != 0) return cmp
+        return word.compareTo(other.word)
+    }
+}
+
+fun TObjectDoubleHashMap<String>.take(k: Int): List<ScoredWord> {
+    val heap = ScoringHeap<ScoredWord>(k)
+    this.forEachEntry { term, weight ->
+        val fw = weight.toFloat()
+        heap.offer(fw, {ScoredWord(fw, term)})
+    }
+    return heap.sorted
 }
 
 class ScoringHeap<T: ScoredForHeap>(val maxSize: Int): kotlin.collections.AbstractList<T>() {

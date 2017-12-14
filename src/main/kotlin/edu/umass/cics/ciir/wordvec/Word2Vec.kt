@@ -161,8 +161,6 @@ fun main(args: Array<String>) {
     println(info)
 }
 
-data class ScoredWord(override val score: Float, val word: String): ScoredForHeap { }
-
 object ExactWordProb {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)

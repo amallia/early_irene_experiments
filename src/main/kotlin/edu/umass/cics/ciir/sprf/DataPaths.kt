@@ -44,7 +44,7 @@ abstract class IRDataset {
     open fun getBM25K(): Double? = null
 
     abstract fun getIndexParams(): IndexParams
-    fun getIreneIndex(): IreneIndex = IreneIndex(getIndexParams())
+    open fun getIreneIndex(): IreneIndex = IreneIndex(getIndexParams())
 
     fun getIndex(): LocalRetrieval = getIndex(Parameters.create())
     fun getIndex(p: Parameters): LocalRetrieval = LocalRetrieval(getIndexFile().absolutePath, p)
@@ -331,7 +331,11 @@ class TrecCarTest200 : IRDataset() {
         else -> notImpl(host)
     })
     val tcd: TrecCarDataset by lazy { loadTrecCarDataset(File(getBaseDir(), "test200/train.test200.fold0.cbor.hierarchical.qrels")) }
-    override fun getIndexParams(): IndexParams = getTrecCarIndexParams(File(getBaseDir(), "paragraphs.irene2"))
+
+    override fun getIreneIndex(): IreneIndex = super.getIreneIndex().apply {
+        env.indexedBigrams = true
+    }
+    override fun getIndexParams(): IndexParams = getTrecCarIndexParams(File(getBaseDir(), "pcorpus.irene2"))
     override fun getIndexFile(): File = error("No galago.")
     override fun getTitleQueryFile(): File = error("No title queries.")
     override fun getDescQueryFile(): File = error("No desc queries.")
@@ -358,6 +362,7 @@ object DataPaths {
     val DBPE: WikiSource = DBPE()
 
     fun get(name: String): IRDataset = when(name) {
+        "wiki" -> WikiSource()
         "nyt-cite" -> NYTWikiCite
         "trec-core" -> TrecCoreNIST
         "trec-car-test200", "trec-car" -> TrecCarT200
