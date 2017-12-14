@@ -180,6 +180,8 @@ object EstablishRecallBoost {
 
         queries.forEach { qid, qtext ->
             val judgments = qrels[qid] ?: return@forEach
+            if (judgments.wrapped.values.count { it > 0 } == 0) return@forEach
+
             val qterms = corpus.tokenize(qtext)
             println("$qid $qtext $qterms")
 
