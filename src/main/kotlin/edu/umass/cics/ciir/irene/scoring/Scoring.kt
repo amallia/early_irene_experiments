@@ -337,6 +337,10 @@ internal class WeightedLogSumEval(children: List<QueryEvalNode>, val weights: Do
         return Explanation.noMatch("$className.Miss ${weights.toList()}", expls)
     }
 
+    override fun toString(): String {
+        return children.zip(weights.toList()).joinToString(prefix="(", separator=" + ", postfix=")") { (c,w) -> "log($w * $c)" }
+    }
+
     override fun count(): Int = error("Calling counts on WeightedLogSumEval is nonsense.")
     init { assert(weights.size == children.size, {"Weights provided to WeightedLogSumEval must exist for all children."}) }
 }
@@ -505,6 +509,10 @@ internal class NoLogDirichletSmoothingEval(override val child: CountEvalNode, va
         } else {
             return Explanation.noMatch("score=${score()} or $c/$length with mu=$mu, bg=$background dirichlet smoothing ${child.getCountStats()} ${child.getCountStats().nonzeroCountProbability()}.", listOf(child.explain()))
         }
+    }
+
+    override fun toString(): String {
+        return "dir($child)"
     }
 }
 

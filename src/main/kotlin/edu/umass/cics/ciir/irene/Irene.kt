@@ -122,6 +122,11 @@ interface IIndex : Closeable {
     fun toTextExprs(text: String, field: String = defaultField): List<TextExpr> = tokenize(text, field).map { TextExpr(it, field) }
     fun search(q: QExpr, n: Int): TopDocs
     fun documentById(id: String): Int?
+    fun explain(q: QExpr, doc: String): Explanation? {
+        val internal = documentById(doc) ?: return null
+        return explain(q, internal)
+    }
+    fun explain(q: QExpr, doc: Int): Explanation
 }
 class EmptyIndex(override val tokenizer: GenericTokenizer = WhitespaceTokenizer()) : IIndex {
     override val defaultField: String = "missing"
@@ -133,6 +138,9 @@ class EmptyIndex(override val tokenizer: GenericTokenizer = WhitespaceTokenizer(
     override fun search(q: QExpr, n: Int): TopDocs = TopDocs(0L, emptyArray(), -Float.MAX_VALUE)
     override fun getRREnv(): RREnv = error("No RREnv for EmptyIndex.")
     override fun documentById(id: String): Int? = null
+    override fun explain(q: QExpr, doc: Int): Explanation {
+        return Explanation.noMatch("EmptyIndex")
+    }
 }
 
 class IreneIndex(val io: RefCountedIO, val params: IndexParams) : IIndex {
@@ -241,8 +249,7 @@ class IreneIndex(val io: RefCountedIO, val params: IndexParams) : IIndex {
         val multiExpr = MultiExpr(qs)
         return searcher.search(prepare(multiExpr), PoolingCollectorManager(multiExpr, depth))
     }
-
-    fun explain(q: QExpr, doc: Int): Explanation = searcher.explain(prepare(q), doc)
+    override fun explain(q: QExpr, doc: Int): Explanation = searcher.explain(prepare(q), doc)
 }
 
 fun toSimpleString(input: QExpr, out: Appendable, prefix: String="") {
@@ -355,7 +362,7 @@ object SpeedBigramRobust {
         fastIndex.env.indexedBigrams = true
         slowIndex.env.estimateStats = "min"
 
-        val queries = dataset.desc_qs.mapValues { (_, qtext) -> slowIndex.tokenize(qtext) }
+        val queries = dataset.title_qs.mapValues { (_, qtext) -> slowIndex.tokenize(qtext) }
         val eval = getEvaluator("map")
         val qrels = dataset.qrels
         val info = NamedMeasures()
@@ -385,10 +392,26 @@ object SpeedBigramRobust {
             info.push("fastTime", fastTime)
             info.push("slowTime", slowTime)
 
-            info.push("slowAP", eval.evaluate(slowResults.toQueryResults(slowIndex, qid), qrels[qid] ?: QueryJudgments(qid, emptyMap())))
-            info.push("fastAP", eval.evaluate(fastResults.toQueryResults(fastIndex, qid), qrels[qid] ?: QueryJudgments(qid, emptyMap())))
+            val slowNamedResults = slowResults.toQueryResults(slowIndex, qid)
+            val fastNamedResults = fastResults.toQueryResults(fastIndex, qid)
 
-            println("$qid $qterms $info")
+            val expected = slowNamedResults.associate { Pair(it.name, it.score) }
+            fastNamedResults.forEach { sdoc ->
+                val truth = expected[sdoc.name] ?: -Double.MAX_VALUE
+                val actual = sdoc.score
+
+                if (Math.abs(truth - actual) > 1e-7) {
+                    println(slowIndex.explain(sdm, sdoc.name))
+                    println(fastIndex.explain(sdm2, sdoc.name))
+                    error("Disagree on document: ${sdoc.name}")
+                }
+            }
+
+
+            info.push("slowAP", eval.evaluate(slowNamedResults, qrels[qid] ?: QueryJudgments(qid, emptyMap())))
+            info.push("fastAP", eval.evaluate(fastNamedResults, qrels[qid] ?: QueryJudgments(qid, emptyMap())))
+
+            println("$qid $qterms\n\t$info")
         }
 
         println(info)

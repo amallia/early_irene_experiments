@@ -20,7 +20,12 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
     val evalCache = HashMap<Term, QueryEvalNode>()
 
     private fun getLengths(field: String) = lengths.computeIfAbsent(field, { missing ->
-        lucene_try { context.reader().getNormValues(missing) } ?: error("Couldn't find norms for ``$missing'' ND=${context.reader().numDocs()} F=${context.reader().fieldInfos.map { it.name }}.")
+        // Get explicitly indexed lengths:
+        lucene_try { context.reader().getNumericDocValues("lengths:$missing") }
+                // Or get the norms... lucene doesn't always put lengths here...
+                ?: lucene_try { context.reader().getNormValues(missing) }
+                // Or crash.
+                ?: error("Couldn't find norms for ``$missing'' ND=${context.reader().numDocs()} F=${context.reader().fieldInfos.map { it.name }}.")
     })
 
     fun create(term: Term, needed: DataNeeded, stats: CountStats): QueryEvalNode {
@@ -139,7 +144,7 @@ private class IQModelWeight(val q: QExpr, val m: QExpr, val iqm: IreneQueryModel
         val qExpr = exprToEval(rq, ctx)
         val mExpr = createMover(m, ctx)
         //println("mExpr: $mExpr")
-        //println("qExpr: $qExpr")
+        //println("qExpr: ${qExpr}")
         val iter = OptimizedMovementIter(mExpr, qExpr)
         return IreneQueryScorer(q, iter)
     }

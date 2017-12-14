@@ -76,6 +76,10 @@ abstract class LuceneTermFeature(val stats: CountStats, val postings: PostingsEn
         }
     }
 
+    override fun toString(): String {
+        return "${this.javaClass.simpleName}(${stats.text})"
+    }
+
     override fun estimateDF(): Long = stats.df
 }
 

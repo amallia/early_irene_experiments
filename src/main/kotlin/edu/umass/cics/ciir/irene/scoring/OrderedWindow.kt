@@ -170,6 +170,10 @@ abstract class CountWindow(val stats: CountStatsStrategy, children: List<Positio
     }
     override fun getCountStats(): CountStats = stats.get()
     override fun length(): Int = children[0].length()
+
+    override fun toString(): String {
+        return children.joinToString(prefix="${this.javaClass.simpleName}[", postfix = "]", separator = ", ")
+    }
 }
 
 /**
@@ -190,6 +194,7 @@ class OrderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>
         }
         return min
     }
+
 }
 
 class UnorderedWindow(stats: CountStatsStrategy, children: List<PositionsEvalNode>, val width: Int) : CountWindow(stats, children) {
@@ -218,6 +223,10 @@ class SmallerCountWindow(val stats: CountStatsStrategy, children: List<CountEval
     }
     override fun getCountStats(): CountStats = stats.get()
     override fun length(): Int = children[0].length()
+
+    override fun toString(): String {
+        return children.joinToString(separator = ", ", prefix="sc(", postfix=")")
+    }
 }
 
 /** From [UnorderedWindowCeilingExpr], for estimating the ceiling of [UnorderedWindow] nodes.
