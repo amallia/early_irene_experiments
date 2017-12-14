@@ -94,6 +94,7 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
 
     fun setup(input: QExpr): QExpr {
 
+
         val foldOperators = if (!env.indexedBigrams) {
             input
         } else {
@@ -102,10 +103,14 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
                     val lhs = q.children[0] as TextExpr
                     val rhs = q.children[1] as TextExpr
                     val stats = computeCountStats(q, this).get()
-                    TextExpr("${lhs.text} ${rhs.text}", field=lhs.countsField(), statsField = lhs.statsField(), stats = stats, needed = DataNeeded.COUNTS)
+                    TextExpr("${lhs.text} ${rhs.text}", field="bi:${lhs.countsField()}", statsField = "ERROR_PRECOMPUTED_STATS", stats = stats, needed = DataNeeded.COUNTS)
                 } else q
             }
         }
+        if (input is OrderedWindowExpr && env.indexedBigrams) {
+            println("setup OW. ${foldOperators}")
+        }
+
 
         if (env.shareIterators) {
             foldOperators.findTextNodes().map { q ->

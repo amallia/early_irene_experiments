@@ -63,14 +63,13 @@ abstract class LeafEvalNode : QueryEvalNode {
     override fun init(env: ScoringEnv) { this.env = env }
 }
 
-internal class FixedMatchEvalNode(val matchAnswer: Boolean, override val child: QueryEvalNode): SingleChildEval<QueryEvalNode>() {
+internal class FixedMatchEvalNode(val matchAnswer: Boolean, val df: Long = 0L): LeafEvalNode(), BooleanNode {
+    override fun estimateDF(): Long = df
     override fun matches(): Boolean = matchAnswer
-    override fun score(): Double = child.score()
-    override fun count(): Int = child.count()
     override fun explain(): Explanation = if (matchAnswer) {
-        Explanation.match(child.score().toFloat(), "AlwaysMatchNode", child.explain())
+        Explanation.match(score().toFloat(), "AlwaysMatchLeaf")
     } else {
-        Explanation.noMatch("NeverMatchNode", child.explain())
+        Explanation.noMatch("NeverMatchLeaf")
     }
 }
 

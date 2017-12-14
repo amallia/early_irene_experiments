@@ -229,12 +229,15 @@ data class AlwaysMatchMover(val name: String, val numDocs: Int): QueryMover {
     var current = 0
     override fun docID(): Int = current
     override fun matches(doc: Int): Boolean {
-        current = maxOf(current, doc)
-        return true
+        advance(doc)
+        return (current == doc)
     }
     override fun estimateDF(): Long = numDocs.toLong()
     override fun advance(target: Int): Int {
         current = maxOf(target, current)
+        if (current >= numDocs) {
+            current = NO_MORE_DOCS
+        }
         return current
     }
 }

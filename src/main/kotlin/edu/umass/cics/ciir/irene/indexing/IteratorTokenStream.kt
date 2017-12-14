@@ -107,7 +107,9 @@ class LDocBuilder(val params: IndexParams) {
         val uniqLength = terms.toSet().size
 
         val keep = ArrayList<IndexableField>()
-        keep.add(AlreadyTokenizedEfficientCountField(field, text, terms, stored))
+        keep.add(AlreadyTokenizedEfficientCountField(field, text, terms, stored, 1))
+        // make this a separate field so that it does not affect count statistics.
+        keep.add(AlreadyTokenizedEfficientCountField("od:$field", text, terms, stored, 2))
         keep.add(NumericDocValuesField("lengths:$field", length.toLong()))
         keep.add(NumericDocValuesField("unique:$field", uniqLength.toLong()))
         fields[field] = keep
@@ -166,7 +168,8 @@ class AlreadyTokenizedEfficientCountField(
         val field: String,
         val text: String,
         val terms: List<String>,
-        val stored: Boolean
+        val stored: Boolean,
+        val n: Int = 1
 ) : IndexableField {
     override fun name(): String = field
     override fun stringValue(): String? = if (stored) { text } else null
@@ -180,9 +183,13 @@ class AlreadyTokenizedEfficientCountField(
     }
     override fun tokenStream(analyzer: Analyzer?, reuse: TokenStream?): TokenStream {
         val ts = ListTokenStream(terms)
-        // output bigrams as well:
-        val sf = ShingleFilter(ts, 2)
-        return sf
+        if (n == 1) {
+            return ts
+        } else if (n == 2) {
+            // output bigrams as well:
+            val sf = ShingleFilter(ts, 2)
+            return sf
+        } else error("Don't handle n=$n")
     }
 
     companion object {
