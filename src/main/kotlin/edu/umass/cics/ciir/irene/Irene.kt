@@ -352,6 +352,7 @@ object SpeedBigramRobust {
         val slowIndex= dataset.getIreneIndex()
         val fastIndex = IreneIndex(fastParams)
         fastIndex.env.estimateStats = "min"
+        fastIndex.env.indexedBigrams = true
         slowIndex.env.estimateStats = "min"
 
         val queries = dataset.desc_qs.mapValues { (_, qtext) -> slowIndex.tokenize(qtext) }
@@ -369,15 +370,7 @@ object SpeedBigramRobust {
                 }
             }
 
-            val sdm2 = sdm.map { q ->
-                //println(q)
-                // replace OrderedWindow with indexed bigram.
-                if (q is OrderedWindowExpr) {
-                    val lhs = q.children[0] as TextExpr
-                    val rhs = q.children[1] as TextExpr
-                    TextExpr("${lhs.text} ${rhs.text}")
-                } else q
-            }
+            val sdm2 = sdm.deepCopy()
             //sdm.applyEnvironment(slowIndex.env)
             //sdm2.applyEnvironment(fastIndex.env)
 

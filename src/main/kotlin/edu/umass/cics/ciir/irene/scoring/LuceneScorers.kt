@@ -2,9 +2,7 @@ package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.chai.IntList
 import edu.umass.cics.ciir.irene.*
-import edu.umass.cics.ciir.irene.lang.IreneQueryLanguage
-import edu.umass.cics.ciir.irene.lang.LuceneQuery
-import edu.umass.cics.ciir.irene.lang.QExpr
+import edu.umass.cics.ciir.irene.lang.*
 import org.apache.lucene.index.*
 import org.apache.lucene.search.*
 import java.util.*
@@ -89,9 +87,23 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
         return LuceneDocLengths(countStats, getLengths(field))
     }
 
-    fun setup(input: QExpr) {
+    fun setup(input: QExpr): QExpr {
+
+        val foldOperators = if (!env.indexedBigrams) {
+            input
+        } else {
+            input.map { q ->
+                if (q is OrderedWindowExpr && q.children.size == 2) {
+                    val lhs = q.children[0] as TextExpr
+                    val rhs = q.children[1] as TextExpr
+                    val stats = computeCountStats(q, this).get()
+                    TextExpr("${lhs.text} ${rhs.text}", field=lhs.countsField(), statsField = lhs.statsField(), stats = stats, needed = DataNeeded.COUNTS)
+                } else q
+            }
+        }
+
         if (env.shareIterators) {
-            input.findTextNodes().map { q ->
+            foldOperators.findTextNodes().map { q ->
                 val term = Term(q.countsField(), q.text)
                 val needed = q.needed
                 iterNeeds.compute(term, { missing, prev ->
@@ -101,9 +113,10 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
                         maxOf(prev, needed)
                     }
                 })
-
             }
         }
+
+        return foldOperators
     }
 }
 
@@ -114,16 +127,16 @@ private class IQModelWeight(val q: QExpr, val m: QExpr, val iqm: IreneQueryModel
 
     override fun explain(context: LeafReaderContext, doc: Int): Explanation {
         val ctx = IQContext(iqm, context)
-        ctx.setup(q)
-        val eval = exprToEval(q, ctx)
+        val rq = ctx.setup(q)
+        val eval = exprToEval(rq, ctx)
         eval.setup(ScoringEnv(doc))
         return eval.explain()
     }
 
     override fun scorer(context: LeafReaderContext): Scorer {
         val ctx = IQContext(iqm, context)
-        ctx.setup(q)
-        val qExpr = exprToEval(q, ctx)
+        val rq = ctx.setup(q)
+        val qExpr = exprToEval(rq, ctx)
         val mExpr = createMover(m, ctx)
         //println("mExpr: $mExpr")
         //println("qExpr: $qExpr")

@@ -20,6 +20,7 @@ abstract class RREnv {
     open var shareIterators: Boolean = true
     open var optimizeBM25 = false
     open var optimizeDirLog = false
+    open var indexedBigrams = false
 
     // nullable so it can be used to determine if this index has the given field.
     abstract fun fieldStats(field: String): CountStats
