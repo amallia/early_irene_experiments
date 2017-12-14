@@ -5,12 +5,11 @@ import edu.umass.cics.ciir.chai.mean
 import edu.umass.cics.ciir.irene.CountStats
 import edu.umass.cics.ciir.irene.lang.QExpr
 import edu.umass.cics.ciir.irene.lazyIntMin
-import edu.umass.cics.ciir.irene.scoring.PositionsIter
-import edu.umass.cics.ciir.irene.scoring.countOrderedWindows
-import edu.umass.cics.ciir.irene.scoring.countUnorderedWindows
+import edu.umass.cics.ciir.irene.scoring.*
+import org.apache.lucene.search.Explanation
 
 fun QExpr.toRRExpr(env: RREnv): RRExpr {
-    return env.fromQExpr(env.prepare(this))
+    return RREvalNodeExpr(env, this)
 }
 
 sealed class RRExpr(val env: RREnv) {
@@ -18,8 +17,23 @@ sealed class RRExpr(val env: RREnv) {
     fun weighted(weight: Double) = RRWeighted(env, weight, this)
     fun checkNaNs() = RRNaNCheck(env, this)
 
+    open fun explain(doc: LTRDoc): Explanation = Explanation.match(eval(doc).toFloat(), "RRExpr:${this.javaClass.simpleName}")
+
     // Take ((weight * this) + (1-weight) * e)
     fun mixed(weight: Double, e: RRExpr) = RRSum(env, arrayListOf(this.weighted(weight), e.weighted(1.0 - weight)))
+}
+class RREvalNodeExpr(env: RREnv, val node: QueryEvalNode) : RRLeafExpr(env) {
+    constructor(env: RREnv, q: QExpr) : this(env, env.makeLTRQuery(q))
+    val scoreEnv = node.setup(LTRDocScoringEnv()) as LTRDocScoringEnv
+    override fun eval(doc: LTRDoc): Double {
+        scoreEnv.nextDocument(doc)
+        return node.score()
+    }
+
+    override fun explain(doc: LTRDoc): Explanation {
+        scoreEnv.nextDocument(doc)
+        return node.explain()
+    }
 }
 sealed class RRSingleChildExpr(env: RREnv, val inner: RRExpr): RRExpr(env)
 class RRNaNCheck(env: RREnv, inner: RRExpr): RRSingleChildExpr(env, inner) {

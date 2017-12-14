@@ -26,6 +26,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.ForkJoinTask
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.experimental.buildSequence
+import kotlin.streams.asStream
 
 /**
  *
@@ -305,6 +307,20 @@ fun main(args: Array<String>) {
     }
 }
 
+fun TrecContentSource.docs(): Sequence<DocData> = buildSequence {
+    while(true) {
+        val doc = DocData()
+        try {
+            getNextDocData(doc)
+            yield(doc)
+        } catch (e: NoMoreDataException) {
+            break
+        } catch (e: Throwable) {
+            e.printStackTrace(System.err)
+        }
+    }
+}
+
 object CreateBigramRobust {
     @JvmStatic fun main(args: Array<String>) {
         val tcs = TrecContentSource()
@@ -324,16 +340,7 @@ object CreateBigramRobust {
             withPath(File("/media/jfoley/flash/robust.n2.irene2"))
             create()
         }.use { writer ->
-            while(true) {
-                var doc = DocData()
-                try {
-                    doc = tcs.getNextDocData(doc)
-                } catch (e : NoMoreDataException) {
-                    break
-                } catch (e : Throwable) {
-                    e.printStackTrace(System.err)
-                }
-
+            tcs.docs().asStream().parallel().forEach { doc ->
                 writer.doc {
                     setId(doc.name)
                     setEfficientTextField("body", doc.body, true)
@@ -362,7 +369,7 @@ object SpeedBigramRobust {
         fastIndex.env.indexedBigrams = true
         slowIndex.env.estimateStats = "min"
 
-        val queries = dataset.title_qs.mapValues { (_, qtext) -> slowIndex.tokenize(qtext) }
+        val queries = dataset.desc_qs.mapValues { (_, qtext) -> slowIndex.tokenize(qtext) }
         val eval = getEvaluator("map")
         val qrels = dataset.qrels
         val info = NamedMeasures()
@@ -394,19 +401,6 @@ object SpeedBigramRobust {
 
             val slowNamedResults = slowResults.toQueryResults(slowIndex, qid)
             val fastNamedResults = fastResults.toQueryResults(fastIndex, qid)
-
-            val expected = slowNamedResults.associate { Pair(it.name, it.score) }
-            fastNamedResults.forEach { sdoc ->
-                val truth = expected[sdoc.name] ?: -Double.MAX_VALUE
-                val actual = sdoc.score
-
-                if (Math.abs(truth - actual) > 1e-7) {
-                    println(slowIndex.explain(sdm, sdoc.name))
-                    println(fastIndex.explain(sdm2, sdoc.name))
-                    error("Disagree on document: ${sdoc.name}")
-                }
-            }
-
 
             info.push("slowAP", eval.evaluate(slowNamedResults, qrels[qid] ?: QueryJudgments(qid, emptyMap())))
             info.push("fastAP", eval.evaluate(fastNamedResults, qrels[qid] ?: QueryJudgments(qid, emptyMap())))

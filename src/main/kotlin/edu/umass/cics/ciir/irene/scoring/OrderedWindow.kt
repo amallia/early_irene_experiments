@@ -4,6 +4,7 @@ import edu.umass.cics.ciir.irene.lang.ProxExpr
 import edu.umass.cics.ciir.irene.lang.SmallerCountExpr
 import edu.umass.cics.ciir.irene.lang.UnorderedWindowCeilingExpr
 import edu.umass.cics.ciir.irene.lang.UnorderedWindowExpr
+import org.apache.lucene.search.Explanation
 
 /**
  *
@@ -194,6 +195,13 @@ class OrderedWindow(children: List<PositionsEvalNode>, val step: Int) : CountWin
 
 class UnorderedWindow(children: List<PositionsEvalNode>, val width: Int) : CountWindow(children) {
     override fun compute(iters: List<PositionsIter>): Int = countUnorderedWindows(iters, width)
+    override fun explain(): Explanation {
+        val expls = children.map { it.explain() }
+        if (matches()) {
+            return Explanation.match(score().toFloat(), "$className[$width].Match", expls)
+        }
+        return Explanation.noMatch("$className[$width].Miss", expls)
+    }
 }
 
 /** From [ProxExpr] for computing something like [UnorderedWindow] but more realistically upper-bounded by MinCount(children). */
@@ -202,7 +210,7 @@ class ProxWindow(children: List<PositionsEvalNode>, val width: Int): CountWindow
 }
 
 /** From [SmallerCountExpr], for estimating the ceiling of [OrderedWindow] nodes. */
-class SmallerCountWindow(children: List<CountEvalNode>) : AndEval<CountEvalNode>(children), CountEvalNode {
+class SmallerCountWindow(children: List<QueryEvalNode>) : AndEval<QueryEvalNode>(children), CountEvalNode {
     init {
         assert(children.size > 1)
     }
@@ -225,7 +233,7 @@ class SmallerCountWindow(children: List<CountEvalNode>) : AndEval<CountEvalNode>
  * Consider the terms (if two) as nodes in a bi-partite set, with counts p and q.
  * Therefore, the maximum possible output is the maximum number of nodes, or p * q.
  */
-class UnorderedWindowCeiling(val width: Int, children: List<CountEvalNode>) : AndEval<CountEvalNode>(children), CountEvalNode {
+class UnorderedWindowCeiling(val width: Int, children: List<QueryEvalNode>) : AndEval<QueryEvalNode>(children), CountEvalNode {
     init {
         assert(children.size > 1)
     }

@@ -4,8 +4,14 @@ import edu.umass.cics.ciir.chai.CountingDebouncer
 import edu.umass.cics.ciir.chai.StreamingStats
 import edu.umass.cics.ciir.chai.smartDoLines
 import edu.umass.cics.ciir.chai.smartPrint
-import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.GenericTokenizer
+import edu.umass.cics.ciir.irene.IreneEnglishAnalyzer
+import edu.umass.cics.ciir.irene.LuceneTokenizer
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.scoring.ILTRDocField
+import edu.umass.cics.ciir.irene.scoring.LTRDoc
+import edu.umass.cics.ciir.irene.scoring.LTRDocField
+import edu.umass.cics.ciir.irene.scoring.LTREmptyDocField
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QuerySetJudgments

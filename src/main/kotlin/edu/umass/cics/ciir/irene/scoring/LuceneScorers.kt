@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.chai.IntList
+import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.irene.DataNeeded
 import edu.umass.cics.ciir.irene.IreneIndex
 import edu.umass.cics.ciir.irene.createOptimizedMovementExpr
@@ -15,8 +16,16 @@ import java.util.*
  * @author jfoley.
  */
 
-data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
-    val env = iqm.env
+interface EvalSetupContext {
+    val env : RREnv
+    fun create(term: Term, needed: DataNeeded): QueryEvalNode
+    fun createLengths(field: String): QueryEvalNode
+    fun numDocs(): Int
+    fun selectRelativeDocIds(ids: List<Int>): IntList
+}
+
+data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) : EvalSetupContext {
+    override val env = iqm.env
     val searcher = iqm.index.searcher
     val lengths = HashMap<String, NumericDocValues>()
     val iterNeeds = HashMap<Term, DataNeeded>()
@@ -31,11 +40,11 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
                 ?: error("Couldn't find norms for ``$missing'' ND=${context.reader().numDocs()} F=${context.reader().fieldInfos.map { it.name }}.")
     })
 
-    fun create(term: Term, needed: DataNeeded): QueryEvalNode {
+    override fun create(term: Term, needed: DataNeeded): QueryEvalNode {
         return create(term, needed, getLengths(term.field()))
     }
 
-    fun selectRelativeDocIds(ids: List<Int>): IntList {
+    override fun selectRelativeDocIds(ids: List<Int>): IntList {
         val base = context.docBase
         val limit = base + context.reader().numDocs()
         val output = IntList()
@@ -90,9 +99,9 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
         return termCached(term, needed, lengths)
     }
     fun shardIdentity(): Any = context.id()
-    fun numDocs(): Int = context.reader().numDocs()
+    override fun numDocs(): Int = context.reader().numDocs()
 
-    fun createLengths(field: String): CountEvalNode {
+    override fun createLengths(field: String): CountEvalNode {
         return LuceneDocLengths(field, getLengths(field))
     }
 

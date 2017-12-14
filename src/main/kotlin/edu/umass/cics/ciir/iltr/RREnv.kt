@@ -2,6 +2,9 @@ package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.irene.CountStats
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.scoring.LTRDoc
+import edu.umass.cics.ciir.irene.scoring.LTREvalSetupContext
+import edu.umass.cics.ciir.irene.scoring.exprToEval
 import edu.umass.cics.ciir.sprf.inqueryStop
 import gnu.trove.map.hash.TObjectDoubleHashMap
 import org.lemurproject.galago.utility.MathUtils
@@ -18,6 +21,9 @@ abstract class RREnv {
     open var optimizeBM25 = false
     open var optimizeDirLog = false
     open var indexedBigrams = false
+
+    val ltrContext = LTREvalSetupContext(this)
+    fun makeLTRQuery(q: QExpr) = exprToEval(prepare(q), ltrContext)
 
     // nullable so it can be used to determine if this index has the given field.
     abstract fun fieldStats(field: String): CountStats
