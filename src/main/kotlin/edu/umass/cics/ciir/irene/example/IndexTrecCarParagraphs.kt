@@ -1,7 +1,6 @@
 package edu.umass.cics.ciir.irene.example
 
 import edu.umass.cics.ciir.chai.CountingDebouncer
-import edu.umass.cics.ciir.chai.Debouncer
 import edu.umass.cics.ciir.chai.smartDoLines
 import edu.umass.cics.ciir.chai.smartPrint
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
@@ -22,6 +21,7 @@ import org.lemurproject.galago.core.eval.QuerySetJudgments
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.File
+import kotlin.streams.asStream
 
 fun getTrecCarIndexParams(path: File) = IndexParams().apply {
     withPath(path)
@@ -35,32 +35,29 @@ fun getTrecCarIndexParams(path: File) = IndexParams().apply {
  */
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val paragraphsInput = File(argp.get("input", "data/test200/train.test200.fold0.cbor.paragraphs"))
-    val indexPath = File(argp.get("output", "data/test200.fold0.irene2"))
+    val paragraphsInput = File(argp.get("input", "/mnt/scratch/jfoley/trec-car/paragraphcorpus/paragraphcorpus.cbor"))
+    val indexPath = File(argp.get("output", "/mnt/scratch/jfoley/trec-car/pcorpus.irene2"))
 
-    val msg = Debouncer()
     // Seven million paragraphs (as described in paper)
     // much more in actual 16GB dump
     val total = argp.get("total", 29_678_367L)
+    val msg = CountingDebouncer(total)
 
     IreneIndexer(getTrecCarIndexParams(indexPath).apply { create() }).use { writer ->
         StreamCreator.openInputStream(paragraphsInput).use { input ->
-            DeserializeData.iterParagraphs(input).forEach { paragraph: Data.Paragraph ->
+            DeserializeData.iterParagraphs(input).asSequence().asStream().parallel().forEach { paragraph: Data.Paragraph ->
                 val id = paragraph.paraId
                 val text = paragraph.textOnly
                 val links = paragraph.entitiesOnly
 
-                val processed = writer.doc {
+                writer.doc {
                     setId(id)
-                    setTextField("text", text)
-                    setTextField("links", links.joinToString(separator="\t"))
+                    setEfficientTextField("text", text)
+                    setEfficientTextField("links", links.joinToString(separator="\t"))
                 }
 
-                if (msg.ready()) {
-                    println(id)
-                    println(links)
-                    println(text)
-                    println(msg.estimate(processed, total))
+                msg.incr()?.let { upd ->
+                    println("$id $upd")
                 }
             }
         }
