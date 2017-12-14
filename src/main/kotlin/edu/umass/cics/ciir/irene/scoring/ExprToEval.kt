@@ -8,7 +8,7 @@ import org.apache.lucene.index.Term
  * This function translates the public-facing query language ([QExpr] and subclasses) to a set of private-facing operators ([QueryEvalNode] and subclasses).
  * @author jfoley.
  */
-fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
+fun exprToEval(q: QExpr, ctx: EvalSetupContext): QueryEvalNode = when(q) {
     is TextExpr -> try {
         ctx.create(Term(q.countsField(), q.text), q.needed)
     } catch (e: Exception) {
@@ -25,7 +25,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
                 q.children.map { c ->
                     val d = c as DirQLExpr
                     NoLogDirichletSmoothingEval(
-                            exprToEval(c.child, ctx) as CountEvalNode,
+                            exprToEval(c.child, ctx),
                             ctx.createLengths(c.stats!!.field),
                             d.mu!!, c.stats!!)
                 },
@@ -40,18 +40,18 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is WeightExpr -> WeightedEval(exprToEval(q.child, ctx), q.weight)
     is DirQLExpr -> {
         DirichletSmoothingEval(
-                exprToEval(q.child, ctx) as CountEvalNode,
+                exprToEval(q.child, ctx),
                 ctx.createLengths(q.stats!!.field),
                 q.mu!!, q.stats!!)
     }
     is BM25Expr -> if (q.extractedIDF) {
         BM25InnerScoringEval(
-                exprToEval(q.child, ctx) as CountEvalNode,
+                exprToEval(q.child, ctx),
                 ctx.createLengths(q.stats!!.field),
                 q.b!!, q.k!!, q.stats!!)
     } else {
         BM25ScoringEval(
-                exprToEval(q.child, ctx) as CountEvalNode,
+                exprToEval(q.child, ctx),
                 ctx.createLengths(q.stats!!.field),
                 q.b!!, q.k!!, q.stats!!)
     }
@@ -66,12 +66,12 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is ProxExpr -> ProxWindow(
             q.children.map { exprToEval(it, ctx) as PositionsEvalNode }, q.width)
     is SmallerCountExpr -> SmallerCountWindow(
-            q.children.map { exprToEval(it, ctx) as CountEvalNode })
+            q.children.map { exprToEval(it, ctx) })
     is UnorderedWindowCeilingExpr -> UnorderedWindowCeiling(
             q.width,
-            q.children.map { exprToEval(it, ctx) as CountEvalNode })
+            q.children.map { exprToEval(it, ctx) })
     is ConstScoreExpr -> ConstEvalNode(q.x)
-    is ConstCountExpr -> ConstCountEvalNode(q.x, exprToEval(q.lengths, ctx) as CountEvalNode)
+    is ConstCountExpr -> ConstCountEvalNode(q.x, exprToEval(q.lengths, ctx))
     is ConstBoolExpr -> if(q.x) ConstTrueNode(ctx.numDocs()) else ConstEvalNode(0)
     is AbsoluteDiscountingQLExpr -> error("No efficient method to implement AbsoluteDiscountingQLExpr in Irene backend; needs numUniqWords per document.")
     is MultiExpr -> MultiEvalNode(q.children.map { exprToEval(it, ctx) }, q.names)
@@ -79,6 +79,6 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     NeverMatchLeaf -> FixedMatchEvalNode(false, 0)
     AlwaysMatchLeaf -> FixedMatchEvalNode(true, ctx.numDocs().toLong())
     is WhitelistMatchExpr -> WhitelistMatchEvalNode(TIntHashSet(ctx.selectRelativeDocIds(q.docIdentifiers!!)))
-    is CountEqualsExpr -> CountEqualsNode(q.target, exprToEval(q.child, ctx) as CountEvalNode)
+    is CountEqualsExpr -> CountEqualsNode(q.target, exprToEval(q.child, ctx))
 }
 

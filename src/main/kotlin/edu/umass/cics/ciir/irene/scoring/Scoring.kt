@@ -10,8 +10,7 @@ import org.apache.lucene.search.DocIdSetIterator
 import org.apache.lucene.search.Explanation
 import java.io.File
 
-class ScoringEnv(var doc: Int=-1) {
-}
+open class ScoringEnv(var doc: Int=-1) { }
 
 const val NO_MORE_DOCS = DocIdSetIterator.NO_MORE_DOCS
 
@@ -121,7 +120,7 @@ interface PositionsEvalNode : CountEvalNode {
     fun positions(): PositionsIter
 }
 
-class ConstCountEvalNode(val count: Int, val lengths: CountEvalNode) : LeafEvalNode(), CountEvalNode {
+class ConstCountEvalNode(val count: Int, val lengths: QueryEvalNode) : LeafEvalNode(), CountEvalNode {
     override fun count(): Int = count
     override fun matches(): Boolean = lengths.matches()
     override fun explain(): Explanation = Explanation.match(count.toFloat(), "ConstCountEvalNode", listOf(lengths.explain()))
@@ -158,7 +157,7 @@ class ConstEvalNode(val count: Int, val score: Double) : LeafEvalNode() {
     override fun estimateDF(): Long = 0L
 }
 
-internal class CountEqualsNode(val count: Int, override val child: CountEvalNode) : SingleChildEval<CountEvalNode>(), BooleanNode {
+internal class CountEqualsNode(val count: Int, override val child: QueryEvalNode) : SingleChildEval<QueryEvalNode>(), BooleanNode {
     override fun matches(): Boolean = child.matches() && (child.count() == count)
     override fun explain(): Explanation = if(matches()) {
         Explanation.match(1.0f, "count=$count? YES: ${child.count()}", child.explain())
@@ -345,8 +344,8 @@ internal class WeightedLogSumEval(children: List<QueryEvalNode>, val weights: Do
  */
 internal abstract class ScorerEval : QueryEvalNode {
     lateinit var env: ScoringEnv
-    abstract val child: CountEvalNode
-    abstract val lengths: CountEvalNode
+    abstract val child: QueryEvalNode
+    abstract val lengths: QueryEvalNode
 
     val count: Int get() = child.count()
     val length: Int get() = lengths.count()
@@ -387,7 +386,7 @@ internal class WeightedEval(override val child: QueryEvalNode, val weight: Doubl
 /**
  * Created from [BM25Expr] via [exprToEval]
  */
-internal class BM25ScoringEval(override val child: CountEvalNode, override val lengths: CountEvalNode, val b: Double, val k: Double, val stats: CountStats): ScorerEval() {
+internal class BM25ScoringEval(override val child: QueryEvalNode, override val lengths: QueryEvalNode, val b: Double, val k: Double, val stats: CountStats): ScorerEval() {
     private val avgDL = stats.avgDL()
     private val idf = Math.log(stats.dc / (stats.df + 0.5))
 
@@ -428,7 +427,7 @@ internal class BM25ScoringEval(override val child: CountEvalNode, override val l
  * 2 additions, 1 division, and a LOG.
  *
  */
-internal class BM25InnerScoringEval(override val child: CountEvalNode, override val lengths: CountEvalNode, val b: Double, val k: Double, val stats: CountStats): ScorerEval() {
+internal class BM25InnerScoringEval(override val child: QueryEvalNode, override val lengths: QueryEvalNode, val b: Double, val k: Double, val stats: CountStats): ScorerEval() {
     private val avgDL = stats.avgDL()
 
     //val num = count * (k+1.0)
@@ -465,7 +464,7 @@ internal class BM25InnerScoringEval(override val child: CountEvalNode, override 
 /**
  * Created from [DirQLExpr] via [exprToEval]
  */
-internal class DirichletSmoothingEval(override val child: CountEvalNode, override val lengths: CountEvalNode, val mu: Double, val stats: CountStats) : ScorerEval() {
+internal class DirichletSmoothingEval(override val child: QueryEvalNode, override val lengths: QueryEvalNode, val mu: Double, val stats: CountStats) : ScorerEval() {
     val background = mu * stats.nonzeroCountProbability()
     init {
         assert(java.lang.Double.isFinite(background)) { "stats=$stats" }
@@ -490,7 +489,7 @@ internal class DirichletSmoothingEval(override val child: CountEvalNode, overrid
 /**
  * Created from [DirQLExpr] via [exprToEval] sometimes, inside of [WeightedLogSumEval]
  */
-internal class NoLogDirichletSmoothingEval(override val child: CountEvalNode, override val lengths: CountEvalNode, val mu: Double, val stats: CountStats) : ScorerEval() {
+internal class NoLogDirichletSmoothingEval(override val child: QueryEvalNode, override val lengths: QueryEvalNode, val mu: Double, val stats: CountStats) : ScorerEval() {
     val background = mu * stats.nonzeroCountProbability()
     init {
         assert(java.lang.Double.isFinite(background)) { "stats=$stats" }

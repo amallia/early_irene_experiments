@@ -1,45 +1,34 @@
 package edu.umass.cics.ciir.iltr
 
-import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.chai.mean
-import edu.umass.cics.ciir.irene.CountStats
 import edu.umass.cics.ciir.irene.lang.QExpr
-import edu.umass.cics.ciir.irene.lazyIntMin
+import edu.umass.cics.ciir.irene.scoring.LTRDoc
+import edu.umass.cics.ciir.irene.scoring.LTRDocScoringEnv
 import edu.umass.cics.ciir.irene.scoring.PositionsIter
-import edu.umass.cics.ciir.irene.scoring.countOrderedWindows
-import edu.umass.cics.ciir.irene.scoring.countUnorderedWindows
+import edu.umass.cics.ciir.irene.scoring.QueryEvalNode
+import org.apache.lucene.search.Explanation
 
 fun QExpr.toRRExpr(env: RREnv): RRExpr {
-    return env.fromQExpr(env.prepare(this))
+    return RREvalNodeExpr(env, this.deepCopy())
 }
 
 sealed class RRExpr(val env: RREnv) {
     abstract fun eval(doc: LTRDoc): Double
-    fun weighted(weight: Double) = RRWeighted(env, weight, this)
-    fun checkNaNs() = RRNaNCheck(env, this)
+    open fun explain(doc: LTRDoc): Explanation = Explanation.match(eval(doc).toFloat(), "RRExpr:${this.javaClass.simpleName}")
+}
 
-    // Take ((weight * this) + (1-weight) * e)
-    fun mixed(weight: Double, e: RRExpr) = RRSum(env, arrayListOf(this.weighted(weight), e.weighted(1.0 - weight)))
-}
-sealed class RRSingleChildExpr(env: RREnv, val inner: RRExpr): RRExpr(env)
-class RRNaNCheck(env: RREnv, inner: RRExpr): RRSingleChildExpr(env, inner) {
+class RREvalNodeExpr(env: RREnv, val node: QueryEvalNode) : RRLeafExpr(env) {
+    constructor(env: RREnv, q: QExpr) : this(env, env.makeLTRQuery(q))
+    val scoreEnv = node.setup(LTRDocScoringEnv()) as LTRDocScoringEnv
     override fun eval(doc: LTRDoc): Double {
-        val score = inner.eval(doc)
-        if (java.lang.Double.isNaN(score)) {
-            throw RuntimeException("NaN-Check Failed.")
-        }
-        if (java.lang.Double.isInfinite(score)) {
-            throw RuntimeException("Infinite-Check Failed.")
-        }
-        return score
-    }
-}
-class RRWeighted(env: RREnv, val weight: Double, inner: RRExpr): RRSingleChildExpr(env, inner) {
-    override fun eval(doc: LTRDoc): Double {
-        return weight * inner.eval(doc)
+        scoreEnv.nextDocument(doc)
+        return node.score()
     }
 
-    override fun toString(): String = "RRWeighted($weight, $inner)"
+    override fun explain(doc: LTRDoc): Explanation {
+        scoreEnv.nextDocument(doc)
+        return node.explain()
+    }
 }
 
 sealed class RRCCExpr(env: RREnv, val exprs: List<RRExpr>): RRExpr(env) {
@@ -55,13 +44,6 @@ class RRMean(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
     val N = exprs.size.toDouble()
     override fun eval(doc: LTRDoc): Double = exprs.sumByDouble { it.eval(doc) } / N
 }
-class RRMax(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
-    override fun eval(doc: LTRDoc): Double {
-        return exprs.map { it.eval(doc) }.max()!!
-    }
-    override fun toString(): String = "RRSum($exprs)"
-}
-
 class RRMult(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
     override fun eval(doc: LTRDoc): Double {
         var prod = 1.0
@@ -71,29 +53,6 @@ class RRMult(env: RREnv, exprs: List<RRExpr>): RRCCExpr(env, exprs) {
 }
 
 sealed class RRLeafExpr(env: RREnv) : RRExpr(env)
-class RRDirichletScorer(env: RREnv, val term: RRCountExpr, var mu: Double = env.defaultDirichletMu, val stats: CountStats) : RRLeafExpr(env) {
-    private val bg = mu * stats.nonzeroCountProbability()
-    override fun eval(doc: LTRDoc): Double {
-        val count = term.count(doc).toDouble()
-        val length = term.length(doc) + mu
-        return Math.log((count + bg) / length)
-    }
-    override fun toString(): String = "RRDirichletScorer($term)"
-}
-class RRAbsoluteDiscountingScorer(env: RREnv, val term: RRCountExpr, var delta: Double = env.absoluteDiscountingDelta, val stats: CountStats) : RRLeafExpr(env) {
-    val bg = stats.nonzeroCountProbability()
-    override fun eval(doc: LTRDoc): Double {
-        val field = doc.field(term.field)
-        val length = Math.max(1.0, field.length.toDouble())
-        val uniq = Math.max(1.0, field.uniqTerms.toDouble())
-        val sigma = delta * uniq / length
-        val count = maxOf(0.0, term.count(doc).toDouble() - delta)
-        val raw = (count / length) + sigma * bg
-        val score = Math.log(raw)
-        return score;
-    }
-}
-
 class RRFeature(env: RREnv, val name: String): RRLeafExpr(env) {
     override fun eval(doc: LTRDoc): Double {
         return doc.features[name]!!
@@ -110,37 +69,6 @@ sealed class RRCountExpr(env: RREnv, val field: String) : RRExpr(env) {
     abstract fun positions(doc: LTRDoc): PositionsIter
     fun length(doc: LTRDoc) = doc.field(field).length
     fun field(doc: LTRDoc) = doc.field(field)
-}
-
-class RRTermExpr(env: RREnv, val term: String, field: String): RRCountExpr(env, field) {
-    companion object {
-        val posCache = Caffeine.newBuilder().maximumSize(1000*20).build<RRTermCacheKey, IntArray>()
-    }
-
-    override fun toString() = "$term.$field"
-    override fun count(doc: LTRDoc) = doc.field(field).count(term)
-    override fun positions(doc: LTRDoc): PositionsIter {
-        val positions = posCache.get(RRTermCacheKey(term, field, doc.name)) { (mt, mf, _) ->
-            val vec = doc.field(mf).terms
-            vec.mapIndexedNotNull { i, t_i ->
-                if (t_i == mt) i else null
-            }.toIntArray()
-        } ?: intArrayOf()
-        return PositionsIter(positions)
-    }
-}
-
-class RRBM25Scorer(env: RREnv, val term: RRCountExpr, val b: Double = env.defaultBM25b, val k: Double = env.defaultBM25k, val stats: CountStats) : RRLeafExpr(env) {
-    private val avgDL = stats.avgDL();
-    private val idf = Math.log(stats.dc / (stats.df + 0.5))
-
-    override fun eval(doc: LTRDoc): Double {
-        val count = term.count(doc).toDouble()
-        val length = term.length(doc).toDouble()
-        val num = count * (k+1.0)
-        val denom = count + (k * (1.0 - b + (b * length / avgDL)))
-        return idf * num / denom
-    }
 }
 
 class RRAvgWordLength(env: RREnv, val field: String = env.defaultField) : RRLeafExpr(env) {
@@ -207,25 +135,3 @@ class RRLogLogisticTFScore(env: RREnv, val term: String, val field: String = env
     }
 }
 
-class RROrderedWindow(env: RREnv, val terms: List<RRCountExpr>, val step: Int = 1) : RRCountExpr(env, terms.map { it.field }.first()) {
-    init {
-        assert(terms.map { it.field }.toSet().size == 1) { "Should only be a single field! ${terms}" }
-    }
-    override fun count(doc: LTRDoc): Int {
-        val min = terms.lazyIntMin { it.count(doc) }!!
-        if (min == 0) return 0
-        return countOrderedWindows(terms.map { it.positions(doc) }, step)
-    }
-    override fun positions(doc: LTRDoc): PositionsIter = error("Not implemented for now.")
-}
-class RRUnorderedWindow(env: RREnv, val terms: List<RRCountExpr>, val window: Int = 8) : RRCountExpr(env, terms.map { it.field }.first()) {
-    init {
-        assert(terms.map { it.field }.toSet().size == 1) { "Should only be a single field! ${terms}" }
-    }
-    override fun count(doc: LTRDoc): Int {
-        val min = terms.lazyIntMin { it.count(doc) }!!
-        if (min == 0) return 0
-        return countUnorderedWindows(terms.map { it.positions(doc) }, window)
-    }
-    override fun positions(doc: LTRDoc): PositionsIter = error("Not implemented for now.")
-}

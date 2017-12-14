@@ -2,10 +2,7 @@ package edu.umass.cics.ciir.iltr
 
 import com.github.benmanes.caffeine.cache.Caffeine
 import edu.umass.cics.ciir.chai.*
-import edu.umass.cics.ciir.irene.lang.AndExpr
-import edu.umass.cics.ciir.irene.lang.DirQLExpr
-import edu.umass.cics.ciir.irene.lang.SumExpr
-import edu.umass.cics.ciir.irene.lang.TextExpr
+import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.getEvaluators
 import org.lemurproject.galago.utility.Parameters
@@ -107,7 +104,7 @@ fun main(args: Array<String>) {
 
             println("\tComputed fbTerms for ${fbTerms.size} settings.")
 
-            val expQueries = HashMap<LLHyperParam, RRExpr>()
+            val expQueries = HashMap<LLHyperParam, QExpr>()
             fbTerms.forEach { (params, wts) ->
                 val fbTermsOpts = arrayListOf(10,20,50,100)
                 if (sweepFBTerms) { fbTermsOpts } else { listOf(params.fbTerms) }
@@ -116,7 +113,7 @@ fun main(args: Array<String>) {
                             val bestK = wts.sorted().take(hp.fbTerms).associate { Pair(it.term, it.score) }.normalize()
 
                             val expr = SumExpr(bestK.map { (term,score) -> DirQLExpr(TextExpr(term)).weighted(score) })
-                            expQueries.put(hp, expr.toRRExpr(env))
+                            expQueries.put(hp, expr)
                         }
             }
 
@@ -128,10 +125,9 @@ fun main(args: Array<String>) {
                 if (sweepLambdas) { allLambdas } else { listOf(0.3) }
                         .forEach { lambda ->
                             val hp = params.copy(lambda=lambda)
-                            val fullQ =
-                                    env.ql(q.qterms).mixed(hp.lambda, expQ)
+                            val fullQ = QueryLikelihood(q.qterms).mixed(hp.lambda, expQ)
                             //println("\t\t\t$fullQ")
-                            val ranked = q.toQResults(fullQ)
+                            val ranked = q.toQResults(env, fullQ)
                             val score = tuningMeasure.evaluate(ranked, queryJudgments)
                             //println("\t\t$score . $hp")
                             hpResults.computeIfAbsent(hp,{ HashMap() }).put(q.qid, score)

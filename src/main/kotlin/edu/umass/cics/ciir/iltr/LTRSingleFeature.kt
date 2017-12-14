@@ -1,12 +1,11 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.irene.GenericTokenizer
-import edu.umass.cics.ciir.irene.WhitespaceTokenizer
-import edu.umass.cics.ciir.irene.lang.IreneQueryLanguage
-import edu.umass.cics.ciir.irene.lang.QueryLikelihood
-import edu.umass.cics.ciir.irene.lang.SequentialDependenceModel
-import edu.umass.cics.ciir.sprf.*
-import gnu.trove.map.hash.TObjectIntHashMap
+import edu.umass.cics.ciir.irene.lang.QExpr
+import edu.umass.cics.ciir.irene.scoring.LTRDoc
+import edu.umass.cics.ciir.irene.scoring.LTRDocField
+import edu.umass.cics.ciir.sprf.getStr
+import edu.umass.cics.ciir.sprf.pmake
+import edu.umass.cics.ciir.sprf.reader
 import org.lemurproject.galago.core.eval.EvalDoc
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QueryResults
@@ -26,63 +25,6 @@ class LTRDocByFeature(private val feature: String, val doc: LTRDoc, rank: Int, s
     constructor(feature: String, doc: LTRDoc) : this(feature, doc, -1, doc.features[feature] ?: -Double.MAX_VALUE)
 }
 
-
-interface ILTRDocField {
-    val name: String
-    val text: String
-    val tokenizer: GenericTokenizer
-    val terms: List<String>
-    val freqs: BagOfWords
-    val length: Int
-    val uniqTerms: Int
-    val termSet: Set<String>
-    fun toEntry(): Pair<String, ILTRDocField> = Pair(name, this)
-    fun count(term: String): Int
-}
-
-data class LTREmptyDocField(override val name: String) : ILTRDocField {
-    override val text: String = ""
-    override val tokenizer: GenericTokenizer = WhitespaceTokenizer()
-    override val terms: List<String> = emptyList()
-    override val freqs: BagOfWords = BagOfWords(emptyList())
-    override val length: Int = 1
-    override val uniqTerms: Int = 0
-    override val termSet: Set<String> = emptySet()
-    override fun count(term: String): Int = 0
-}
-
-data class LTRDocField(override val name: String, override val text: String, override val tokenizer: GenericTokenizer = WhitespaceTokenizer()) : ILTRDocField {
-    override val terms: List<String> by lazy { tokenizer.tokenize(text, name) }
-    override val freqs: BagOfWords by lazy { BagOfWords(terms) }
-    override val length: Int get() = terms.size
-    override val uniqTerms: Int get() = freqs.counts.size()
-    override fun count(term: String): Int = freqs.count(term)
-    override val termSet: Set<String> get() = freqs.counts.keySet()
-}
-
-
-data class LTRDoc(val name: String, val features: HashMap<String, Double>, val rank: Int, val fields: HashMap<String,ILTRDocField>, var defaultField: String = "document") {
-    fun field(field: String): ILTRDocField = fields[field] ?: error("No such field: $field in $this.")
-    fun terms(field: String) = field(field).terms
-    fun freqs(field: String) = field(field).freqs
-
-    constructor(name: String, text: String, field: String, tokenizer: GenericTokenizer = WhitespaceTokenizer()): this(name, hashMapOf(), -1, hashMapOf(LTRDocField(field, text, tokenizer).toEntry()), field)
-
-    constructor(p: Parameters): this(p.getStr("id"),
-            hashMapOf(
-                    Pair("title-ql", p.getDouble("title-ql")),
-                    Pair("title-ql-prior", p.getDouble("title-ql-prior"))),
-            p.getInt("rank"),
-            hashMapOf(LTRDocField("document", p.getStr("tokenized")).toEntry()))
-
-    fun toJSONFeatures(qrels: QueryJudgments, qid: String) = pmake {
-        set("label", qrels[name])
-        set("qid", qid)
-        set("features", Parameters.wrap(features))
-        set("name", name)
-    }
-}
-
 data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>, val docs: List<LTRDoc>) {
     fun ranked(ftr: String): ArrayList<LTRDocByFeature> = docs.mapTo(ArrayList<LTRDocByFeature>(docs.size)) { LTRDocByFeature(ftr, it) }
     fun ranked(expr: RRExpr): ArrayList<LTRDocByFeature> = docs.mapTo(ArrayList<LTRDocByFeature>(docs.size)) { LTRDocByFeature("RRExpr", it, -1, expr.eval(it)) }
@@ -91,6 +33,7 @@ data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>
         Ranked.setRanksByScore(ranked)
         return QueryResults(ranked)
     }
+    fun toQResults(env: RREnv, qExpr: QExpr): QueryResults = toQResults(qExpr.toRRExpr(env))
     fun toQResults(rrExpr: RRExpr): QueryResults {
         val ranked = ranked(rrExpr)
         Ranked.setRanksByScore(ranked)
@@ -108,6 +51,13 @@ data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>
     fun toJSONFeatures(qrels: QueryJudgments) = docs.map { it.toJSONFeatures(qrels, qid) }
 }
 
+fun LTRDocFromParameters(p: Parameters) = LTRDoc(p.getStr("id"),
+        hashMapOf(
+                Pair("title-ql", p.getDouble("title-ql")),
+                Pair("title-ql-prior", p.getDouble("title-ql-prior"))),
+        p.getInt("rank"),
+        hashMapOf(LTRDocField("document", p.getStr("tokenized")).toEntry()))
+
 fun forEachQuery(dsName: String, doFn: (LTRQuery) -> Unit) {
     StreamCreator.openInputStream("$dsName.qlpool.jsonl.gz").reader().useLines { lines ->
         lines.map { Parameters.parseStringOrDie(it) }.forEach { qjson ->
@@ -115,7 +65,7 @@ fun forEachQuery(dsName: String, doFn: (LTRQuery) -> Unit) {
             val qtext = qjson.getStr("qtext")
             val qterms = qjson.getAsList("qterms", String::class.java)
 
-            val docs = qjson.getAsList("docs", Parameters::class.java).map { LTRDoc(it) }
+            val docs = qjson.getAsList("docs", Parameters::class.java).map { LTRDocFromParameters(it) }
 
             doFn(LTRQuery(qid, qtext, qterms, docs))
         }
@@ -128,25 +78,4 @@ fun List<WeightedTerm>.normalized(): List<WeightedTerm> {
     return this.map { WeightedTerm(it.score / total, it.term) }
 }
 
-class BagOfWords(terms: List<String>) {
-    val counts = TObjectIntHashMap<String>()
-    val length = terms.size.toDouble()
-    val l2norm: Double by lazy {
-        var sumSq = 0.0
-        counts.forEachValue { c ->
-            sumSq += c*c
-            true
-        }
-        Math.sqrt(sumSq)
-    }
-    init {
-        terms.forEach { counts.adjustOrPutValue(it, 1, 1) }
-    }
-    fun prob(term: String): Double = counts.get(term) / length
-    fun count(term: String): Int {
-        if (!counts.containsKey(term)) return 0
-        return counts[term]
-    }
-
-}
 

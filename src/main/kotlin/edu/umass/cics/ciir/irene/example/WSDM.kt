@@ -1,12 +1,12 @@
 package edu.umass.cics.ciir.irene.example
 
 import edu.umass.cics.ciir.chai.*
-import edu.umass.cics.ciir.iltr.LTRDoc
 import edu.umass.cics.ciir.iltr.toRRExpr
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndex
 import edu.umass.cics.ciir.irene.IreneIndexer
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.toQueryResults
 import edu.umass.cics.ciir.learning.*
 import edu.umass.cics.ciir.sprf.*

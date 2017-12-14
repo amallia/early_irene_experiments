@@ -1,6 +1,5 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.iltr.LTRDoc
 import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.iltr.RRGalagoEnv
 import edu.umass.cics.ciir.iltr.toRRExpr
@@ -339,6 +338,7 @@ class ScoringTest {
                 dblEquals(expected, actual) {
                     println("$name")
                     println(sameDoc.annotation)
+                    println(rrExpr.explain(index.ltrIndex.find { it.name == name }!!))
                 }
             }
         }

@@ -4,6 +4,10 @@ import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.irene.GenericTokenizer
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.logSumExp
+import edu.umass.cics.ciir.irene.scoring.ILTRDocField
+import edu.umass.cics.ciir.irene.scoring.LTRDoc
+import edu.umass.cics.ciir.irene.scoring.LTRDocField
+import edu.umass.cics.ciir.irene.scoring.LTREmptyDocField
 import edu.umass.cics.ciir.irene.toParameters
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
@@ -25,9 +29,6 @@ private fun forEachSDMPoolQuery(tokenizer: GenericTokenizer, dsName: String, doF
 
         doFn(LTRQuery(qid, qtext, qterms, docs))
     }
-}
-
-object TrimJSONLDoc  {
 }
 
 val MandatoryFields = arrayListOf<String>("title", "body", "document")

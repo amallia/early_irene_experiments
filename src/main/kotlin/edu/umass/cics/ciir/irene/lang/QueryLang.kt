@@ -110,6 +110,9 @@ sealed class QExpr {
 
     // Get a weighted version of this node if weight is non-null.
     fun weighted(x: Double?) = if(x != null) WeightExpr(this, x) else this
+
+    // Defines a mixture model of [lambda] times the current expression and 1.0-[lambda] times the [rhs] expression.
+    fun mixed(lambda: Double, rhs: QExpr) = SumExpr(this.weighted(lambda), rhs.weighted(lambda-1.0))
 }
 data class MultiExpr(val namedExprs: Map<String, QExpr>): QExpr() {
     val names = namedExprs.keys.toList()

@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.chai.Debouncer
 import edu.umass.cics.ciir.chai.sample
+import edu.umass.cics.ciir.irene.scoring.BagOfWords
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.mean
 import gnu.trove.list.array.TDoubleArrayList
