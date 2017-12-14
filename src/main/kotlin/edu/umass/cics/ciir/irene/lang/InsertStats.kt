@@ -36,10 +36,7 @@ fun insertStats(env: RREnv, input: QExpr) = qmap(input) { q ->
         is WeightExpr,
         is WhitelistMatchExpr -> q
 
-        is LengthsExpr -> {
-            LengthsExpr(q.statsField!!, q.stats ?: env.fieldStats(q.statsField!!))
-        }
-
+        is LengthsExpr -> LengthsExpr(q.statsField!!)
         is DirQLExpr -> DirQLExpr(q.trySingleChild, q.mu, q.stats ?: computeCountStats(q.trySingleChild, env).get())
         is AbsoluteDiscountingQLExpr -> AbsoluteDiscountingQLExpr(q.trySingleChild, q.delta, q.stats ?: computeCountStats(q.trySingleChild, env).get())
         is BM25Expr -> BM25Expr(q.trySingleChild, b=q.b, k=q.k, stats=q.stats ?: computeCountStats(q.trySingleChild, env).get())
@@ -51,10 +48,6 @@ fun approxStats(env: RREnv, q: QExpr, method: String): CountStatsStrategy {
         val cstats = q.children.map { c ->
             if (c is TextExpr) {
                 c.getStats(env)
-            } else if (c is ConstCountExpr) {
-                c.lengths.stats!!
-            } else if (c is LengthsExpr) {
-                c.stats!!
             } else {
                 error("Can't estimate stats with non-TextExpr children. $c")
             }

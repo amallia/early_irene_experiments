@@ -116,7 +116,6 @@ private class CachedQueryEvalNode(override val child: QueryEvalNode) : SingleChi
 
 interface CountEvalNode : QueryEvalNode {
     override fun score() = count().toDouble()
-    fun length(): Int
 }
 interface PositionsEvalNode : CountEvalNode {
     fun positions(): PositionsIter
@@ -127,7 +126,6 @@ class ConstCountEvalNode(val count: Int, val lengths: CountEvalNode) : LeafEvalN
     override fun matches(): Boolean = lengths.matches()
     override fun explain(): Explanation = Explanation.match(count.toFloat(), "ConstCountEvalNode", listOf(lengths.explain()))
     override fun estimateDF(): Long = lengths.estimateDF()
-    override fun length(): Int = lengths.length()
 }
 
 class ConstTrueNode(val numDocs: Int) : LeafEvalNode() {
@@ -342,10 +340,22 @@ internal class WeightedLogSumEval(children: List<QueryEvalNode>, val weights: Do
     init { assert(weights.size == children.size, {"Weights provided to WeightedLogSumEval must exist for all children."}) }
 }
 
-
 /**
- * Helper class to make scorers that will have one child (like [DirichletSmoothingEval] and [BM25ScoringEval]) easier to implement.
+ * Helper class to make scorers that will have one count [child] and a [lengths] child (like [DirichletSmoothingEval] and [BM25ScoringEval]) easier to implement.
  */
+internal abstract class ScorerEval : QueryEvalNode {
+    lateinit var env: ScoringEnv
+    abstract val child: CountEvalNode
+    abstract val lengths: CountEvalNode
+
+    val count: Int get() = child.count()
+    val length: Int get() = lengths.count()
+    override val children: List<QueryEvalNode> get() = listOf(child, lengths)
+    override fun estimateDF(): Long = child.estimateDF()
+    override fun matches(): Boolean = child.matches()
+    override fun init(env: ScoringEnv) { this.env = env }
+}
+
 internal abstract class SingleChildEval<out T : QueryEvalNode> : QueryEvalNode {
     lateinit var env: ScoringEnv
     abstract val child: T
@@ -374,17 +384,16 @@ internal class WeightedEval(override val child: QueryEvalNode, val weight: Doubl
     }
 }
 
-// TODO, someday re-implement idf as transform to WeightedExpr() and have BM25InnerEval()
 /**
  * Created from [BM25Expr] via [exprToEval]
  */
-internal class BM25ScoringEval(override val child: CountEvalNode, val b: Double, val k: Double, val stats: CountStats): SingleChildEval<CountEvalNode>() {
+internal class BM25ScoringEval(override val child: CountEvalNode, override val lengths: CountEvalNode, val b: Double, val k: Double, val stats: CountStats): ScorerEval() {
     private val avgDL = stats.avgDL()
     private val idf = Math.log(stats.dc / (stats.df + 0.5))
 
     override fun score(): Double {
         val count = child.count().toDouble()
-        val length = child.length().toDouble()
+        val length = lengths.count().toDouble()
         val num = count * (k+1.0)
         val denom = count + (k * (1.0 - b + (b * length / avgDL)))
         return idf * (num / denom)
@@ -393,7 +402,7 @@ internal class BM25ScoringEval(override val child: CountEvalNode, val b: Double,
     override fun count(): Int = error("count() not implemented for ScoreNode")
     override fun explain(): Explanation {
         val c = child.count()
-        val length = child.length()
+        val length = lengths.count()
         if (c > 0) {
             return Explanation.match(score().toFloat(), "$c/$length with b=$b, k=$k with BM25. ${stats}", listOf(child.explain()))
         } else {
@@ -419,7 +428,7 @@ internal class BM25ScoringEval(override val child: CountEvalNode, val b: Double,
  * 2 additions, 1 division, and a LOG.
  *
  */
-internal class BM25InnerScoringEval(override val child: CountEvalNode, val b: Double, val k: Double, val stats: CountStats): SingleChildEval<CountEvalNode>() {
+internal class BM25InnerScoringEval(override val child: CountEvalNode, override val lengths: CountEvalNode, val b: Double, val k: Double, val stats: CountStats): ScorerEval() {
     private val avgDL = stats.avgDL()
 
     //val num = count * (k+1.0)
@@ -435,7 +444,7 @@ internal class BM25InnerScoringEval(override val child: CountEvalNode, val b: Do
 
     override fun score(): Double {
         val count = child.count().toDouble()
-        val length = child.length().toDouble()
+        val length = lengths.count().toDouble()
         val num = count * KPlusOne
         val denom = count + KTimesOneMinusB + KTimesBOverAvgDL * length
         return num / denom
@@ -444,7 +453,7 @@ internal class BM25InnerScoringEval(override val child: CountEvalNode, val b: Do
     override fun count(): Int = error("count() not implemented for ScoreNode")
     override fun explain(): Explanation {
         val c = child.count()
-        val length = child.length()
+        val length = lengths.count()
         if (c > 0) {
             return Explanation.match(score().toFloat(), "$c/$length with b=$b, k=$k with BM25Inner. ${stats}", listOf(child.explain()))
         } else {
@@ -456,20 +465,20 @@ internal class BM25InnerScoringEval(override val child: CountEvalNode, val b: Do
 /**
  * Created from [DirQLExpr] via [exprToEval]
  */
-internal class DirichletSmoothingEval(override val child: CountEvalNode, val mu: Double, val stats: CountStats) : SingleChildEval<CountEvalNode>() {
+internal class DirichletSmoothingEval(override val child: CountEvalNode, override val lengths: CountEvalNode, val mu: Double, val stats: CountStats) : ScorerEval() {
     val background = mu * stats.nonzeroCountProbability()
     init {
         assert(java.lang.Double.isFinite(background)) { "stats=$stats" }
     }
     override fun score(): Double {
         val c = child.count().toDouble()
-        val length = child.length().toDouble()
+        val length = lengths.count().toDouble()
         return Math.log((c + background) / (length + mu))
     }
     override fun count(): Int = TODO("not yet")
     override fun explain(): Explanation {
         val c = child.count()
-        val length = child.length()
+        val length = lengths.count()
         if (c > 0) {
             return Explanation.match(score().toFloat(), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. $stats", listOf(child.explain()))
         } else {
@@ -481,20 +490,20 @@ internal class DirichletSmoothingEval(override val child: CountEvalNode, val mu:
 /**
  * Created from [DirQLExpr] via [exprToEval] sometimes, inside of [WeightedLogSumEval]
  */
-internal class NoLogDirichletSmoothingEval(override val child: CountEvalNode, val mu: Double, val stats: CountStats) : SingleChildEval<CountEvalNode>() {
+internal class NoLogDirichletSmoothingEval(override val child: CountEvalNode, override val lengths: CountEvalNode, val mu: Double, val stats: CountStats) : ScorerEval() {
     val background = mu * stats.nonzeroCountProbability()
     init {
         assert(java.lang.Double.isFinite(background)) { "stats=$stats" }
     }
     override fun score(): Double {
         val c = child.count().toDouble()
-        val length = child.length().toDouble()
+        val length = lengths.count().toDouble()
         return (c + background) / (length + mu)
     }
     override fun count(): Int = TODO("not yet")
     override fun explain(): Explanation {
         val c = child.count()
-        val length = child.length()
+        val length = lengths.count()
         if (c > 0) {
             return Explanation.match(score().toFloat(), "$c/$length with mu=$mu, bg=$background dirichlet smoothing. ${stats}", listOf(child.explain()))
         } else {

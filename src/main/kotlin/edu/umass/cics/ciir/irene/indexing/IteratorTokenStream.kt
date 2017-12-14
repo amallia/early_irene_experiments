@@ -188,6 +188,7 @@ class AlreadyTokenizedEfficientCountField(
         } else if (n == 2) {
             // output bigrams as well:
             val sf = ShingleFilter(ts, 2)
+            sf.setOutputUnigrams(false)
             return sf
         } else error("Don't handle n=$n")
     }

@@ -1,8 +1,11 @@
 package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.chai.IntList
-import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.DataNeeded
+import edu.umass.cics.ciir.irene.IreneIndex
+import edu.umass.cics.ciir.irene.createOptimizedMovementExpr
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.lucene_try
 import org.apache.lucene.index.*
 import org.apache.lucene.search.*
 import java.util.*
@@ -47,11 +50,11 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
 
     private fun termRaw(term: Term, needed: DataNeeded, lengths: NumericDocValues): QueryEvalNode {
         val postings = termSeek(term, needed)
-                ?: return LuceneMissingTerm(term, lengths)
+                ?: return LuceneMissingTerm(term)
         return when(needed) {
             DataNeeded.DOCS -> LuceneTermDocs(term, postings)
-            DataNeeded.COUNTS -> LuceneTermCounts(term, postings, lengths)
-            DataNeeded.POSITIONS -> LuceneTermPositions(term, postings, lengths)
+            DataNeeded.COUNTS -> LuceneTermCounts(term, postings)
+            DataNeeded.POSITIONS -> LuceneTermPositions(term, postings)
             DataNeeded.SCORES -> error("Impossible!")
         }
     }
@@ -88,7 +91,8 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
     }
     fun shardIdentity(): Any = context.id()
     fun numDocs(): Int = context.reader().numDocs()
-    fun createLengths(field: String, countStats: CountStats): QueryEvalNode {
+
+    fun createLengths(field: String): CountEvalNode {
         return LuceneDocLengths(field, getLengths(field))
     }
 
@@ -104,10 +108,6 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) {
                 } else q
             }
         }
-        if (input is OrderedWindowExpr && env.indexedBigrams) {
-            println("setup OW. ${foldOperators}")
-        }
-
 
         if (env.shareIterators) {
             foldOperators.findTextNodes().map { q ->

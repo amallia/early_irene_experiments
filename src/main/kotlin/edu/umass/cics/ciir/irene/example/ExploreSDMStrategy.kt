@@ -1,7 +1,6 @@
 package edu.umass.cics.ciir.irene.example
 
 import edu.umass.cics.ciir.chai.*
-import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.irene.IreneScoredDoc
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.IreneQueryScorer
@@ -16,47 +15,6 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * @author jfoley
  */
-
-/**
- * Imagine a [TextExpr] that you wanted to always return zero, for some reason. Used to estimate the lower-bound of SDM's dependencies.
- */
-fun MissingTermScoreHack(t: String, env: RREnv): QExpr {
-    return ConstCountExpr(0, LengthsExpr(env.defaultField, stats = env.getStats(t)))
-}
-
-fun MakeCheapWorstQuery(q: QExpr): QExpr = when(q) {
-    is MultiExpr -> MultiExpr(q.namedExprs.mapValues { (_, vq) -> MakeCheapWorstQuery(vq) })
-    is ConstCountExpr -> TODO()
-    is ConstBoolExpr -> TODO()
-    is LengthsExpr -> TODO()
-    is TextExpr -> TODO()
-    is LuceneExpr -> TODO()
-    is ConstScoreExpr -> q.deepCopy()
-    is AndExpr -> TODO()
-    is OrExpr -> TODO()
-    is CombineExpr -> TODO()
-    is MultExpr -> TODO()
-    is MaxExpr -> TODO()
-    is SmallerCountExpr -> TODO()
-    is SynonymExpr -> q.copy(children = q.children.map { MakeCheapWorstQuery(it) })
-
-    is UnorderedWindowExpr -> TODO()
-    is OrderedWindowExpr -> SmallerCountExpr(q.children.map { MakeCheapWorstQuery(it) })
-
-    AlwaysMatchLeaf, NeverMatchLeaf -> q
-    is DirQLExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
-    is WeightExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
-    is AbsoluteDiscountingQLExpr -> q.copy(child=MakeCheapWorstQuery(q.child))
-    is BM25Expr -> TODO()
-    is CountToScoreExpr -> TODO()
-    is BoolToScoreExpr -> TODO()
-    is CountToBoolExpr -> TODO()
-    is RequireExpr -> TODO()
-    is WhitelistMatchExpr -> TODO()
-    is UnorderedWindowCeilingExpr -> TODO()
-    is ProxExpr -> TODO()
-    is CountEqualsExpr -> TODO()
-}
 
 fun main(args: Array<String>) {
     val dataset = DataPaths.get("robust")
@@ -87,9 +45,10 @@ fun main(args: Array<String>) {
                 bestCaseOdWindows.add(DirQLExpr(SmallerCountExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
                 bestCaseUwWindows.add(DirQLExpr(SmallerCountExpr(listOf(TextExpr(lhs), TextExpr(rhs)))))
                 worstCaseWindowEstimators.add(DirQLExpr(
-                        // Use smaller-count expr in both places here, because we're hacking all counts to zero to just use statistics.
-                        SmallerCountExpr(listOf(lhs, rhs).map { MissingTermScoreHack(it, index.env) })
-                ))
+                        NeverMatchLeaf,
+                        stats=index.env.computeStats(SmallerCountExpr(listOf(TextExpr(lhs), TextExpr(rhs))))
+                        )
+                )
                 odWindows.add(DirQLExpr(OrderedWindowExpr(listOf(lhs, rhs).map { TextExpr(it) })))
                 uwWindows.add(DirQLExpr(SmallerCountExpr(listOf(lhs, rhs).map { TextExpr(it) })))
             }

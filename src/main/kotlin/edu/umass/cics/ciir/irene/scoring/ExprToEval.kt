@@ -26,6 +26,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
                     val d = c as DirQLExpr
                     NoLogDirichletSmoothingEval(
                             exprToEval(c.child, ctx) as CountEvalNode,
+                            ctx.createLengths(c.stats!!.field),
                             d.mu!!, c.stats!!)
                 },
                 q.weights.map { it }.toDoubleArray())
@@ -38,17 +39,21 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is MaxExpr -> MaxEval(q.children.map { exprToEval(it, ctx) })
     is WeightExpr -> WeightedEval(exprToEval(q.child, ctx), q.weight)
     is DirQLExpr -> {
-        try {
-            DirichletSmoothingEval(exprToEval(q.child, ctx) as CountEvalNode, q.mu!!, q.stats!!)
-        } catch (npe: KotlinNullPointerException) {
-            println(q)
-            throw npe
-        }
+        DirichletSmoothingEval(
+                exprToEval(q.child, ctx) as CountEvalNode,
+                ctx.createLengths(q.stats!!.field),
+                q.mu!!, q.stats!!)
     }
     is BM25Expr -> if (q.extractedIDF) {
-        BM25InnerScoringEval(exprToEval(q.child, ctx) as CountEvalNode, q.b!!, q.k!!, q.stats!!)
+        BM25InnerScoringEval(
+                exprToEval(q.child, ctx) as CountEvalNode,
+                ctx.createLengths(q.stats!!.field),
+                q.b!!, q.k!!, q.stats!!)
     } else {
-        BM25ScoringEval(exprToEval(q.child, ctx) as CountEvalNode, q.b!!, q.k!!, q.stats!!)
+        BM25ScoringEval(
+                exprToEval(q.child, ctx) as CountEvalNode,
+                ctx.createLengths(q.stats!!.field),
+                q.b!!, q.k!!, q.stats!!)
     }
     is CountToScoreExpr -> TODO()
     is BoolToScoreExpr -> TODO()
@@ -70,7 +75,7 @@ fun exprToEval(q: QExpr, ctx: IQContext): QueryEvalNode = when(q) {
     is ConstBoolExpr -> if(q.x) ConstTrueNode(ctx.numDocs()) else ConstEvalNode(0)
     is AbsoluteDiscountingQLExpr -> error("No efficient method to implement AbsoluteDiscountingQLExpr in Irene backend; needs numUniqWords per document.")
     is MultiExpr -> MultiEvalNode(q.children.map { exprToEval(it, ctx) }, q.names)
-    is LengthsExpr -> ctx.createLengths(q.statsField ?: error("statsField not set"), q.stats ?: error("stats not set"))
+    is LengthsExpr -> ctx.createLengths(q.statsField ?: error("statsField not set"))
     NeverMatchLeaf -> FixedMatchEvalNode(false, 0)
     AlwaysMatchLeaf -> FixedMatchEvalNode(true, ctx.numDocs().toLong())
     is WhitelistMatchExpr -> WhitelistMatchEvalNode(TIntHashSet(ctx.selectRelativeDocIds(q.docIdentifiers!!)))

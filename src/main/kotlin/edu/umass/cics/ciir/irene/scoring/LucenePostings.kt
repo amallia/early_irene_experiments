@@ -10,26 +10,15 @@ import org.apache.lucene.search.Explanation
  * Created from [TextExpr] via [exprToEval]
  * @author jfoley.
  */
-data class LuceneMissingTerm(val term: Term, val lengths: NumericDocValues) : PositionsEvalNode, LeafEvalNode() {
+data class LuceneMissingTerm(val term: Term) : PositionsEvalNode, LeafEvalNode() {
     override fun positions(): PositionsIter = error("Don't ask for positions if count is zero!")
     override fun count() = 0
     override fun matches() = false
-    override fun explain() = Explanation.match(0.0f, "MissingTerm-$term length=${length()}")
+    override fun explain() = Explanation.match(0.0f, "MissingTerm-$term")
     override fun estimateDF() = 0L
-    override fun length(): Int {
-        val doc = env.doc
-        if (lengths.docID() < doc) {
-            lengths.advance(doc)
-        }
-        if (lengths.docID() == doc) {
-            return lengths.longValue().toInt()
-        }
-        return 0
-    }
 }
 
 data class LuceneDocLengths(val field: String, val lengths: NumericDocValues): CountEvalNode, LeafEvalNode() {
-    override fun count(): Int = length()
     override fun matches(): Boolean {
         val doc = env.doc
         if (lengths.docID() < doc) {
@@ -40,9 +29,9 @@ data class LuceneDocLengths(val field: String, val lengths: NumericDocValues): C
         }
         return false
     }
-    override fun explain(): Explanation = Explanation.match(length().toFloat(), "lengths.$field")
+    override fun explain(): Explanation = Explanation.match(count().toFloat(), "lengths.$field")
     override fun estimateDF(): Long = lengths.cost()
-    override fun length(): Int {
+    override fun count(): Int {
         if (matches()) {
             return lengths.longValue().toInt()
         }
@@ -83,7 +72,7 @@ open class LuceneTermDocs(term: Term, postings: PostingsEnum) : LuceneTermFeatur
     override fun score(): Double = count().toDouble()
     override fun count(): Int = if (matches()) 1 else 0
 }
-open class LuceneTermCounts(term: Term, postings: PostingsEnum, val lengths: NumericDocValues) : LuceneTermDocs(term, postings), CountEvalNode {
+open class LuceneTermCounts(term: Term, postings: PostingsEnum) : LuceneTermDocs(term, postings), CountEvalNode {
     override fun score(): Double = count().toDouble()
     override fun count(): Int {
         if(matches()) {
@@ -91,18 +80,8 @@ open class LuceneTermCounts(term: Term, postings: PostingsEnum, val lengths: Num
         }
         return 0
     }
-    override fun length(): Int {
-        val doc = env.doc
-        if (lengths.docID() < doc) {
-            lengths.advance(doc)
-        }
-        if (lengths.docID() == doc) {
-            return lengths.longValue().toInt()
-        }
-        return 0;
-    }
 }
-class LuceneTermPositions(term: Term, postings: PostingsEnum, lengths: NumericDocValues) : LuceneTermCounts(term, postings, lengths), PositionsEvalNode {
+class LuceneTermPositions(term: Term, postings: PostingsEnum) : LuceneTermCounts(term, postings), PositionsEvalNode {
     var posDoc = -1
     var positions = IntList()
     override fun positions(): PositionsIter {
@@ -131,9 +110,9 @@ class LuceneTermPositions(term: Term, postings: PostingsEnum, lengths: NumericDo
 
     override fun explain(): Explanation {
         if (matches()) {
-            return Explanation.match(count().toFloat(), "@doc=${env.doc}, lengths@${lengths.docID()} positions=${positions()}")
+            return Explanation.match(count().toFloat(), "@doc=${env.doc}, positions=${positions()}")
         } else {
-            return Explanation.noMatch("@doc=${postings.docID()} doc=${env.doc}, lengths@=${lengths.docID()} positions=[]")
+            return Explanation.noMatch("@doc=${postings.docID()} doc=${env.doc}, positions=[]")
         }
     }
 }

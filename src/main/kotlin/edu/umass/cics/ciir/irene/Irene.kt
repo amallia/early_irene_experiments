@@ -132,8 +132,8 @@ class EmptyIndex(override val tokenizer: GenericTokenizer = WhitespaceTokenizer(
     override val defaultField: String = "missing"
     override val totalDocuments: Int = 0
     override fun fieldStats(field: String): CountStats? = null
-    override fun getStats(expr: QExpr): CountStats = CountStats("EmptyIndex($expr)")
-    override fun getStats(term: Term): CountStats = CountStats("EmptyIndex($term)")
+    override fun getStats(expr: QExpr): CountStats = CountStats("EmptyIndex($expr)", expr.getSingleStatsField(defaultField))
+    override fun getStats(term: Term): CountStats = CountStats("EmptyIndex($term)", term.field())
     override fun close() { }
     override fun search(q: QExpr, n: Int): TopDocs = TopDocs(0L, emptyArray(), -Float.MAX_VALUE)
     override fun getRREnv(): RREnv = error("No RREnv for EmptyIndex.")

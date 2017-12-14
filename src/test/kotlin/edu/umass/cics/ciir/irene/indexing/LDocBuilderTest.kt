@@ -52,9 +52,7 @@ class LDocBuilderTest {
 
                     run {
                         val scs = slowIndex.getStats(window1)
-                        println("SCS: $scs")
                         val fcs = fastIndex.getStats(window1)
-                        println("FCS: $scs")
 
                         assertEquals(scs.cl, fcs.cl)
                         assertEquals(scs.dc, fcs.dc)

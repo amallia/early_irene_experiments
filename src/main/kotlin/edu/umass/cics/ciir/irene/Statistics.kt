@@ -12,9 +12,10 @@ import org.apache.lucene.search.*
  *
  * @author jfoley.
  */
-data class CountStats(var text: String, var cf: Long, var df: Long, var cl: Long, var dc: Long) {
-    constructor(text: String): this(text, 0,0,0,0)
+data class CountStats(var text: String, val field: String, var cf: Long, var df: Long, var cl: Long, var dc: Long) {
+    constructor(text: String, field: String): this(text, field, 0,0,0,0)
     constructor(text: String, termStats: TermStatistics?, cstats: CollectionStatistics) : this(text,
+            field=cstats.field(),
             cf=termStats?.totalTermFreq() ?: 0,
             df=termStats?.docFreq() ?: 0,
             cl=cstats.sumTotalTermFreq(),
@@ -68,12 +69,14 @@ inline fun <T> List<T>.lazyMinAs(func: (T)->Long): Long? {
 class MinEstimatedCountStats(expr: QExpr, cstats: List<CountStats>): CountStatsStrategy() {
     override fun get(): CountStats = estimatedStats
     private val estimatedStats = CountStats("Est($expr)",
+            cstats[0].field,
             cstats.lazyMinAs { it.cf }?:0,
             cstats.lazyMinAs { it.df }?:0, cstats[0].cl, cstats[0].dc)
 }
 class ProbEstimatedCountStats(expr: QExpr, cstats: List<CountStats>): CountStatsStrategy() {
     override fun get(): CountStats = estimatedStats
-    private val estimatedStats = CountStats("Est($expr)",0,0,cstats[0].cl, cstats[0].dc).apply {
+    private val estimatedStats = CountStats("Est($expr)",
+            cstats[0].field,0,0,cstats[0].cl, cstats[0].dc).apply {
         if (cstats.lazyMinAs { it.cf } ?: 0L == 0L) {
             // one term does not exist, all things are zero.
         } else {
@@ -100,8 +103,8 @@ class CountStatsCollectorManager(val start: CountStats) : CollectorManager<Count
         return out
     }
 
-    class CountStatsCollector : Collector {
-        val stats = CountStats("tmp:CountStatsCollector")
+    class CountStatsCollector(field: String) : Collector {
+        val stats = CountStats("tmp:CountStatsCollector", field)
         override fun needsScores(): Boolean = false
         override fun getLeafCollector(context: LeafReaderContext): LeafCollector {
             val docBase = context.docBase
@@ -125,7 +128,7 @@ class CountStatsCollectorManager(val start: CountStats) : CollectorManager<Count
         }
     }
 
-    override fun newCollector(): CountStatsCollector = CountStatsCollector()
+    override fun newCollector(): CountStatsCollector = CountStatsCollector(start.field)
 }
 
 
@@ -147,7 +150,7 @@ object CalculateStatistics {
         //query.movement = query.exec
         val fields = query.exec.getStatsFields()
 
-        val fieldBasedStats = CountStats("expr:${query.exec}")
+        val fieldBasedStats = CountStats("expr:${query.exec}", fields.first())
         fields.forEach { field ->
             val fstats = cachedFieldStats(field) ?: error("Field: ``$field'' does not exist in index.")
             fieldBasedStats.dc = maxOf(fstats.dc, fieldBasedStats.dc)

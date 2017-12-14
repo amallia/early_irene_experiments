@@ -35,24 +35,25 @@ class RRGalagoEnv(val retr: LocalRetrieval) : RREnv() {
 
     override fun fieldStats(field: String): CountStats {
         val fstats = getFieldStats(field)
-        return CountStats("field=$field", cf=0, df=0, dc=fstats.documentCount, cl=fstats.collectionLength)
+        return CountStats("field=$field", field, cf=0, df=0, dc=fstats.documentCount, cl=fstats.collectionLength)
     }
 
     override fun computeStats(q: QExpr): CountStats {
         val field = q.getSingleStatsField(defaultField)
         val stats = retr.getNodeStatistics(retr.transformQuery(q.toGalago(this), Parameters.create()))
         val fstats = getFieldStats(field)
-        return CountStats(q.toString(),
+        return CountStats(q.toString(), field,
                 cf = stats.nodeFrequency,
                 df = stats.nodeDocumentCount,
                 dc = fstats.documentCount,
                 cl = fstats.collectionLength)
     }
     override fun getStats(term: String, field: String?): CountStats {
-        val termQ = GExpr("counts", term).apply { setf("field", field) }
+        val statsField = field ?: defaultField
+        val fstats = getFieldStats(statsField)
+        val termQ = GExpr("counts", term).apply { setf("field", statsField) }
         val stats = retr.getNodeStatistics(retr.transformQuery(termQ, Parameters.create()))!!
-        val fstats = getFieldStats(field ?: defaultField)
-        return CountStats(termQ.toString(),
+        return CountStats(termQ.toString(), statsField,
                 cf = stats.nodeFrequency,
                 df = stats.nodeDocumentCount,
                 dc = fstats.documentCount,

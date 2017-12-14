@@ -164,13 +164,13 @@ data class WhitelistMatchExpr(var docNames: Set<String>? = null, var docIdentifi
     override fun copyLeaf() = WhitelistMatchExpr(docNames, docIdentifiers)
 }
 
-data class LengthsExpr(var statsField: String?, var stats: CountStats? = null) : LeafExpr() {
+data class LengthsExpr(var statsField: String?) : LeafExpr() {
     override fun applyEnvironment(env: RREnv) {
         if (statsField == null) {
             statsField = env.defaultField
         }
     }
-    override fun copyLeaf() = LengthsExpr(statsField, stats)
+    override fun copyLeaf() = LengthsExpr(statsField)
 }
 sealed class OpExpr : QExpr() {
     abstract override var children: List<QExpr>

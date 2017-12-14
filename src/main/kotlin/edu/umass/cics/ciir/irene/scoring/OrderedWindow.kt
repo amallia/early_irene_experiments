@@ -166,8 +166,6 @@ abstract class CountWindow(children: List<PositionsEvalNode>) : AndEval<Position
     override fun matches(): Boolean {
         return super.matches() && count() > 0
     }
-    override fun length(): Int = children[0].length()
-
     override fun toString(): String {
         return children.joinToString(prefix="${this.javaClass.simpleName}[", postfix = "]", separator = ", ")
     }
@@ -218,8 +216,6 @@ class SmallerCountWindow(children: List<CountEvalNode>) : AndEval<CountEvalNode>
         }
         return min
     }
-    override fun length(): Int = children[0].length()
-
     override fun toString(): String {
         return children.joinToString(separator = ", ", prefix="sc(", postfix=")")
     }
@@ -244,5 +240,4 @@ class UnorderedWindowCeiling(val width: Int, children: List<CountEvalNode>) : An
         }
         return max * minOf(min, width)
     }
-    override fun length(): Int = children[0].length()
 }
