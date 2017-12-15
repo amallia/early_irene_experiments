@@ -38,7 +38,7 @@ fun main(args: Array<String>) {
     val dataset = DataPaths.get(dsName)
     val external = DataPaths.get(eName)
     val qrels = dataset.qrels
-    val measure = getEvaluator("map")
+    val measure = getEvaluator("R1000")
     val info = NamedMeasures()
     val scorer = argp.get("scorer", "ql")
     val qtype = argp.get("qtype", "title")
@@ -73,6 +73,7 @@ fun main(args: Array<String>) {
 
     queries.forEach { qid, qtext ->
         val judgments = qrels[qid] ?: QueryJudgments(qid, emptyMap())
+        if (judgments.wrapped.values.count { it > 0 } == 0) return@forEach
         val qterms = corpus.tokenize(qtext)
         println("$qid $qtext $qterms")
 
@@ -133,8 +134,8 @@ fun main(args: Array<String>) {
         exactR.outputTrecrun(w1, "sdm")
         approxR.outputTrecrun(w2, "sdm-rm3-external")
 
-        info.push("ap1", measure.evaluate(exactR, judgments))
-        info.push("ap2", measure.evaluate(approxR, judgments))
+        info.push("SDM-R1000", measure.evaluate(exactR, judgments))
+        info.push("SDM+ERM3-R1000", measure.evaluate(approxR, judgments))
 
         println("\t${info} ${times.mean} ${baseTimes.mean}")
     }
