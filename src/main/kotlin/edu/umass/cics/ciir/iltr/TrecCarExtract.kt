@@ -60,7 +60,7 @@ fun LTRDocOfCAR(tokenizer: GenericTokenizer, p: Parameters): LTRDoc {
         }
     }
 
-    MandatoryFields
+    CARFields
             .filterNot { fields.containsKey(it) }
             .forEach { fields[it] = LTREmptyDocField(it) }
 

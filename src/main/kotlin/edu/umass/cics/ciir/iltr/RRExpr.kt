@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.iltr
 
+import edu.umass.cics.ciir.chai.computeEntropy
 import edu.umass.cics.ciir.chai.mean
 import edu.umass.cics.ciir.irene.lang.QExpr
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
@@ -19,15 +20,14 @@ sealed class RRExpr(val env: RREnv) {
 
 class RREvalNodeExpr(env: RREnv, val node: QueryEvalNode) : RRLeafExpr(env) {
     constructor(env: RREnv, q: QExpr) : this(env, env.makeLTRQuery(q))
-    val scoreEnv = node.setup(LTRDocScoringEnv()) as LTRDocScoringEnv
     override fun eval(doc: LTRDoc): Double {
-        scoreEnv.nextDocument(doc)
-        return node.score()
+        val scoreEnv = LTRDocScoringEnv(doc)
+        return node.score(scoreEnv)
     }
 
     override fun explain(doc: LTRDoc): Explanation {
-        scoreEnv.nextDocument(doc)
-        return node.explain()
+        val scoreEnv = LTRDocScoringEnv(doc)
+        return node.explain(scoreEnv)
     }
 }
 
@@ -73,6 +73,10 @@ sealed class RRCountExpr(env: RREnv, val field: String) : RRExpr(env) {
 
 class RRAvgWordLength(env: RREnv, val field: String = env.defaultField) : RRLeafExpr(env) {
     override fun eval(doc: LTRDoc): Double = doc.terms(field).map { it.length }.mean()
+}
+
+class RREntropy(env: RREnv, val field: String = env.defaultField) : RRLeafExpr(env) {
+    override fun eval(doc: LTRDoc): Double = doc.terms(field).computeEntropy()
 }
 
 /**

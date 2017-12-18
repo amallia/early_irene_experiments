@@ -2,9 +2,11 @@ package edu.umass.cics.ciir.irene.scoring
 
 import edu.umass.cics.ciir.chai.IntList
 import edu.umass.cics.ciir.iltr.RREnv
+import edu.umass.cics.ciir.iltr.RRExpr
 import edu.umass.cics.ciir.irene.DataNeeded
 import edu.umass.cics.ciir.irene.GenericTokenizer
 import edu.umass.cics.ciir.irene.WhitespaceTokenizer
+import edu.umass.cics.ciir.sprf.incr
 import edu.umass.cics.ciir.sprf.pmake
 import gnu.trove.map.hash.TObjectIntHashMap
 import org.apache.lucene.index.Term
@@ -86,16 +88,26 @@ data class LTRDoc(val name: String, val features: HashMap<String, Double>, val r
         set("features", Parameters.wrap(features))
         set("name", name)
     }
+
+
+    /**
+     * Take in a list of [feature_exprs] to evaluate and output the count of [errors] (NaN or Inf) per feature.
+     */
+    fun evalAndSetFeatures(feature_exprs: Map<String, RRExpr>, errors: MutableMap<String, Int>) {
+        feature_exprs.forEach { fname, fexpr ->
+            val value = fexpr.eval(this)
+            if (value.isInfinite() || value.isNaN()) {
+                errors.incr(fname, 1)
+            } else {
+                this.features.put(fname, value)
+            }
+        }
+    }
 }
 
-data class LTRDocScoringEnv(var document: LTRDoc? = null) : ScoringEnv(-1) {
-    // Increment identifier if document changes.
-    fun nextDocument(next: LTRDoc) {
-        val current = document
-        if (current == null || current.name != next.name) {
-            doc++
-            document = next
-        }
+data class LTRDocScoringEnv(override val ltr: LTRDoc) : ScoringEnv(ltr.name.hashCode()) {
+    override fun toString(): String {
+        return "LTRDocScoringEnv(${ltr.name}, $doc)"
     }
 }
 
@@ -114,28 +126,24 @@ class LTREvalSetupContext(override val env: RREnv) : EvalSetupContext {
 
 
 abstract class LTRDocFeatureNode : QueryEvalNode {
-    lateinit var env: LTRDocScoringEnv
-    val doc: LTRDoc get() = env.document!!
     override val children: List<QueryEvalNode> = emptyList()
-    override fun init(env: ScoringEnv) {
-        this.env = env as? LTRDocScoringEnv ?: error("Bad ScoringEnv given: $env")
-    }
-    override fun explain(): Explanation = if (matches()) {
-        Explanation.match(score().toFloat(), "${this.javaClass.simpleName} count=${count()} score=${score()} matches=${matches()}")
+    override fun explain(env: ScoringEnv): Explanation = if (matches(env)) {
+        Explanation.match(score(env).toFloat(), "${this.javaClass.simpleName} count=${count(env)} score=${score(env)} matches=${matches(env)}")
     } else {
-        Explanation.noMatch("${this.javaClass.simpleName} count=${count()} score=${score()} matches=${matches()}")
+        Explanation.noMatch("${this.javaClass.simpleName} count=${count(env)} score=${score(env)} matches=${matches(env)}")
     }
     override fun estimateDF(): Long = 0
 }
 
 data class LTRDocLength(val field: String) : CountEvalNode, LTRDocFeatureNode() {
-    override fun count(): Int = doc.field(field).length
-    override fun matches(): Boolean = doc.fields.contains(field)
+    override fun count(env: ScoringEnv): Int = env.ltr.field(field).length
+    override fun matches(env: ScoringEnv): Boolean = env.ltr.fields.contains(field)
 }
 
 data class LTRDocTerm(val field: String, val term: String): PositionsEvalNode, LTRDocFeatureNode() {
     var cache: Pair<String, IntArray>? = null
-    override fun positions(): PositionsIter {
+    override fun positions(env: ScoringEnv): PositionsIter {
+        val doc = env.ltr
         val c = cache
         if (c != null && doc.name == c.first) {
             return PositionsIter(c.second)
@@ -148,18 +156,12 @@ data class LTRDocTerm(val field: String, val term: String): PositionsEvalNode, L
         cache = Pair(doc.name, hits)
         return PositionsIter(hits)
     }
-    override fun count(): Int = doc.field(field).count(term)
-    override fun matches(): Boolean = count() > 0
-    override fun explain(): Explanation = if (matches()) {
-        Explanation.match(score().toFloat(), "${this.javaClass.simpleName} count=${count()} score=${score()} matches=${matches()} positions=${positions()}")
+    override fun count(env: ScoringEnv): Int = env.ltr.field(field).count(term)
+    override fun matches(env: ScoringEnv): Boolean = count(env) > 0
+    override fun explain(env: ScoringEnv): Explanation = if (matches(env)) {
+        Explanation.match(score(env).toFloat(), "${this.javaClass.simpleName} count=${count(env)} score=${score(env)} matches=${matches(env)} positions=${positions(env)}")
     } else {
-        Explanation.noMatch("${this.javaClass.simpleName} count=${count()} score=${score()} matches=${matches()} positions=${positions()}")
+        Explanation.noMatch("${this.javaClass.simpleName} count=${count(env)} score=${score(env)} matches=${matches(env)} positions=${positions(env)}")
     }
 }
-
-data class LTRDocPositions(val field: String, val term: String): CountEvalNode, LTRDocFeatureNode() {
-    override fun count(): Int = doc.field(field).count(term)
-    override fun matches(): Boolean = count() > 0
-}
-
 

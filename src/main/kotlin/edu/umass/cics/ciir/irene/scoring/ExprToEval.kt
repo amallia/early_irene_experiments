@@ -73,7 +73,7 @@ fun exprToEval(q: QExpr, ctx: EvalSetupContext): QueryEvalNode = when(q) {
     is ConstScoreExpr -> ConstEvalNode(q.x)
     is ConstCountExpr -> ConstCountEvalNode(q.x, exprToEval(q.lengths, ctx))
     is ConstBoolExpr -> if(q.x) ConstTrueNode(ctx.numDocs()) else ConstEvalNode(0)
-    is AbsoluteDiscountingQLExpr -> error("No efficient method to implement AbsoluteDiscountingQLExpr in Irene backend; needs numUniqWords per document.")
+    is AbsoluteDiscountingQLExpr -> TODO("No efficient method to implement AbsoluteDiscountingQLExpr in Irene backend; needs numUniqWords per document.")
     is MultiExpr -> MultiEvalNode(q.children.map { exprToEval(it, ctx) }, q.names)
     is LengthsExpr -> ctx.createLengths(q.statsField ?: error("statsField not set"))
     NeverMatchLeaf -> FixedMatchEvalNode(false, 0)

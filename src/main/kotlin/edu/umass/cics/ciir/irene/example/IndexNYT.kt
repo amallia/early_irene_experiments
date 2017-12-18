@@ -12,7 +12,6 @@ import edu.umass.cics.ciir.sprf.NYTSource
 import edu.umass.cics.ciir.sprf.reader
 import gnu.trove.map.hash.TObjectFloatHashMap
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
-import org.apache.lucene.analysis.core.WhitespaceAnalyzer
 import org.apache.lucene.document.*
 import org.apache.lucene.search.ScoreDoc
 import org.jsoup.Jsoup
@@ -48,7 +47,6 @@ object NYT {
 
     fun getIndexParams(path: String) = IndexParams().apply {
         withPath(File(path))
-        withAnalyzer("classifier", WhitespaceAnalyzer())
         defaultField = "text"
     }
 

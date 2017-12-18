@@ -196,16 +196,16 @@ class MaxMinCollectorManager(val mq: MultiExpr, val poolSize: Int, val epsilon: 
             totalHits.incrementAndGet()
 
             // Get bounds on expression.
-            val base = baseExpr.score().toFloat()
-            val best = bestExpr.score().toFloat()
-            val worst = worstExpr.score().toFloat()
+            val base = baseExpr.score(env).toFloat()
+            val best = bestExpr.score(env).toFloat()
+            val worst = worstExpr.score(env).toFloat()
 
             // Throw in an epsilon here to avoid rounding/floating point errors causing loss.
             val max = base + best + epsilon
             val min = base + worst - epsilon
 
             if (java.lang.Float.isInfinite(min)) {
-                println(worstExpr.explain())
+                println(worstExpr.explain(env))
                 return
             }
 
@@ -247,7 +247,7 @@ class MaxMinCollectorManager(val mq: MultiExpr, val poolSize: Int, val epsilon: 
                 }
                 val doc = mmsd.id - docBase
                 env.doc = doc
-                val delta = trueExpr.score().toFloat()
+                val delta = trueExpr.score(env).toFloat()
                 val exactScore = mmsd.baseScore + delta
 
                 assert(exactScore >= mmsd.minScore && exactScore <= mmsd.maxScore) {

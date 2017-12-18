@@ -155,7 +155,7 @@ object EstablishRecallBoost {
         val qrels = dataset.qrels
         val measure = getEvaluator("R1000")
         val info = NamedMeasures()
-        val scorer = argp.get("scorer", "ql")
+        val scorer = argp.get("scorer", "bm25")
         val qtype = argp.get("qtype", "title")
         val estStats = argp.get("stats", "min")
 
