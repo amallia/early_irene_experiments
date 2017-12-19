@@ -1,15 +1,19 @@
 package edu.umass.cics.ciir.irene.scoring
 
+import edu.umass.cics.ciir.chai.ComputedStats
 import edu.umass.cics.ciir.chai.IntList
+import edu.umass.cics.ciir.chai.StreamingStats
 import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.irene.DataNeeded
 import edu.umass.cics.ciir.irene.IreneIndex
 import edu.umass.cics.ciir.irene.createOptimizedMovementExpr
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.lucene_try
+import edu.umass.cics.ciir.sprf.DataPaths
 import org.apache.lucene.index.*
 import org.apache.lucene.search.*
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  *
@@ -31,14 +35,20 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) :
     val iterNeeds = HashMap<Term, DataNeeded>()
     val evalCache = HashMap<Term, QueryEvalNode>()
 
-    private fun getLengths(field: String) = lengths.computeIfAbsent(field, { missing ->
+    private fun getLengths(field: String) = lengths.computeIfAbsent(field, { missing -> getLengthsRaw(missing) })
+
+    private fun getLengthsRaw(field: String): NumericDocValues {
         // Get explicitly indexed lengths:
-        lucene_try { context.reader().getNumericDocValues("lengths:$missing") }
+        val lengths = lucene_try { context.reader().getNumericDocValues("lengths:$field") }
                 // Or get the norms... lucene doesn't always put lengths here...
-                ?: lucene_try { context.reader().getNormValues(missing) }
+                ?: lucene_try { context.reader().getNormValues(field) }
                 // Or crash.
-                ?: error("Couldn't find norms for ``$missing'' ND=${context.reader().numDocs()} F=${context.reader().fieldInfos.map { it.name }}.")
-    })
+                ?: error("Couldn't find norms for ``$field'' ND=${context.reader().numDocs()} F=${context.reader().fieldInfos.map { it.name }}.")
+
+        // Lucene requires that we call nextDoc() to begin reading any DocIdSetIterator
+        lengths.nextDoc()
+        return lengths
+    }
 
     override fun create(term: Term, needed: DataNeeded): QueryEvalNode {
         return create(term, needed, getLengths(term.field()))
@@ -102,7 +112,7 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) :
     override fun numDocs(): Int = context.reader().numDocs()
 
     override fun createLengths(field: String): CountEvalNode {
-        return LuceneDocLengths(field, getLengths(field))
+        return LuceneDocLengths(field, getLengths(field), getLengthsInfo(field))
     }
 
     fun setup(input: QExpr): QExpr {
@@ -133,6 +143,22 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) :
         }
 
         return foldOperators
+    }
+
+    fun getLengthsInfo(field: String): ComputedStats {
+        return lengthInfoCache.computeIfAbsent(Pair(field, this.shardIdentity()), {
+            val stats = StreamingStats()
+            val lengths = getLengthsRaw(field)
+            while(lengths.docID() < NO_MORE_DOCS) {
+                stats.push(lengths.longValue())
+                lengths.nextDoc()
+            }
+            stats.toComputedStats()
+        })
+    }
+
+    companion object {
+        val lengthInfoCache = ConcurrentHashMap<Pair<String, Any>, ComputedStats>()
     }
 }
 
@@ -238,3 +264,40 @@ class IreneQueryModel(val index: IreneIndex, val env: IreneQueryLanguage, q: QEx
     }
 }
 
+inline fun NumericDocValues.forEach(f: (Long)->Unit) {
+    val current = docID()
+    // Leave if finished.
+    if (current == NO_MORE_DOCS) return
+    // Start if not yet ready.
+    if (current == -1) nextDoc()
+
+    while(docID() < NO_MORE_DOCS) {
+        f(longValue())
+        nextDoc()
+    }
+}
+
+fun main(args: Array<String>) {
+    DataPaths.Robust.getIreneIndex().use { index ->
+        val mu = index.env.defaultDirichletMu
+        val stats = index.getStats("president")
+        val bg = mu * stats.nonzeroCountProbability()
+        index.reader.leaves().forEach { leaf ->
+            println("Leaf: docBase=${leaf.docBase} ord=${leaf.ord} ordInParent=${leaf.ordInParent} N=${leaf.reader().numDocs()}")
+            val lengths = leaf.reader().getNormValues(index.defaultField) ?: leaf.reader().getNumericDocValues("lengths:${index.defaultField}")
+
+            val ss = StreamingStats()
+            lengths.forEach { count ->
+                ss.push(count)
+            }
+            val worstCaseLength = ss.max
+
+            for (c in listOf(0, 1, 10, worstCaseLength.toInt()/4)) {
+                val logDirProb = Math.log((c + bg) / (worstCaseLength + mu))
+                println("c=$c / l=$worstCaseLength => $logDirProb")
+            }
+
+            println(ss)
+        }
+    }
+}

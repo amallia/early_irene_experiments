@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.irene.scoring
 
+import edu.umass.cics.ciir.chai.ComputedStats
 import edu.umass.cics.ciir.chai.IntList
 import org.apache.lucene.index.NumericDocValues
 import org.apache.lucene.index.PostingsEnum
@@ -18,7 +19,7 @@ data class LuceneMissingTerm(val term: Term) : PositionsEvalNode, LeafEvalNode()
     override fun estimateDF() = 0L
 }
 
-data class LuceneDocLengths(val field: String, val lengths: NumericDocValues): CountEvalNode, LeafEvalNode() {
+data class LuceneDocLengths(val field: String, val lengths: NumericDocValues, val info: ComputedStats): CountEvalNode, LeafEvalNode() {
     override fun matches(): Boolean {
         val doc = env.doc
         if (lengths.docID() < doc) {
@@ -29,7 +30,7 @@ data class LuceneDocLengths(val field: String, val lengths: NumericDocValues): C
         }
         return false
     }
-    override fun explain(): Explanation = Explanation.match(count().toFloat(), "lengths.$field")
+    override fun explain(): Explanation = Explanation.match(count().toFloat(), "lengths.$field $info")
     override fun estimateDF(): Long = lengths.cost()
     override fun count(): Int {
         if (matches()) {
