@@ -1,9 +1,8 @@
 package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.chai.*
-import edu.umass.cics.ciir.irene.GenericTokenizer
+import edu.umass.cics.ciir.irene.IIndex
 import edu.umass.cics.ciir.irene.lang.*
-import edu.umass.cics.ciir.irene.logSumExp
 import edu.umass.cics.ciir.irene.scoring.ILTRDocField
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.scoring.LTRDocField
@@ -18,21 +17,20 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * @author jfoley
  */
-private fun forEachSDMPoolQuery(tokenizer: GenericTokenizer, dsName: String, doFn: (LTRQuery) -> Unit) {
-    File("$dsName.irene-sdm.qlpool.jsonl.gz").smartDoLines { line ->
+private fun forEachSDMPoolQuery(index: IIndex, fields: Set<String>, dsName: String, doFn: (LTRQuery) -> Unit) {
+    File("$dsName.irene.pool.jsonl.gz").smartDoLines { line ->
         val qjson = Parameters.parseStringOrDie(line)
         val qid = qjson.getStr("qid")
         val qtext = qjson.getStr("qtext")
         val qterms = qjson.getAsList("qterms", String::class.java)
 
-        val docs = qjson.getAsList("docs", Parameters::class.java).map { LTRDocOfWeb(tokenizer, it) }
+        val docs = qjson.getAsList("docs", Parameters::class.java).map { LTRDocFromIndex(index, fields, it) }
 
         doFn(LTRQuery(qid, qtext, qterms, docs))
     }
 }
 
-val MandatoryFields = arrayListOf<String>("title", "body", "document")
-fun LTRDocOfWeb(tokenizer: GenericTokenizer, p: Parameters): LTRDoc {
+fun LTRDocFromIndex(index: IIndex, mandatoryFields: Set<String>, p: Parameters): LTRDoc {
     val fjson = p.getMap("fields")
 
     val features = HashMap<String, Double>()
@@ -41,7 +39,7 @@ fun LTRDocOfWeb(tokenizer: GenericTokenizer, p: Parameters): LTRDoc {
     fjson.keys.forEach { key ->
         if (fjson.isString(key)) {
             val fieldText = fjson.getStr(key)
-            fields.put(key, LTRDocField(key, fieldText, tokenizer))
+            fields.put(key, LTRDocField(key, fieldText, index.tokenizer))
         } else if(fjson.isDouble(key)) {
             features.put("double-field-$key", fjson.getDouble(key))
         } else if(fjson.isLong(key)) {
@@ -51,44 +49,41 @@ fun LTRDocOfWeb(tokenizer: GenericTokenizer, p: Parameters): LTRDoc {
         }
     }
 
-    MandatoryFields
+    mandatoryFields
             .filterNot { fields.containsKey(it) }
             .forEach { fields[it] = LTREmptyDocField(it) }
 
     val name = p.getStr("id")
-    val rank = p.getInt("rank")
-    features["title-ql-prior"] = p.getDouble("title-ql-prior")
-    features["title-ql"] = p.getDouble("title-ql")
-
-    return LTRDoc(name, features, rank, fields)
+    return LTRDoc(name, features, -1, fields)
 }
 
-val WikiFields = setOf("body", "short_text", "title", "id")
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dsName = argp.get("dataset", "clue09")
+    val dsName = argp.get("dataset", "nyt-cite")
     val dataset = DataPaths.get(dsName)
     val evals = getEvaluators(listOf("ap", "ndcg"))
     val ms = NamedMeasures()
     val qrels = dataset.getQueryJudgments()
     val qid = argp.get("qid")?.toString()
     val qidBit = if (qid == null) "" else ".$qid"
-    val statsField = argp.get("statsField", "document")
     val onlyEmitJudged = argp.get("onlyJudged", false)
     val judgedBit = if (onlyEmitJudged) ".judged" else ""
-    val outDir = argp.get("output-dir", "l2rf/latest/")
+    val outDir = argp.get("output-dir", "nyt-cite-ltr/")
+
+    val wikiSource = WikiSource()
+    val wiki = wikiSource.getIreneIndex()
+    val WikiFields = wikiSource.textFields + setOf(wiki.idFieldName, wiki.defaultField)
+    val fieldWeights = wikiSource.textFields.associate { it to wiki.fieldStats(it)!!.avgDL() }.normalize()
 
     File("$outDir/$dsName$judgedBit$qidBit.features.jsonl.gz").smartPrint { out ->
-        Pair(WikiSource().getIreneIndex(), dataset.getIreneIndex()).use { wiki, index ->
+        dataset.getIreneIndex().use { index ->
             val env = index.getRREnv()
             env.estimateStats = "min"
             wiki.env.estimateStats = env.estimateStats
             wiki.env.defaultDirichletMu = 7000.0
             val wikiN = wiki.fieldStats("body")!!.dc.toDouble()
 
-            val fieldWeights = listOf("body", "short_text").associate { it to wiki.fieldStats(it)!!.avgDL() }.normalize()
-
-            forEachSDMPoolQuery(index.tokenizer, dsName) { q ->
+            forEachSDMPoolQuery(index, dataset.textFields, dsName) { q ->
                 if (qid != null && qid != q.qid) {
                     // skip all but qid if specified.
                     return@forEachSDMPoolQuery
@@ -98,7 +93,7 @@ fun main(args: Array<String>) {
                 val query_features = HashMap<String, Double>()
 
                 val qdf = StreamingStats().apply {
-                    q.qterms.forEach { push(env.getStats(it, statsField).binaryProbability()) }
+                    q.qterms.forEach { push(env.getStats(it, dataset.statsField).binaryProbability()) }
                 }
                 query_features["q_min_df"] = qdf.min
                 query_features["q_mean_df"] = qdf.mean
@@ -113,12 +108,12 @@ fun main(args: Array<String>) {
                 query_features["q_wiki_max_df"] = wdf.max
                 query_features["q_wiki_stddev_df"] = wdf.standardDeviation
 
+                // TODO, move this into WikiSource somehow.
                 val wikiQ = SumExpr(
                         SequentialDependenceModel(q.qterms, field = "short_text", statsField = "body", stopwords = inqueryStop).weighted(fieldWeights["short_text"]),
                         SequentialDependenceModel(q.qterms, field = "body", statsField = "body", stopwords = inqueryStop).weighted(fieldWeights["body"]))
                 val wikiTopDocs = wiki.search(wikiQ, 1000)
                 val wikiScoreInfo = wikiTopDocs.scoreDocs.map { it.score }.computeStats()
-                val logSumExp = wikiTopDocs.logSumExp()
 
                 // What percentage of wikipedia matches this query?
                 query_features["wiki_hits"] = wikiTopDocs.totalHits.toDouble() / wikiN
@@ -126,25 +121,18 @@ fun main(args: Array<String>) {
                     val normScore = wikiScoreInfo.maxMinNormalize(sdoc.score.toDouble())
                     val docFields = wiki.document(sdoc.doc, WikiFields)?.toParameters() ?: return@mapIndexedNotNull null
 
-                    val body = docFields.get("body", "")
-                    val title = docFields.get("title", "")
-                    val short_text = docFields.get("short_text", "")
-                    val fields = listOf(
-                            LTRDocField("body",  body, wiki.tokenizer),
-                            LTRDocField("title", title, wiki.tokenizer),
-                            LTRDocField("short_text", short_text, wiki.tokenizer)
-                    ).associateTo(HashMap()) { it.toEntry() }
-                    val features = hashMapOf(
-                            "title-ql" to sdoc.score.toDouble(),
-                            "title-ql-prior" to Math.exp(sdoc.score.toDouble() - logSumExp),
-                            "wiki-score-norm" to normScore
-                    )
-                    LTRDoc(docFields.getStr("id"), features, i+1, fields, "body")
+                    val fields = wikiSource.textFields.map { fname ->
+                        val text = docFields.get(fname, "")
+                        LTRDocField(fname, text, wiki.tokenizer)
+                    }.associateTo(HashMap()) { it.toEntry() }
+
+                    val features = hashMapOf( "wiki-score-norm" to normScore)
+                    LTRDoc(docFields.getStr("id"), features, i+1, fields, wiki.defaultField)
                 }.take(50).toList()
 
-                val sourceFields = arrayListOf("short_text", "body")
+                val sourceFields = wikiSource.textFields.toList()
                 val relevanceModelDepths = arrayListOf(5,10,25)
-                val targetFields = arrayListOf("title", "body", "document")
+                val targetFields = dataset.textFields
                 val numRMTerms = arrayListOf(10,50,100)
 
                 relevanceModelDepths.forEach { k ->
@@ -158,7 +146,7 @@ fun main(args: Array<String>) {
                             targetFields.forEach { tf ->
                                 numRMTerms.forEach { fbTerms ->
                                     val key = "norm:$tf:wiki.$sourceField-rm-k$fbDocs-t$fbTerms"
-                                    val rmeExpr = rm.toQExpr(fbTerms, targetField = tf, statsField = statsField).toRRExpr(env)
+                                    val rmeExpr = rm.toQExpr(fbTerms, targetField = tf, statsField = dataset.statsField).toRRExpr(env)
                                     feature_exprs.put(key, rmeExpr)
                                 }
                             }
@@ -166,7 +154,7 @@ fun main(args: Array<String>) {
                     }
                 }
 
-                arrayListOf("title", "body", "document").forEach { fieldName ->
+                dataset.textFields.forEach { fieldName ->
                     val qterms = index.tokenize(q.qtext, fieldName)
                     println("${q.qid} $fieldName: $qterms")
                     q.docs.forEach { doc ->
@@ -176,11 +164,10 @@ fun main(args: Array<String>) {
 
                     // Retrieval models.
                     feature_exprs.putAll(hashMapOf<String, QExpr>(
-                            Pair("norm:$fieldName:bm25", UnigramRetrievalModel(qterms, { BM25Expr(it) }, fieldName, statsField)),
-                            Pair("norm:$fieldName:LM-dir", QueryLikelihood(qterms, fieldName, statsField)),
-                            Pair("norm:$fieldName:LM-abs", UnigramRetrievalModel(qterms, { AbsoluteDiscountingQLExpr(it) }, fieldName, statsField)),
-                            Pair("norm:$fieldName:fdm-stop", FullDependenceModel(qterms, field = fieldName, statsField = statsField, stopwords = inqueryStop)),
-                            Pair("norm:$fieldName:sdm-stop", SequentialDependenceModel(qterms, field = fieldName, statsField = statsField, stopwords = inqueryStop))
+                            Pair("norm:$fieldName:bm25", UnigramRetrievalModel(qterms, { BM25Expr(it) }, fieldName, dataset.statsField)),
+                            Pair("norm:$fieldName:LM-dir", QueryLikelihood(qterms, fieldName, dataset.statsField)),
+                            Pair("norm:$fieldName:fdm-stop", FullDependenceModel(qterms, field = fieldName, statsField = dataset.statsField, stopwords = inqueryStop)),
+                            Pair("norm:$fieldName:sdm-stop", SequentialDependenceModel(qterms, field = fieldName, statsField = dataset.statsField, stopwords = inqueryStop))
                     ).mapValues { (_,q) -> q.toRRExpr(env) })
 
                     feature_exprs.putAll(hashMapOf<String, RRExpr>(
@@ -188,20 +175,9 @@ fun main(args: Array<String>) {
                             Pair("avgwl", RRAvgWordLength(env, field = fieldName)),
                             Pair("meantp", env.mean(qterms.map { RRTermPosition(env, it, fieldName) })),
                             Pair("jaccard-stop", RRJaccardSimilarity(env, inqueryStop, field = fieldName)),
-                            Pair("length", RRDocLength(env, field = fieldName))).mapKeys { (k, _) -> "$fieldName:$k" }
-                    )
-                }
-
-                arrayListOf<Int>(5, 10, 25).forEach { fbDocs ->
-                    val rm = computeRelevanceModel(q.docs, "title-ql-prior", fbDocs, field=env.defaultField)
-                    arrayListOf("title", "body", "document").forEach { fieldName ->
-                        numRMTerms.forEach { fbTerms ->
-                            val wt = rm.toTerms(fbTerms)
-                            val rmeExpr = rm.toQExpr(fbTerms, targetField = fieldName, statsField=statsField).toRRExpr(env)
-                            feature_exprs.put("norm:$fieldName:rm-k$fbDocs-t$fbTerms", rmeExpr)
-                            feature_exprs.put("$fieldName:jaccard-rm-k$fbDocs-t$fbTerms", RRJaccardSimilarity(env, wt.map { it.term }.toSet(), field = fieldName))
-                        }
-                    }
+                            Pair("entropy", RREntropy(env, field = fieldName)),
+                            Pair("length", RRDocLength(env, field = fieldName))
+                    ).mapKeys { (k, _) -> "$fieldName:$k" })
                 }
 
                 val docList = if (onlyEmitJudged) {
@@ -210,27 +186,42 @@ fun main(args: Array<String>) {
                     q.docs
                 }
 
-                val skippedFeatures = ConcurrentHashMap<String, Int>()
-                docList.parallelStream().forEach { doc ->
-                    feature_exprs.forEach { fname, fexpr ->
-                        val value = fexpr.eval(doc)
-                        if (value.isInfinite() || value.isNaN()) {
-                            skippedFeatures.incr(fname, 1)
-                        } else {
-                            doc.features.put(fname, value)
-                        }
-                    }
-                }
-
-                if (skippedFeatures.isNotEmpty()) {
-                    println("Skipped NaN or Infinite features: ${skippedFeatures}")
-                }
                 docList.forEach { doc ->
                     doc.features.putAll(query_features)
                 }
 
+                val skippedFeatures = ConcurrentHashMap<String, Int>()
+                docList.forEach { doc ->
+                    doc.evalAndSetFeatures(feature_exprs, skippedFeatures)
+                }
+                if (skippedFeatures.isNotEmpty()) {
+                    println("Skipped NaN or Infinite features: ${skippedFeatures}")
+                    skippedFeatures.clear()
+                }
+
+                val feature_exprs_2pass = HashMap<String, RRExpr>()
+                arrayListOf<Int>(5, 10, 25).forEach { fbDocs ->
+                    val rm = computeRelevanceModel(q.docs, "norm:${env.defaultField}:sdm-stop", fbDocs, field=env.defaultField, logSumExp = true)
+                    dataset.textFields.forEach { fieldName ->
+                        numRMTerms.forEach { fbTerms ->
+                            val wt = rm.toTerms(fbTerms)
+                            val rmeExpr = rm.toQExpr(fbTerms, targetField = fieldName, statsField=dataset.statsField).toRRExpr(env)
+                            feature_exprs_2pass.put("norm:$fieldName:rm-k$fbDocs-t$fbTerms", rmeExpr)
+                            feature_exprs_2pass.put("$fieldName:jaccard-rm-k$fbDocs-t$fbTerms", RRJaccardSimilarity(env, wt.map { it.term }.toSet(), field = fieldName))
+                        }
+                    }
+                }
+
+                docList.forEach { doc ->
+                    doc.evalAndSetFeatures(feature_exprs_2pass, skippedFeatures)
+                }
+                if (skippedFeatures.isNotEmpty()) {
+                    println("Skipped NaN or Infinite features: ${skippedFeatures}")
+                    skippedFeatures.clear()
+                }
+
                 if (!onlyEmitJudged) {
-                    arrayListOf<String>("norm:body:wiki.short_text-rm-k10-t100", "norm:body:rm-k10-t100").forEach { method ->
+                    arrayListOf<String>("norm:${index.defaultField}:wiki.short_text-rm-k10-t100", "norm:${index.defaultField}:rm-k10-t100").forEach { method ->
                         evals.forEach { measure, evalfn ->
                             val score = try {
                                 val results = q.toQResults(method)
@@ -256,4 +247,5 @@ fun main(args: Array<String>) {
             }
         }
     }
+    wiki.close()
 }

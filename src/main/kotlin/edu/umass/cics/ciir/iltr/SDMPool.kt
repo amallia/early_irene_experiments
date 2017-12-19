@@ -24,6 +24,7 @@ fun main(args: Array<String>) {
     val qrels = dataset.getQueryJudgments()
     val ms = NamedMeasures()
     val depth = argp.get("depth", 500)
+    val forceRelevant = argp.get("forceRelevant", true)
 
     File("$dsName.irene.pool.jsonl.gz").smartPrint { output ->
         dataset.getIreneIndex().use { index ->
@@ -50,8 +51,19 @@ fun main(args: Array<String>) {
                 val relFound = inPool.count { relDocs.contains(index.getDocumentName(it)) }
                 println("qid:$qid, R:${safeDiv(relFound, relDocs.size)} R:$relFound/${relDocs.size}")
 
+                if (forceRelevant && relFound < relDocs.size) {
+                    val extra = relDocs
+                            .mapNotNull { index.documentById(it.toInt().toString()) }
+                    val orig = inPool.size
+                    inPool.addAll(extra)
+                    val delta = inPool.size - orig
+                    if (delta > 0) {
+                        println("\t--forceRelevant: Added $delta documents to pool.")
+                    }
+                }
+
                 // Not helpful for learning otherwise...
-                if (relFound > 0) {
+                if (forceRelevant || relFound > 0) {
                     val rawDocs = inPool.associate { doc ->
                         val ldoc = index.document(doc)!!
                         val fields = pmake {}

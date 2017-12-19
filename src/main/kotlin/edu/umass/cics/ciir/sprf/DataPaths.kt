@@ -40,6 +40,9 @@ abstract class IRDataset {
     })
     abstract val name: String
 
+    abstract val textFields: Set<String>
+    abstract val statsField: String
+
     open fun getBM25B(): Double? = null
     open fun getBM25K(): Double? = null
 
@@ -82,9 +85,12 @@ class Robust04 : IRDataset() {
         }
         return IndexParams().apply {
             withPath(File(path))
-            defaultField = "body"
+            defaultField = statsField
         }
     }
+
+    override val statsField: String = "body"
+    override val textFields: Set<String> = setOf("body", "title")
 
     override val name: String get() = "robust"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
@@ -116,6 +122,9 @@ open class Gov2 : IRDataset() {
             withAnalyzer("url", WhitespaceAnalyzer())
         }
     }
+
+    override val statsField: String = "document"
+    override val textFields: Set<String> = setOf("title", "body", "document")
     override val name: String get() = "gov2"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "oakey" -> "/mnt/scratch/jfoley/gov2.galago/"
@@ -136,6 +145,8 @@ class MQ2007 : Gov2() {
 }
 
 open class NYTSource : IRDataset() {
+    override val textFields: Set<String> = setOf("title", "headline", "lead", "byline", "text", "classifier")
+    override val statsField: String = "text"
     override fun getTitleQueryFile(): File = error("No queries.")
     override fun getDescQueryFile(): File = error("No queries.")
     override fun getQueryJudgmentsFile(): File = error("No queries.")
@@ -195,7 +206,8 @@ class NYTWikiCite : NYTSource() {
             NYTWikiCiteQuery(
                     qid="%03d".format(i),
                     pages=p.getAsList("titles", String::class.java),
-                    relevant=p.getStr("judgment"))
+                    // Hack judgment document ids to match index and NIST (no more leading zeros):
+                    relevant=p.getStr("judgment").toInt().toString())
         }
     }
 
@@ -213,6 +225,8 @@ class NYTWikiCite : NYTSource() {
 
 open class WikiSource : IRDataset() {
     override val name: String = "wiki"
+    override val textFields: Set<String> = setOf("body", "short_text")
+    override val statsField: String = "body"
     override fun getTitleQueryFile(): File = error("No queries.")
     override fun getDescQueryFile(): File = error("No queries.")
     override fun getQueryJudgmentsFile(): File = error("No queries.")
@@ -291,6 +305,8 @@ class Clue09BSpam60 : IRDataset() {
             withAnalyzer("url", WhitespaceAnalyzer())
         }
     }
+    override val statsField: String = "document"
+    override val textFields: Set<String> = setOf("title", "body", "document")
     override val name: String get() = "clue09bspam60"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "sydney" -> "/mnt/nfs/work3/sjh/indexes/clueweb-09-b-spam60.index/"
@@ -314,6 +330,8 @@ class WT10G : IRDataset() {
             withAnalyzer("url", WhitespaceAnalyzer())
         }
     }
+    override val statsField: String = "document"
+    override val textFields: Set<String> = setOf("title", "body", "document")
     override val name: String get() = "wt10g"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "sydney" -> "/mnt/nfs/work3/sjh/indexes/wt10g.index/"
@@ -325,6 +343,8 @@ class WT10G : IRDataset() {
 }
 
 class TrecCarTest200 : IRDataset() {
+    override val textFields: Set<String> = setOf("text", "links")
+    override val statsField: String = "text"
     override val name: String = "trec-car"
     fun getBaseDir(): File = File(when(host) {
         "oakey" -> "/mnt/scratch/jfoley/trec-car/"
