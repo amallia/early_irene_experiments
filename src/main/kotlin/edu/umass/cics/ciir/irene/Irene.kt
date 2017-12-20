@@ -244,6 +244,7 @@ class IreneIndex(val io: RefCountedIO, val params: IndexParams) : IIndex {
     }
 
     override fun search(q: QExpr, n: Int): TopDocs {
+        if (n == 0) return TopDocs(0L, emptyArray(), Float.NaN)
         return searcher.search(prepare(q), TopKCollectorManager(n))!!
     }
 

@@ -2,14 +2,13 @@ package edu.umass.cics.ciir.iltr.rf
 
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.loadRanklibViaJSoup
+import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.toQueryResults
 import edu.umass.cics.ciir.learning.EnsembleNode
 import edu.umass.cics.ciir.learning.FloatArrayVector
 import edu.umass.cics.ciir.learning.TreeNode
 import edu.umass.cics.ciir.learning.computeMeanVector
-import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.NamedMeasures
-import edu.umass.cics.ciir.sprf.getEvaluator
-import edu.umass.cics.ciir.sprf.incr
+import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.EvalDoc
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QueryResults
@@ -135,6 +134,10 @@ fun main(args: Array<String>) {
         fbCounts.incr(fb.correct.size, 1)
     }
 
+    val index = DataPaths.Gov2.getIreneIndex()
+    val fbField = argp.get("fbField", index.defaultField)
+    val fbTerms = argp.get("fbTerms", 100)
+
     val measures = NamedMeasures()
     user.forEach { qid, fb ->
         val judgments = qrels[qid] ?: QueryJudgments(qid, emptyMap())
@@ -150,6 +153,33 @@ fun main(args: Array<String>) {
             measures.ppush(qid,"FB-RAW-AP[10..]", map.evaluate(QueryResults(qid, fbRaw_ranking), judgments))
             measures.ppush(qid,"FB-LTR-AP[10..]", map.evaluate(QueryResults(qid, fbLTR_ranking), judgments))
 
+            val whitelist = WhitelistMatchExpr(fb.remaining.mapTo(HashSet()) { it.name })
+            val correctDocTerms = fb.correct.mapNotNull {index.documentById(it.name)}.map { index.terms(it, fbField) }
+
+            val fbModel = HashMap<String, Double>()
+            correctDocTerms.forEach { terms ->
+                terms.forEach { term ->
+                    if (!inqueryStop.contains(term)) {
+                        fbModel.incr(term, 1.0)
+                    }
+                }
+            }
+            val bestFbTerms = ScoringHeap<ScoredWord>(fbTerms)
+            fbModel.forEach { t, s -> bestFbTerms.offer(s.toFloat(), { ScoredWord(s.toFloat(), t) }) }
+
+            val expQ = SumExpr(bestFbTerms.sorted
+                    .associate { Pair(it.word, it.score.toDouble()) }
+                    .normalize()
+                    .map { DirQLExpr(TextExpr(it.key)).weighted(it.value) })
+
+            val rerankQ = RequireExpr(whitelist, expQ)
+            println("Submit: expQ=${expQ.findTextNodes().map { it.text }}")
+            val tfRocchioTopDocs = index.search(rerankQ, whitelist.docNames?.size ?: 0)
+            val tfRocchioPosResults = tfRocchioTopDocs.toQueryResults(index, qid)
+
+            // traditional feedback
+            measures.ppush(qid, "TF-FB[10..]", map.evaluate(tfRocchioPosResults, judgments))
+
             // regular!
             measures.ppush(qid,"AP[0..]", map.evaluate(QueryResults(qid, ranking), judgments))
             measures.ppush(qid,"AP[10..]", map.evaluate(QueryResults(qid, ranking.drop(10)), judgments))
@@ -160,6 +190,7 @@ fun main(args: Array<String>) {
 
     println(measures)
     println(fbCounts)
+    index.close()
 }
 
 data class ScoredRanklibInput(override val score: Float, val original: RanklibInput) : ScoredForHeap
