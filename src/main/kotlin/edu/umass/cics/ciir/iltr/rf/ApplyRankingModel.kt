@@ -223,120 +223,122 @@ fun main(args: Array<String>) {
         val ranking = fb.docs.mapIndexed { i, rli -> rli.toEvalDoc(i+1) }
         println("$qid\t\t$measures")
 
-        val fbRaw = computeMeanVector(fb.correct.map { it.features })
-        val fbLTR = computeMeanVector(fb.correct.map { it.pvec!! })
-        if (fbRaw != null) {
-            fbLTR!!
+        val fbRawPos = computeMeanVector(fb.correct.map { it.features })
+        val fbRawNeg = computeMeanVector(fb.incorrect.map { it.features })
+        val fbLTRPos = computeMeanVector(fb.correct.map { it.pvec!! })
+        val fbLTRNeg = computeMeanVector(fb.incorrect.map { it.pvec!! })
 
-            val correctDocs = fb.correct.map { getDoc(it.name) }
-            val incorrectDocs = fb.incorrect.map { getDoc(it.name) }
+        val correctDocs = fb.correct.map { getDoc(it.name) }
+        val incorrectDocs = fb.incorrect.map { getDoc(it.name) }
 
-            val ranklib = fb.remaining.associateBy { it.name }
-            val targets = LTRQuery(qid, qtext, qterms, fb.remaining.map { getDoc(it.name) })
+        val ranklib = fb.remaining.associateBy { it.name }
+        val targets = LTRQuery(qid, qtext, qterms, fb.remaining.map { getDoc(it.name) })
 
-            // Construct Rocchio-like:
-            val posTFModel = HashMap<String, Double>()
-            val posRMModel = HashMap<String, Double>()
-            correctDocs.forEach { doc ->
-                val dist = doc.freqs(fbField)
-                dist.counts.forEachEntry { term, weight ->
-                    if (!inqueryStop.contains(term)) {
-                        posTFModel.incr(term, weight.toDouble())
-                        posRMModel.incr(term, weight.toDouble() / dist.length)
-                    }
-                    true
+        // Construct Rocchio-like:
+        val posTFModel = HashMap<String, Double>()
+        val posRMModel = HashMap<String, Double>()
+        correctDocs.forEach { doc ->
+            val dist = doc.freqs(fbField)
+            dist.counts.forEachEntry { term, weight ->
+                if (!inqueryStop.contains(term)) {
+                    posTFModel.incr(term, weight.toDouble())
+                    posRMModel.incr(term, weight.toDouble() / dist.length)
                 }
+                true
             }
-            val negTFModel = HashMap<String, Double>()
-            incorrectDocs.forEach { doc ->
-                val dist = doc.freqs(fbField)
-                dist.counts.forEachEntry { term, weight ->
-                    if (!inqueryStop.contains(term)) {
-                        negTFModel.incr(term, weight.toDouble())
-                    }
-                    true
-                }
-            }
-
-            // Relevance Feedback Models as features:
-            val exprs = dataset.textFields.flatMap { field ->
-                listOf(
-                        // RM (fixed-prior)
-                        Pair("fbnorm:$field:rm-dir", weightedNormalizedQuery(posRMModel, fbTerms, fbField, {DirQLExpr(it)})),
-                        Pair("fbnorm:$field:rm-bm25", weightedNormalizedQuery(posRMModel, fbTerms, fbField, { BM25Expr(it)} )),
-                        // gamma from Rocchio
-                        Pair("fbnorm:$field:tf-neg-dir", weightedNormalizedQuery(negTFModel, fbTerms, fbField, {DirQLExpr(it)})),
-                        Pair("fbnorm:$field:tf-neg-bm25", weightedNormalizedQuery(negTFModel, fbTerms, fbField, { BM25Expr(it)} )),
-                        // beta from Rocchio
-                        Pair("fbnorm:$field:tf-pos-dir", weightedNormalizedQuery(posTFModel, fbTerms, fbField, {DirQLExpr(it)})),
-                        Pair("fbnorm:$field:tf-pos-bm25", weightedNormalizedQuery(posTFModel, fbTerms, fbField, { BM25Expr(it)} ))
-                )
-            }.associate { Pair(it.first, it.second.toRRExpr(index.env)) } // Turn into map.
-
-            val fstats = HashMap<String, StreamingStats>()
-            val stackedFeatures = targets.docs.map { doc ->
-                val rlib = ranklib[doc.name]!!
-                val features = HashMap<String, Double>()
-
-                // convert exprs to features:
-                features.putAll(exprs.mapValues { (_, scorer) -> scorer.eval(doc) })
-                features.put("fbRelevant", safeDiv(fb.correct.size, depth))
-                features.put("fbRawDot", fbRaw.dotp(rlib.features))
-                features.put("fbLTRDot", fbLTR.dotp(rlib.pvec!!))
-                features.put("fbRawCos", fbRaw.cosineSimilarity(rlib.features))
-                features.put("fbLTRCos", fbLTR.cosineSimilarity(rlib.pvec!!))
-
-                if (includeOriginal) {
-                    rlib.features.data.forEachIndexed { i, score ->
-                        val fname = featureNames[i] ?: return@forEachIndexed
-                        features.put(fname, score.toDouble())
-                    }
-                }
-
-                if (includeTrees) {
-                    rlib.pvec!!.data.forEachIndexed { i, score ->
-                        features.put("firstPass[$i]", score.toDouble())
-                    }
-                }
-
-                if (includeStacked) {
-                    features.put("firstPass[mean]", rlib.prediction)
-                }
-
-                // Collect stats to normalize any features requesting it:
-                features.forEach { feature, score ->
-                    if (feature.startsWith("fbnorm:")) {
-                        fstats.computeIfAbsent(feature, { StreamingStats() }).push(score)
-                    }
-                }
-
-                FBRankDoc(rlib.label, doc.name, features)
-            }
-
-            // finish normalization:
-            stackedFeatures.forEach { doc ->
-                val delta = doc.features.mapValues { (fname, fval) ->
-                    fstats[fname]?.maxMinNormalize(fval) ?: fval
-                }
-                doc.features.clear()
-                doc.features.putAll(delta)
-            }
-
-            modelFusion.put(qid, stackedFeatures)
-
-
-            // unsupervised LTR feedback
-            val fbRaw_ranking = fb.rankRemaining { fbRaw.dotp(it.features) }
-            val fbLTR_ranking = fb.rankRemaining { fbLTR.dotp(it.pvec!!) }
-            measures.ppush(qid,"FB-RAW-AP[$depth..]", map.evaluate(QueryResults(qid, fbRaw_ranking), judgments))
-            measures.ppush(qid,"FB-LTR-AP[$depth..]", map.evaluate(QueryResults(qid, fbLTR_ranking), judgments))
-
-            // regular!
-            measures.ppush(qid,"AP[0..]", map.evaluate(QueryResults(qid, ranking), judgments))
-            measures.ppush(qid,"AP[$depth..]", map.evaluate(QueryResults(qid, ranking.drop(depth)), judgments))
-            measures.ppush(qid,"AP[20..]", map.evaluate(QueryResults(qid, ranking.drop(20)), judgments));
-            measures.ppush(qid,"P$depth", p10.evaluate(QueryResults(qid, ranking), judgments));
         }
+        val negTFModel = HashMap<String, Double>()
+        incorrectDocs.forEach { doc ->
+            val dist = doc.freqs(fbField)
+            dist.counts.forEachEntry { term, weight ->
+                if (!inqueryStop.contains(term)) {
+                    negTFModel.incr(term, weight.toDouble())
+                }
+                true
+            }
+        }
+
+        // Relevance Feedback Models as features:
+        val exprs = dataset.textFields.flatMap { field ->
+            listOf(
+                    // RM (fixed-prior)
+                    Pair("fbnorm:$field:rm-dir", weightedNormalizedQuery(posRMModel, fbTerms, fbField, {DirQLExpr(it)})),
+                    Pair("fbnorm:$field:rm-bm25", weightedNormalizedQuery(posRMModel, fbTerms, fbField, { BM25Expr(it)} )),
+                    // gamma from Rocchio
+                    Pair("fbnorm:$field:tf-neg-dir", weightedNormalizedQuery(negTFModel, fbTerms, fbField, {DirQLExpr(it)})),
+                    Pair("fbnorm:$field:tf-neg-bm25", weightedNormalizedQuery(negTFModel, fbTerms, fbField, { BM25Expr(it)} )),
+                    // beta from Rocchio
+                    Pair("fbnorm:$field:tf-pos-dir", weightedNormalizedQuery(posTFModel, fbTerms, fbField, {DirQLExpr(it)})),
+                    Pair("fbnorm:$field:tf-pos-bm25", weightedNormalizedQuery(posTFModel, fbTerms, fbField, { BM25Expr(it)} ))
+            ).filterNot { it.second == null }
+        }.associate { Pair(it.first, it.second!!.toRRExpr(index.env)) } // Turn into map.
+
+        val fstats = HashMap<String, StreamingStats>()
+        val stackedFeatures = targets.docs.map { doc ->
+            val rlib = ranklib[doc.name]!!
+            val features = HashMap<String, Double>()
+
+            // convert exprs to features:
+            features.putAll(exprs.mapValues { (_, scorer) -> scorer.eval(doc) })
+            features.put("fbRelevant", safeDiv(fb.correct.size, depth))
+            features.put("fbPosRawDot", fbRawPos?.dotp(rlib.features) ?: 0.0)
+            features.put("fbPosLTRDot", fbLTRPos?.dotp(rlib.pvec!!) ?: 0.0)
+            features.put("fbPosRawCos", fbRawPos?.cosineSimilarity(rlib.features) ?: 0.0)
+            features.put("fbPosLTRCos", fbLTRPos?.cosineSimilarity(rlib.pvec!!) ?: 0.0)
+            features.put("fbNegRawDot", fbRawNeg?.dotp(rlib.features) ?: 0.0)
+            features.put("fbNegLTRDot", fbLTRNeg?.dotp(rlib.pvec!!) ?: 0.0)
+            features.put("fbNegRawCos", fbRawNeg?.cosineSimilarity(rlib.features) ?: 0.0)
+            features.put("fbNegLTRCos", fbLTRNeg?.cosineSimilarity(rlib.pvec!!) ?: 0.0)
+
+            if (includeOriginal) {
+                rlib.features.data.forEachIndexed { i, score ->
+                    val fname = featureNames[i] ?: return@forEachIndexed
+                    features.put(fname, score.toDouble())
+                }
+            }
+
+            if (includeTrees) {
+                rlib.pvec!!.data.forEachIndexed { i, score ->
+                    features.put("firstPass[$i]", score.toDouble())
+                }
+            }
+
+            if (includeStacked) {
+                features.put("firstPass[mean]", rlib.prediction)
+            }
+
+            // Collect stats to normalize any features requesting it:
+            features.forEach { feature, score ->
+                if (feature.startsWith("fbnorm:")) {
+                    fstats.computeIfAbsent(feature, { StreamingStats() }).push(score)
+                }
+            }
+
+            FBRankDoc(rlib.label, doc.name, features)
+        }
+
+        // finish normalization:
+        stackedFeatures.forEach { doc ->
+            val delta = doc.features.mapValues { (fname, fval) ->
+                fstats[fname]?.maxMinNormalize(fval) ?: fval
+            }
+            doc.features.clear()
+            doc.features.putAll(delta)
+        }
+
+        modelFusion.put(qid, stackedFeatures)
+
+        // unsupervised LTR feedback
+        val fbRaw_ranking = fb.rankRemaining { fbRawPos.dotp(it.features) }
+        val fbLTR_ranking = fb.rankRemaining { fbLTRPos.dotp(it.pvec!!) }
+        measures.ppush(qid,"FB-RAW-AP[$depth..]", map.evaluate(QueryResults(qid, fbRaw_ranking), judgments))
+        measures.ppush(qid,"FB-LTR-AP[$depth..]", map.evaluate(QueryResults(qid, fbLTR_ranking), judgments))
+
+        // regular!
+        measures.ppush(qid,"AP[0..]", map.evaluate(QueryResults(qid, ranking), judgments))
+        measures.ppush(qid,"AP[$depth..]", map.evaluate(QueryResults(qid, ranking.drop(depth)), judgments))
+        measures.ppush(qid,"AP[20..]", map.evaluate(QueryResults(qid, ranking.drop(20)), judgments));
+        measures.ppush(qid,"P$depth", p10.evaluate(QueryResults(qid, ranking), judgments));
     }
 
     // assign nice feature ids to all our features..
@@ -377,15 +379,16 @@ fun main(args: Array<String>) {
     index.close()
 }
 
-fun weightedNormalizedQuery(weights: Map<String, Double>, k: Int, field: String, scorer: (TextExpr)->QExpr): QExpr {
+fun weightedNormalizedQuery(weights: Map<String, Double>, k: Int, field: String, scorer: (TextExpr)->QExpr): QExpr? {
     if (k <= 0) error("Must take *some* terms from weights: k=$k")
+    if (weights.isEmpty()) return null
     val topK = ScoringHeap<ScoredWord>(k)
     weights.forEach { t, s -> topK.offer(s.toFloat(), { ScoredWord(s.toFloat(), t) }) }
 
     return SumExpr(topK.sorted
             .associate { Pair(it.word, it.score.toDouble()) }
             .normalize()
-            .map { scorer(TextExpr(it.key)).weighted(it.value) })
+            .map { scorer(TextExpr(it.key, field)).weighted(it.value) })
 }
 
 data class ScoredRanklibInput(override val score: Float, val original: RanklibInput) : ScoredForHeap
