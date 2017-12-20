@@ -11,6 +11,7 @@ import edu.umass.cics.ciir.learning.TreeNode
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.NamedMeasures
 import edu.umass.cics.ciir.sprf.getEvaluator
+import edu.umass.cics.ciir.sprf.incr
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QueryResults
 import org.lemurproject.galago.core.eval.SimpleEvalDoc
@@ -111,6 +112,14 @@ fun main(args: Array<String>) {
         queries[qid] = docs.sortedByDescending { it.prediction }
     }
 
+    val user = queries.mapValues { (_, docs) -> InteractionFeedback(docs, 10) }
+
+    val fbCounts = HashMap<Int,Int>()
+    user.forEach { qid, fb ->
+        println("$qid ${fb.correct.size} ${fb.incorrect.size}")
+        fbCounts.incr(fb.correct.size, 1)
+    }
+
     val measures = NamedMeasures()
     queries.forEach { qid, docs ->
         val judgments = qrels[qid] ?: QueryJudgments(qid, emptyMap())
@@ -118,8 +127,15 @@ fun main(args: Array<String>) {
         measures.push("AP[0..]", map.evaluate(QueryResults(qid, ranking), judgments))
         measures.push("AP[10..]", map.evaluate(QueryResults(qid, ranking.drop(10)), judgments))
         measures.push("AP[20..]", map.evaluate(QueryResults(qid, ranking.drop(20)), judgments));
+        measures.push("P10", p10.evaluate(QueryResults(qid, ranking), judgments));
         println("$qid\t\t$measures")
     }
 
     println(measures)
+    println(fbCounts)
+}
+
+data class InteractionFeedback(val correct: List<RanklibInput>, val incorrect: List<RanklibInput>, val remaining: List<RanklibInput>) {
+    constructor(ranking: List<RanklibInput>, depth: Int) : this(ranking.take(depth).filter { it.relevant }, ranking.take(depth).filterNot { it.relevant }, ranking.drop(depth))
+
 }
