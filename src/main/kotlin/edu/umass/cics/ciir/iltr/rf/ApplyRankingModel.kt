@@ -9,10 +9,7 @@ import edu.umass.cics.ciir.iltr.loadRanklibViaJSoup
 import edu.umass.cics.ciir.iltr.toRRExpr
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
-import edu.umass.cics.ciir.learning.EnsembleNode
-import edu.umass.cics.ciir.learning.FloatArrayVector
-import edu.umass.cics.ciir.learning.TreeNode
-import edu.umass.cics.ciir.learning.computeMeanVector
+import edu.umass.cics.ciir.learning.*
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.EvalDoc
 import org.lemurproject.galago.core.eval.QueryJudgments
@@ -150,6 +147,7 @@ fun main(args: Array<String>) {
     val qrels = dataset.qrels
     val map = getEvaluator("map")
     val numFolds = argp.get("folds", 5)
+    val includeRawLTRFeatures = argp.get("includeRawLTRFeatures", false)
     val includeOriginal = argp.get("includeOriginal", false)
     val includeStacked = argp.get("includeStacked", true)
     val includeTrees = argp.get("includeTrees", false)
@@ -215,6 +213,7 @@ fun main(args: Array<String>) {
     val modelFusion = HashMap<String, List<FBRankDoc>>()
 
     val measures = NamedMeasures()
+    val msg = CountingDebouncer(user.size.toLong())
     user.forEach { qid, fb ->
         val qtext = dataset.title_qs[qid] ?: ""
         val qterms = index.tokenize(qtext, fbField)
@@ -281,14 +280,25 @@ fun main(args: Array<String>) {
             // convert exprs to features:
             features.putAll(exprs.mapValues { (_, scorer) -> scorer.eval(doc) })
             features.put("fbRelevant", safeDiv(fb.correct.size, depth))
-            features.put("fbPosRawDot", fbRawPos?.dotp(rlib.features) ?: 0.0)
+
+            // Mean vector features...
             features.put("fbPosLTRDot", fbLTRPos?.dotp(rlib.pvec!!) ?: 0.0)
-            features.put("fbPosRawCos", fbRawPos?.cosineSimilarity(rlib.features) ?: 0.0)
             features.put("fbPosLTRCos", fbLTRPos?.cosineSimilarity(rlib.pvec!!) ?: 0.0)
-            features.put("fbNegRawDot", fbRawNeg?.dotp(rlib.features) ?: 0.0)
             features.put("fbNegLTRDot", fbLTRNeg?.dotp(rlib.pvec!!) ?: 0.0)
-            features.put("fbNegRawCos", fbRawNeg?.cosineSimilarity(rlib.features) ?: 0.0)
             features.put("fbNegLTRCos", fbLTRNeg?.cosineSimilarity(rlib.pvec!!) ?: 0.0)
+
+            // KNN-style features (mean of distances) will be different from the distance to the mean.
+            val posV = VectorGroup(fb.correct.map { it.pvec!! })
+            val negV = VectorGroup(fb.incorrect.map { it.pvec!! })
+            features.putAll(posV.dotProductStats(rlib.pvec!!).features.mapKeys { (k,_) -> "fbPos:$k" })
+            features.putAll(negV.dotProductStats(rlib.pvec!!).features.mapKeys { (k,_) -> "fbNeg:$k" })
+
+            if (includeRawLTRFeatures) {
+                features.put("fbPosRawDot", fbRawPos?.dotp(rlib.features) ?: 0.0)
+                features.put("fbPosRawCos", fbRawPos?.cosineSimilarity(rlib.features) ?: 0.0)
+                features.put("fbNegRawDot", fbRawNeg?.dotp(rlib.features) ?: 0.0)
+                features.put("fbNegRawCos", fbRawNeg?.cosineSimilarity(rlib.features) ?: 0.0)
+            }
 
             if (includeOriginal) {
                 rlib.features.data.forEachIndexed { i, score ->
@@ -346,6 +356,10 @@ fun main(args: Array<String>) {
         measures.ppush(qid,"AP[0..]", map.evaluate(QueryResults(qid, ranking), judgments))
         measures.ppush(qid,"AP[20..]", map.evaluate(QueryResults(qid, ranking.drop(20)), judgments));
         measures.ppush(qid,"P$depth", p10.evaluate(QueryResults(qid, ranking), judgments));
+
+        msg.incr()?.let { upd ->
+            println(upd)
+        }
     }
 
     // assign nice feature ids to all our features..
