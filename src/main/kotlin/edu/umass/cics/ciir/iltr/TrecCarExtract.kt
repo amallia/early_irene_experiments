@@ -65,10 +65,9 @@ fun LTRDocOfCAR(tokenizer: GenericTokenizer, p: Parameters): LTRDoc {
             .forEach { fields[it] = LTREmptyDocField(it) }
 
     val name = p.getStr("id")
-    val rank = p.getInt("rank")
     features["norm:pooling-score"] = p.getDouble("pooling-score")
 
-    return LTRDoc(name, features, rank, fields)
+    return LTRDoc(name, features, fields)
 }
 
 fun main(args: Array<String>) {

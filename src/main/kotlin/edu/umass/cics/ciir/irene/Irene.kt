@@ -8,6 +8,7 @@ import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.irene.indexing.LDocBuilder
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.IreneQueryModel
+import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.sprf.*
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper
@@ -129,6 +130,13 @@ interface IIndex : Closeable {
         return explain(q, internal)
     }
     fun explain(q: QExpr, doc: Int): Explanation
+    fun docAsParameters(doc: Int): Parameters?
+
+    fun getLTRDoc(id: String, fields: Set<String>): LTRDoc? {
+        val num = documentById(id) ?: return null
+        val fjson = docAsParameters(num) ?: return null
+        return LTRDoc.create(id, fjson, fields, defaultField, tokenizer)
+    }
 }
 class EmptyIndex(override val tokenizer: GenericTokenizer = WhitespaceTokenizer()) : IIndex {
     override val defaultField: String = "missing"
@@ -143,6 +151,7 @@ class EmptyIndex(override val tokenizer: GenericTokenizer = WhitespaceTokenizer(
     override fun explain(q: QExpr, doc: Int): Explanation {
         return Explanation.noMatch("EmptyIndex")
     }
+    override fun docAsParameters(doc: Int): Parameters? = null
 }
 
 class IreneIndex(val io: RefCountedIO, val params: IndexParams) : IIndex {
@@ -177,7 +186,7 @@ class IreneIndex(val io: RefCountedIO, val params: IndexParams) : IIndex {
         if (resp.isBlank()) return null
         return resp
     }
-    fun docAsParameters(doc: Int): Parameters? {
+    override fun docAsParameters(doc: Int): Parameters? {
         val ldoc = document(doc) ?: return null
         val fields = Parameters.create()
         ldoc.fields.forEach { field ->

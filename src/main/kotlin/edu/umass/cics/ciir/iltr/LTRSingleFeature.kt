@@ -55,7 +55,6 @@ fun LTRDocFromParameters(p: Parameters) = LTRDoc(p.getStr("id"),
         hashMapOf(
                 Pair("title-ql", p.getDouble("title-ql")),
                 Pair("title-ql-prior", p.getDouble("title-ql-prior"))),
-        p.getInt("rank"),
         hashMapOf(LTRDocField("document", p.getStr("tokenized")).toEntry()))
 
 fun forEachQuery(dsName: String, doFn: (LTRQuery) -> Unit) {

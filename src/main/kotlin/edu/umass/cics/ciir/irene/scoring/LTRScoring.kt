@@ -5,7 +5,9 @@ import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.iltr.RRExpr
 import edu.umass.cics.ciir.irene.DataNeeded
 import edu.umass.cics.ciir.irene.GenericTokenizer
+import edu.umass.cics.ciir.irene.IIndex
 import edu.umass.cics.ciir.irene.WhitespaceTokenizer
+import edu.umass.cics.ciir.sprf.getStr
 import edu.umass.cics.ciir.sprf.incr
 import edu.umass.cics.ciir.sprf.pmake
 import gnu.trove.map.hash.TObjectIntHashMap
@@ -75,12 +77,12 @@ data class LTRDocField(override val name: String, override val text: String, ove
 }
 
 
-data class LTRDoc(val name: String, val features: HashMap<String, Double>, val rank: Int, val fields: HashMap<String,ILTRDocField>, var defaultField: String = "document") {
+data class LTRDoc(val name: String, val features: HashMap<String, Double>, val fields: HashMap<String,ILTRDocField>, var defaultField: String = "document") {
     fun field(field: String): ILTRDocField = fields[field] ?: error("No such field: $field in $this.")
     fun terms(field: String) = field(field).terms
     fun freqs(field: String) = field(field).freqs
 
-    constructor(name: String, text: String, field: String, tokenizer: GenericTokenizer = WhitespaceTokenizer()): this(name, hashMapOf(), -1, hashMapOf(LTRDocField(field, text, tokenizer).toEntry()), field)
+    constructor(name: String, text: String, field: String, tokenizer: GenericTokenizer = WhitespaceTokenizer()): this(name, hashMapOf(), hashMapOf(LTRDocField(field, text, tokenizer).toEntry()), field)
 
     fun toJSONFeatures(qrels: QueryJudgments, qid: String) = pmake {
         set("label", qrels[name])
@@ -101,6 +103,34 @@ data class LTRDoc(val name: String, val features: HashMap<String, Double>, val r
             } else {
                 this.features.put(fname, value)
             }
+        }
+    }
+
+    companion object {
+        fun create(id: String, fjson: Parameters, fields: Set<String>, index: IIndex): LTRDoc = create(id, fjson, fields, index.defaultField, index.tokenizer)
+        fun create(id: String, fjson: Parameters, fields: Set<String>, defaultField: String, tokenizer: GenericTokenizer): LTRDoc {
+            val ltrFields = HashMap<String, ILTRDocField>()
+            val features = HashMap<String, Double>()
+
+            fjson.keys.forEach { key ->
+                if (fjson.isString(key)) {
+                    val fieldText = fjson.getStr(key)
+                    ltrFields.put(key, LTRDocField(key, fieldText, tokenizer))
+                } else if(fjson.isDouble(key)) {
+                    features.put("double-field-$key", fjson.getDouble(key))
+                } else if(fjson.isLong(key)) {
+                    features.put("long-field-$key", fjson.getLong(key).toDouble())
+                } else {
+                    println("Warning: Can't handle field: $key=${fjson[key]}")
+                }
+            }
+
+            // Create empty fields as needed.
+            fields
+                    .filterNot { ltrFields.containsKey(it) }
+                    .forEach { ltrFields[it] = LTREmptyDocField(it) }
+
+            return LTRDoc(id, features, ltrFields, defaultField)
         }
     }
 }

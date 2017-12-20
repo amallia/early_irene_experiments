@@ -1,9 +1,16 @@
 package edu.umass.cics.ciir.iltr.rf
 
+import com.linkedin.paldb.api.Configuration
+import com.linkedin.paldb.api.PalDB
+import com.linkedin.paldb.api.StoreWriter
 import edu.umass.cics.ciir.chai.*
+import edu.umass.cics.ciir.iltr.LTRQuery
 import edu.umass.cics.ciir.iltr.loadRanklibViaJSoup
-import edu.umass.cics.ciir.irene.lang.*
-import edu.umass.cics.ciir.irene.toQueryResults
+import edu.umass.cics.ciir.irene.lang.DirQLExpr
+import edu.umass.cics.ciir.irene.lang.QExpr
+import edu.umass.cics.ciir.irene.lang.SumExpr
+import edu.umass.cics.ciir.irene.lang.TextExpr
+import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.learning.EnsembleNode
 import edu.umass.cics.ciir.learning.FloatArrayVector
 import edu.umass.cics.ciir.learning.TreeNode
@@ -15,6 +22,7 @@ import org.lemurproject.galago.core.eval.QueryResults
 import org.lemurproject.galago.core.eval.SimpleEvalDoc
 import org.lemurproject.galago.utility.Parameters
 import java.io.File
+import java.util.*
 import kotlin.coroutines.experimental.buildSequence
 
 /**
@@ -24,7 +32,7 @@ import kotlin.coroutines.experimental.buildSequence
 data class RanklibInput(val label: Double, val qid: String, val name: String, val features: FloatArrayVector, var prediction: Double = Double.NaN) : ScoredForHeap {
     val relevant: Boolean get() = label > 0
     override val score: Float get() = prediction.toFloat()
-    lateinit var pvec: FloatArrayVector
+    var pvec: FloatArrayVector? = null
     fun toEvalDoc(rank: Int) = SimpleEvalDoc(name, rank, prediction)
 }
 
@@ -84,6 +92,55 @@ fun findMetaFile(ranklibFile: File): File {
     error("Couldn't find feature information ``meta.json'' file for $ranklibFile")
 }
 
+inline fun <R> StoreWriter.use(block: (StoreWriter)->R) {
+    var closed = false
+    try {
+        val result = block(this)
+        closed = true
+        this.close()
+    } finally {
+        if (!closed) {
+            this.close()
+        }
+    }
+}
+
+object CreatePalDBDocCache {
+    @JvmStatic val config = PalDB.newConfiguration().apply {
+        set(Configuration.COMPRESSION_ENABLED, "true")
+    }
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val data = File(argp.get("dir", "nyt-cite-ltr"))
+        val dsName = argp.get("dataset", "gov2")
+        val dataset = DataPaths.get(dsName)
+        val index = dataset.getIreneIndex()
+        val ranklibInputName = "${dsName}.features.ranklib.gz"
+        val meta = Parameters.parseFile(findMetaFile(File(data, ranklibInputName)))
+
+        val names = genRanklibInputs(File(data, ranklibInputName), meta.size+1).map { it.name }.toHashSet()
+        println("Found ${names.size} documents to cache.")
+
+        val msg = CountingDebouncer(total=names.size.toLong())
+        PalDB.createWriter(File("data/$dsName.paldb"), config).use { storeWriter ->
+            names.parallelStream().map { name ->
+                val num = index.documentById(name) ?: return@map null
+                val json = index.docAsParameters(num) ?: return@map null
+                Pair(name, json.toString())
+            }.sequential().forEach { kv ->
+                if (kv != null) {
+                    val (name, json) = kv
+                    storeWriter.put(name, json);
+                }
+                msg.incr()?.let { upd ->
+                    println(upd)
+                }
+            }
+        }
+        println("Finished writing cache.")
+    }
+}
+
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val data = File(argp.get("dir", "nyt-cite-ltr"))
@@ -96,6 +153,13 @@ fun main(args: Array<String>) {
         "trec-core" -> "lm.t200.l32"
         "gov2" -> "mq07.lambdaMart.l10.kcv10.tvs90.gz"
         else -> error("Model name for $dataset")
+    }
+
+    val index = dataset.getIreneIndex()
+    val docCache = PalDB.createReader(File("data/$dsName.paldb"), CreatePalDBDocCache.config)
+    val getDoc: (String)->LTRDoc = { name ->
+        val fjson = Parameters.parseString(docCache.getString(name, "{}"))
+        LTRDoc.create(name, fjson, dataset.textFields, index)
     }
 
     val ranklibInputName = "${dsName}.features.ranklib.gz"
@@ -134,48 +198,45 @@ fun main(args: Array<String>) {
         fbCounts.incr(fb.correct.size, 1)
     }
 
-    val index = DataPaths.Gov2.getIreneIndex()
     val fbField = argp.get("fbField", index.defaultField)
     val fbTerms = argp.get("fbTerms", 100)
 
     val measures = NamedMeasures()
     user.forEach { qid, fb ->
+        val qtext = dataset.title_qs[qid] ?: ""
+        val qterms = index.tokenize(qtext, fbField)
+
         val judgments = qrels[qid] ?: QueryJudgments(qid, emptyMap())
         val ranking = fb.docs.mapIndexed { i, rli -> rli.toEvalDoc(i+1) }
         println("$qid\t\t$measures")
 
         val fbRaw = computeMeanVector(fb.correct.map { it.features })
-        val fbLTR = computeMeanVector(fb.correct.map { it.pvec })
+        val fbLTR = computeMeanVector(fb.correct.map { it.pvec!! })
         if (fbRaw != null) {
             fbLTR!!
             val fbRaw_ranking = fb.rankRemaining { fbRaw.dotp(it.features) }
-            val fbLTR_ranking = fb.rankRemaining { fbLTR.dotp(it.pvec) }
+            val fbLTR_ranking = fb.rankRemaining { fbLTR.dotp(it.pvec!!) }
             measures.ppush(qid,"FB-RAW-AP[10..]", map.evaluate(QueryResults(qid, fbRaw_ranking), judgments))
             measures.ppush(qid,"FB-LTR-AP[10..]", map.evaluate(QueryResults(qid, fbLTR_ranking), judgments))
 
-            val whitelist = WhitelistMatchExpr(fb.remaining.mapTo(HashSet()) { it.name })
-            val correctDocTerms = fb.correct.mapNotNull {index.documentById(it.name)}.map { index.terms(it, fbField) }
+            val correctDocs = fb.correct.map { getDoc(it.name) }
+            val incorrectDocs = fb.incorrect.map { getDoc(it.name) }
+            val targets = LTRQuery(qid, qtext, qterms, fb.remaining.map { getDoc(it.name) })
 
+            // Construct Rocchio-like:
+            val correctDocTerms = correctDocs.map{ it.freqs(fbField) }
             val fbModel = HashMap<String, Double>()
-            correctDocTerms.forEach { terms ->
-                terms.forEach { term ->
+            correctDocTerms.forEach { dist ->
+                dist.counts.forEachEntry { term, weight ->
                     if (!inqueryStop.contains(term)) {
-                        fbModel.incr(term, 1.0)
+                        fbModel.incr(term, weight.toDouble())
                     }
+                    true
                 }
             }
-            val bestFbTerms = ScoringHeap<ScoredWord>(fbTerms)
-            fbModel.forEach { t, s -> bestFbTerms.offer(s.toFloat(), { ScoredWord(s.toFloat(), t) }) }
-
-            val expQ = SumExpr(bestFbTerms.sorted
-                    .associate { Pair(it.word, it.score.toDouble()) }
-                    .normalize()
-                    .map { DirQLExpr(TextExpr(it.key)).weighted(it.value) })
-
-            val rerankQ = RequireExpr(whitelist, expQ)
+            val expQ = weightedNormalizedQuery(fbModel, fbTerms)
             println("Submit: expQ=${expQ.findTextNodes().map { it.text }}")
-            val tfRocchioTopDocs = index.search(rerankQ, whitelist.docNames?.size ?: 0)
-            val tfRocchioPosResults = tfRocchioTopDocs.toQueryResults(index, qid)
+            val tfRocchioPosResults = targets.toQResults(index.env, expQ)
 
             // traditional feedback
             measures.ppush(qid, "TF-FB[10..]", map.evaluate(tfRocchioPosResults, judgments))
@@ -191,6 +252,17 @@ fun main(args: Array<String>) {
     println(measures)
     println(fbCounts)
     index.close()
+}
+
+fun weightedNormalizedQuery(weights: Map<String, Double>, k: Int): QExpr {
+    if (k <= 0) error("Must take *some* terms from weights: k=$k")
+    val topK = ScoringHeap<ScoredWord>(k)
+    weights.forEach { t, s -> topK.offer(s.toFloat(), { ScoredWord(s.toFloat(), t) }) }
+
+    return SumExpr(topK.sorted
+            .associate { Pair(it.word, it.score.toDouble()) }
+            .normalize()
+            .map { DirQLExpr(TextExpr(it.key)).weighted(it.value) })
 }
 
 data class ScoredRanklibInput(override val score: Float, val original: RanklibInput) : ScoredForHeap

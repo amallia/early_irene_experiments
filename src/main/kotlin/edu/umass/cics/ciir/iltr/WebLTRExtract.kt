@@ -54,7 +54,7 @@ fun LTRDocFromIndex(index: IIndex, mandatoryFields: Set<String>, p: Parameters):
             .forEach { fields[it] = LTREmptyDocField(it) }
 
     val name = p.getStr("id")
-    return LTRDoc(name, features, -1, fields)
+    return LTRDoc(name, features, fields)
 }
 
 object CreateStaticNYTFeatures {
@@ -149,9 +149,9 @@ fun main(args: Array<String>) {
 
                 // What percentage of wikipedia matches this query?
                 query_features["wiki_hits"] = wikiTopDocs.totalHits.toDouble() / wikiN
-                val topWikiLTRDocs = wikiTopDocs.scoreDocs.asSequence().mapIndexedNotNull { i, sdoc ->
+                val topWikiLTRDocs = wikiTopDocs.scoreDocs.asSequence().mapNotNull { sdoc ->
                     val normScore = wikiScoreInfo.maxMinNormalize(sdoc.score.toDouble())
-                    val docFields = wiki.document(sdoc.doc, WikiFields)?.toParameters() ?: return@mapIndexedNotNull null
+                    val docFields = wiki.document(sdoc.doc, WikiFields)?.toParameters() ?: return@mapNotNull null
 
                     val fields = wikiSource.textFields.map { fname ->
                         val text = docFields.get(fname, "")
@@ -159,7 +159,7 @@ fun main(args: Array<String>) {
                     }.associateTo(HashMap()) { it.toEntry() }
 
                     val features = hashMapOf( "wiki-score-norm" to normScore)
-                    LTRDoc(docFields.getStr("id"), features, i+1, fields, wiki.defaultField)
+                    LTRDoc(docFields.getStr("id"), features, fields, wiki.defaultField)
                 }.take(50).toList()
 
                 val sourceFields = wikiSource.textFields.toList()
