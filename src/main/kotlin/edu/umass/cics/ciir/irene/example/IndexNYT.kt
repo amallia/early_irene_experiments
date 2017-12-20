@@ -7,9 +7,11 @@ package edu.umass.cics.ciir.irene.example
 
 import edu.umass.cics.ciir.chai.CountingDebouncer
 import edu.umass.cics.ciir.chai.Debouncer
+import edu.umass.cics.ciir.chai.StreamingStats
+import edu.umass.cics.ciir.chai.timed
 import edu.umass.cics.ciir.irene.*
-import edu.umass.cics.ciir.sprf.NYTSource
-import edu.umass.cics.ciir.sprf.reader
+import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.sprf.*
 import gnu.trove.map.hash.TObjectFloatHashMap
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.lucene.document.*
@@ -17,6 +19,7 @@ import org.apache.lucene.search.ScoreDoc
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
+import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.*
 import java.time.LocalDate
@@ -384,4 +387,77 @@ fun main(args: Array<String>) {
             }
         }
     } // close indexer
+}
+
+
+object TrecCoreBaselines {
+    @JvmStatic fun main(args: Array<String>) {
+        val argp = Parameters.parseArgs(args)
+        val dsName = argp.get("dataset", "trec-core")
+        val depth = argp.get("depth", 500)
+        val dataset = DataPaths.get(dsName)
+        val qrels = dataset.qrels
+        val measure = getEvaluator("map")
+        val info = NamedMeasures()
+        val scorer = argp.get("scorer", "ql")
+        val qtype = argp.get("qtype", "title")
+        val estStats = argp.get("stats", "min")
+
+        val queries = when(qtype) {
+            "title" -> dataset.title_qs
+            "desc" -> dataset.desc_qs
+            else -> error("qtype=$qtype")
+        }
+        val scorerFn: (QExpr)->QExpr = when(scorer) {
+            "bm25" -> {{ BM25Expr(it, 0.3, 0.9) }}
+            "ql" -> {{ DirQLExpr(it) }}
+            else -> error("scorer=$scorer")
+        }
+
+        val times = StreamingStats()
+        val baseTimes = StreamingStats()
+
+        val w1 = File("$dsName.nodep.$scorer.$qtype.$estStats.trecrun").printWriter()
+        val w2 = File("$dsName.dep.$scorer.$qtype.$estStats.trecrun").printWriter()
+
+        val corpus = dataset.getIreneIndex()
+        corpus.env.estimateStats = if (estStats == "exact") { null } else { estStats }
+
+        queries.forEach { qid, qtext ->
+            val judgments = qrels[qid] ?: return@forEach
+            if (judgments.wrapped.values.count { it > 0 } == 0) return@forEach
+
+            val qterms = corpus.tokenize(qtext)
+            println("$qid $qtext $qterms")
+
+            val baseExpr = UnigramRetrievalModel(SmartStop(qterms, stopwords = inqueryStop), scorer = scorerFn)
+            val sdmExpr = SequentialDependenceModel(qterms, stopwords = inqueryStop).map { q ->
+                if (q is UnorderedWindowExpr) {
+                    SmallerCountExpr(q.children)
+                } else q
+            }
+
+            val (timeExact, topExact) = timed { corpus.search(baseExpr, depth) }
+            val exactR = topExact.toQueryResults(corpus, qid)
+
+            val (time, topApprox) = timed { corpus.search(sdmExpr, depth) }
+            val approxR = topApprox.toQueryResults(corpus, qid)
+
+            times.push(time)
+            baseTimes.push(timeExact)
+
+            exactR.outputTrecrun(w1, "no-dep")
+            approxR.outputTrecrun(w2, "dep")
+
+            info.push("no-dep", measure.evaluate(exactR, judgments))
+            info.push("dep", measure.evaluate(approxR, judgments))
+
+            println("\t${info} ${times.mean} ${baseTimes.mean}")
+        }
+        println("\t${info} ${times.mean} ${times}")
+
+        w1.close()
+        w2.close()
+        corpus.close()
+    }
 }

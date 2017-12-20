@@ -57,9 +57,41 @@ fun LTRDocFromIndex(index: IIndex, mandatoryFields: Set<String>, p: Parameters):
     return LTRDoc(name, features, -1, fields)
 }
 
+object CreateStaticNYTFeatures {
+    @JvmStatic fun main(args: Array<String>) {
+        val dsName = "trec-core"
+        val docF = HashMap<String, Parameters>()
+        File("$dsName.irene.pool.jsonl.gz").smartDoLines { line ->
+            val qjson = Parameters.parseStringOrDie(line)
+            println(qjson["qid"])
+            qjson.getAsList("docs", Parameters::class.java).forEach { docp ->
+                val id = docp.getStr("id")
+                val fields = docp.getMap("fields")
+                if (docF.containsKey(id)) return@forEach
+
+                val sfp = Parameters.create()
+                sfp.put("nyt:corrected", fields.get("corrected", "F") == "T")
+                if (fields.containsKey("section")) {
+                    sfp.put("nyt:section:${fields.getAsString("section")}", 1)
+                }
+                docF[id] = sfp
+            }
+        }
+
+        File("html_raw/$dsName.features.jsonl.gz").smartPrint { printer ->
+            docF.forEach { name, fp ->
+                val asP = Parameters.create()
+                asP.put("features", fp)
+                asP.put("id", name)
+                printer.println(asP)
+            }
+        }
+    }
+}
+
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dsName = argp.get("dataset", "nyt-cite")
+    val dsName = argp.get("dataset", "trec-core")
     val dataset = DataPaths.get(dsName)
     val evals = getEvaluators(listOf("ap", "ndcg"))
     val ms = NamedMeasures()

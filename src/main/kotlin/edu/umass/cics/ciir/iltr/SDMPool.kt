@@ -19,12 +19,12 @@ import java.io.File
  */
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dsName = argp.get("dataset", "nyt-cite")
+    val dsName = argp.get("dataset", "trec-core")
     val dataset = DataPaths.get(dsName)
     val qrels = dataset.getQueryJudgments()
     val ms = NamedMeasures()
     val depth = argp.get("depth", 500)
-    val forceRelevant = argp.get("forceRelevant", true)
+    val forceRelevant = argp.get("forceRelevant", false)
 
     File("$dsName.irene.pool.jsonl.gz").smartPrint { output ->
         dataset.getIreneIndex().use { index ->
