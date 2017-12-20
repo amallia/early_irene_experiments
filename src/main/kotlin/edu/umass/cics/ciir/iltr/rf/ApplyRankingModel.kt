@@ -328,15 +328,22 @@ fun main(args: Array<String>) {
 
         modelFusion.put(qid, stackedFeatures)
 
+        val noChangeRanking = QueryResults(qid, ranking.drop(depth))
+        measures.ppush(qid,"AP[$depth..]", map.evaluate(noChangeRanking, judgments))
+
         // unsupervised LTR feedback
-        val fbRaw_ranking = fb.rankRemaining { fbRawPos.dotp(it.features) }
-        val fbLTR_ranking = fb.rankRemaining { fbLTRPos.dotp(it.pvec!!) }
-        measures.ppush(qid,"FB-RAW-AP[$depth..]", map.evaluate(QueryResults(qid, fbRaw_ranking), judgments))
-        measures.ppush(qid,"FB-LTR-AP[$depth..]", map.evaluate(QueryResults(qid, fbLTR_ranking), judgments))
+        if (fbRawPos != null) {
+            val fbRaw_ranking = QueryResults(qid, fb.rankRemaining { fbRawPos.dotp(it.features) })
+            val fbLTR_ranking = fb.rankRemaining { fbLTRPos!!.dotp(it.pvec!!) }
+            measures.ppush(qid, "FB-RAW-AP[$depth..]", map.evaluate(QueryResults(qid, fbRaw_ranking), judgments))
+            measures.ppush(qid, "FB-LTR-AP[$depth..]", map.evaluate(QueryResults(qid, fbLTR_ranking), judgments))
+        } else {
+            measures.push("FB-RAW-AP[$depth..]", map.evaluate(noChangeRanking, judgments))
+            measures.push("FB-LTR-AP[$depth..]", map.evaluate(noChangeRanking, judgments))
+        }
 
         // regular!
         measures.ppush(qid,"AP[0..]", map.evaluate(QueryResults(qid, ranking), judgments))
-        measures.ppush(qid,"AP[$depth..]", map.evaluate(QueryResults(qid, ranking.drop(depth)), judgments))
         measures.ppush(qid,"AP[20..]", map.evaluate(QueryResults(qid, ranking.drop(20)), judgments));
         measures.ppush(qid,"P$depth", p10.evaluate(QueryResults(qid, ranking), judgments));
     }
