@@ -57,6 +57,7 @@ data class EnsembleNode(val guesses: List<TreeNode>): TreeNode() {
         set("weight", weight)
         set("ensemble", guesses.map { it.toParameters() })
     }
+    fun predictionVector(features: FloatArray): List<Double> = guesses.map { weight * it.score(features) }
 }
 data class FeatureSplit(val fid: Int, val point: Double, val lhs: TreeNode, val rhs: TreeNode): TreeNode() {
     override fun score(features: FloatArray): Double = if (features[fid] < point) {

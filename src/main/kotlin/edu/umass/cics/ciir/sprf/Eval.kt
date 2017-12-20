@@ -15,6 +15,10 @@ open class KeyedMeasure<K> {
     fun push(what: K, x: Double) {
         this[what].add(x)
     }
+    fun ppush(ctx: String, what: K, x: Double) {
+        println("$ctx\t$what\t${"%1.3f".format(x)}")
+        this[what].add(x)
+    }
     operator fun get(index: K): TDoubleArrayList = measures.computeIfAbsent(index, { TDoubleArrayList() })
     open fun means(): Map<K, Double> = measures.mapValues { (_,arr) -> arr.mean() }
 }
