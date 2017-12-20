@@ -1,5 +1,7 @@
 package edu.umass.cics.ciir.sprf
 
+import edu.umass.cics.ciir.chai.push
+import edu.umass.cics.ciir.chai.try_or_empty
 import edu.umass.cics.ciir.dbpedia.wikiTitleToText
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndex
@@ -64,6 +66,28 @@ abstract class IRDataset {
     val title_qs: Map<String,String> by lazy { getTitleQueries() }
     val desc_qs: Map<String,String> by lazy { getDescQueries() }
 
+    fun createFolds(k: Int): List<TVTFold> {
+        if (k <= 2) error("Need 3 or more folds (not k=$k) for Train/Validate/Test cross-validation.")
+        val qids = (try_or_empty { qrels.keys } + try_or_empty { title_qs.keys } + try_or_empty {  desc_qs.keys }).sorted()
+        if (qids.isEmpty()) {
+            error("Must have qrels or queries in order to create folds...")
+        }
+
+        val grouped = HashMap<Int, MutableList<String>>()
+        qids.forEachIndexed { i, qid -> grouped.push(i % k, qid) }
+
+        return (0 until k).map { split ->
+            val test = split
+            val vali = (split + 1) % k
+            val training = (0 until k).filterNot { it == test || it == vali }
+
+            TVTFold(split,
+                    training.flatMapTo(HashSet()) { grouped[it]!! },
+                    grouped[vali]!!.toSet(),
+                    grouped[test]!!.toSet())
+        }
+    }
+
     open fun getTitleQueries(): Map<String, String> = parseTSV(getTitleQueryFile())
     open fun getDescQueries(): Map<String, String> = parseTSV(getDescQueryFile())
     open fun getQueryJudgments(): QuerySetJudgments = QuerySetJudgments(getQueryJudgmentsFile().absolutePath, false, false);
@@ -73,6 +97,16 @@ abstract class IRDataset {
     abstract fun getTitleQueryFile(): File
     abstract fun getDescQueryFile(): File
     abstract fun getQueryJudgmentsFile(): File
+}
+
+data class TVTFold(val ord: Int, val train: Set<String>, val vali: Set<String>, val test: Set<String>) {
+    override fun hashCode(): Int = ord.hashCode()
+    override fun equals(other: Any?): Boolean {
+        if (other is TVTFold) {
+            return ord == other.ord && test == other.test && vali == other.vali && train == other.train
+        }
+        return false
+    }
 }
 
 class Robust04 : IRDataset() {

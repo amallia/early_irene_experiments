@@ -113,3 +113,11 @@ fun <T> List<T>.findIndex(x: T): Int? {
     return null
 }
 
+inline fun <T> try_or_empty(fn: ()->Collection<T>): Collection<T> {
+    try {
+        return fn()
+    } catch (e: Exception) {
+        return emptyList<T>()
+    }
+}
+

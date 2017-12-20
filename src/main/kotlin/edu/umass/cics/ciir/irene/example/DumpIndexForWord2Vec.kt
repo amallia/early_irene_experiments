@@ -56,14 +56,6 @@ fun main(args: Array<String>) {
 
 data class ContextAndToken(val context: String, val token: String)
 
-inline fun <T> try_or_empty(fn: ()->Collection<T>): Collection<T> {
-    try {
-        return fn()
-    } catch (e: Exception) {
-        return emptyList<T>()
-    }
-}
-
 object CollectStatsForQueries {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)
