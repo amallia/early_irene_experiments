@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.chai.*
+import edu.umass.cics.ciir.irene.example.selectSingleChild
 import edu.umass.cics.ciir.learning.*
 import edu.umass.cics.ciir.sprf.*
 import org.jsoup.Jsoup
@@ -180,7 +181,7 @@ fun loadRanklibViaJSoup(input: String): TreeNode {
                 .dropWhile { it.startsWith("##") }
                 .joinToString(separator = "\n")
                 , "", Parser.xmlParser())
-        EnsembleNode(ensembleHTML.select("ensemble").map { parseElement(it) })
+        parseElement(ensembleHTML.selectSingleChild("ensemble") ?: error("Couldn't find an <ensemble> tag in $input"))
     }
 
 }

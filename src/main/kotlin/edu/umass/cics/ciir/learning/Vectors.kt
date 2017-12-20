@@ -113,6 +113,11 @@ class SimpleDenseVector(override val dim: Int, val data: DoubleArray = DoubleArr
     override fun set(i: Int, y: Double) { data[i] = y }
     override fun toString(): String = data.joinToString { "%1.3f".format(it) }
 }
+class FloatArrayVector(override val dim: Int, val data: FloatArray = FloatArray(dim)) : MutableVector {
+    override fun get(i: Int): Double = data[i].toDouble()
+    override fun set(i: Int, y: Double) { data[i] = y.toFloat() }
+    override fun toString(): String = data.joinToString { "%1.3f".format(it) }
+}
 
 interface MachineLearningInput {
     // num instances
