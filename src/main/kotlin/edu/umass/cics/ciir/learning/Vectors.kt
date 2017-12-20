@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.learning
 
+import edu.umass.cics.ciir.chai.StreamingStats
 import java.util.*
 
 /**
@@ -118,6 +119,25 @@ class FloatArrayVector(override val dim: Int, val data: FloatArray = FloatArray(
     override fun get(i: Int): Double = data[i].toDouble()
     override fun set(i: Int, y: Double) { data[i] = y.toFloat() }
     override fun toString(): String = data.joinToString { "%1.3f".format(it) }
+}
+
+
+data class VectorGroup(val components: List<Vector>) {
+    val mean: Vector? by lazy { computeMeanVector(components) }
+    fun dotProductStats(v: Vector): StreamingStats {
+        val ss = StreamingStats()
+        for (c in components) {
+            ss.push(v.dotp(c))
+        }
+        return ss
+    }
+    fun cosineSimilarityStats(v: Vector): StreamingStats {
+        val ss = StreamingStats()
+        for (c in components) {
+            ss.push(v.cosineSimilarity(c))
+        }
+        return ss
+    }
 }
 
 interface MachineLearningInput {
