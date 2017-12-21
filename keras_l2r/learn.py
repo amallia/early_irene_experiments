@@ -11,7 +11,14 @@ def smart_open(f):
         return gzip.GzipFile(f)
     return open(f)
 
-def build_model(input_dim,widths=[256,256,1],opt='sgd',loss='mean_absolute_error', dropout=True, dropoutValue=0.5, activation='relu', lr=0.001):
+def build_model(input_dim,
+                widths=[256, 256, 1],
+                opt='sgd',
+                loss='mean_absolute_error',
+                dropout=True,
+                dropoutValue=0.5,
+                activation='relu',
+                lr=0.001):
     model = Sequential()
     for idx,w in enumerate(widths):
         idim = input_dim

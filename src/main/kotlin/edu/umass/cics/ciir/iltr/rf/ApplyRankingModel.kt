@@ -10,12 +10,14 @@ import edu.umass.cics.ciir.iltr.toRRExpr
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.learning.*
+import edu.umass.cics.ciir.learning.Vector
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.EvalDoc
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QueryResults
 import org.lemurproject.galago.core.eval.SimpleEvalDoc
 import org.lemurproject.galago.utility.Parameters
+import org.roaringbitmap.RoaringBitmap
 import java.io.File
 import java.util.*
 import kotlin.collections.HashMap
@@ -30,7 +32,11 @@ data class RanklibInput(val label: Double, val qid: String, val name: String, va
     override val score: Float get() = prediction.toFloat()
     var pvec: FloatArrayVector? = null
     fun toEvalDoc(rank: Int) = SimpleEvalDoc(name, rank, prediction)
+    // Binary representation of activated leaf nodes.
+    var bvec: RoaringBitmap? = null
 }
+
+
 
 fun parseRanklibInput(line: String, dim: Int): RanklibInput {
     val (data, name) = line.maybeSplitAt('#')
@@ -108,7 +114,7 @@ object CreatePalDBDocCache {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)
         val data = File(argp.get("dir", "nyt-cite-ltr"))
-        val dsName = argp.get("dataset", "gov2")
+        val dsName = argp.get("dataset", "trec-core")
         val dataset = DataPaths.get(dsName)
         val index = dataset.getIreneIndex()
         val ranklibInputName = "${dsName}.features.ranklib.gz"
@@ -139,10 +145,75 @@ object CreatePalDBDocCache {
 
 data class FBRankDoc(val label: Double, val name: String, val features: HashMap<String, Double>)
 
+class ForestBinaryRepr(val model: TreeNode) {
+    val leafNumbers = IdentityHashMap<TreeNode, Int>()
+    init {
+        var i = 0
+        model.visit { node ->
+            when (node) {
+                is EnsembleNode,
+                is FeatureSplit -> { }
+
+                is LeafResponse,
+                is LinearRankingLeaf,
+                is LinearPerceptronLeaf -> {
+                    leafNumbers[node] = i++
+                }
+            }
+        }
+    }
+
+    private fun score(node: TreeNode, features: Vector, onLeafFn: (Int)->Unit) {
+        when(node) {
+            is EnsembleNode -> {
+                for (c in node.guesses) {
+                    score(c, features, onLeafFn)
+                }
+            }
+            is FeatureSplit -> {
+                if (features[node.fid] < node.point) {
+                    score(node.lhs, features, onLeafFn)
+                }
+            }
+            is LeafResponse,
+            is LinearRankingLeaf,
+            is LinearPerceptronLeaf -> {
+                val num = leafNumbers[node]
+                if (num != null) {
+                    onLeafFn(num)
+                }
+            }
+        }
+    }
+
+    fun predict(features: Vector): RoaringBitmap {
+        val bitmap = RoaringBitmap()
+        score(model, features, bitmap::add)
+        return bitmap
+    }
+}
+
+fun computeSimilarities(dim: Int, cand: RoaringBitmap, group: List<RoaringBitmap>): StreamingStats {
+    val ss = StreamingStats()
+    for (g in group) {
+        ss.push(cand.hammingSimilarity(dim, g))
+    }
+    return ss
+}
+
+fun RoaringBitmap.hammingSimilarity(dim: Int, other: RoaringBitmap?): Double {
+    if (other == null) return 0.0
+    val copy = this.clone()
+    copy.xor(other)
+    val hammingCount = copy.cardinality
+    // 1.0 - fraction of bits different == fraction of bits the same
+    return 1.0 - safeDiv(hammingCount, dim)
+}
+
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val data = File(argp.get("dir", "nyt-cite-ltr"))
-    val dsName = argp.get("dataset", "gov2")
+    val dsName = argp.get("dataset", "trec-core")
     val dataset = DataPaths.get(dsName)
     val qrels = dataset.qrels
     val map = getEvaluator("map")
@@ -180,8 +251,11 @@ fun main(args: Array<String>) {
     println("Dim: $dim")
 
     val model: TreeNode = loadRanklibViaJSoup(File(data, modelName).absolutePath)
+    val brepr = ForestBinaryRepr(model)
     val numTrees = (model as EnsembleNode).guesses.size
     println("Num Trees: $numTrees")
+    val numLeaves = brepr.leafNumbers.size
+    println("Num Leafs: $numLeaves")
 
     val queries = HashMap<String, List<RanklibInput>>(250)
     genRanklibQueries(File(data, ranklibInputName), dim).forEach { docs ->
@@ -192,6 +266,7 @@ fun main(args: Array<String>) {
             val predv = model.predictionVector(it.features.data)
             it.prediction = predv.mean()
             it.pvec = FloatArrayVector(predv.map { it.toFloat() }.toFloatArray())
+            it.bvec = brepr.predict(it.features)
             //it.prediction = model.score(it.features.data)
             //it.prediction = it.features[162]
             //it.prediction = it.features[79] // sdm-stop for gov2
@@ -286,6 +361,11 @@ fun main(args: Array<String>) {
             features.put("fbPosLTRCos", fbLTRPos?.cosineSimilarity(rlib.pvec!!) ?: 0.0)
             features.put("fbNegLTRDot", fbLTRNeg?.dotp(rlib.pvec!!) ?: 0.0)
             features.put("fbNegLTRCos", fbLTRNeg?.cosineSimilarity(rlib.pvec!!) ?: 0.0)
+
+            val posSim = computeSimilarities(numLeaves, rlib.bvec!!, fb.correct.map { it.bvec!! })
+            val negSim = computeSimilarities(numLeaves, rlib.bvec!!, fb.correct.map { it.bvec!! })
+            features.putAll(posSim.features.mapKeys { (k, _) -> "fbBinPos:$k" })
+            features.putAll(negSim.features.mapKeys { (k, _) -> "fbBinNeg:$k" })
 
             // KNN-style features (mean of distances) will be different from the distance to the mean.
             val posV = VectorGroup(fb.correct.map { it.pvec!! })

@@ -49,8 +49,16 @@ sealed class TreeNode {
     abstract fun score(features: FloatArray): Double
     abstract fun depth(): Int
     abstract fun toParameters(): Parameters
+    abstract fun visit(fn: (TreeNode)->Unit)
 }
 data class EnsembleNode(val guesses: List<TreeNode>): TreeNode() {
+    override fun visit(fn: (TreeNode) -> Unit) {
+        fn(this)
+        for (child in guesses) {
+            child.visit(fn)
+        }
+    }
+
     override fun depth(): Int = guesses.map { it.depth() }.max() ?: 0
     override fun score(features: FloatArray): Double = weight * guesses.meanByDouble { it.score(features) }
     override fun toParameters() = pmake {
@@ -60,6 +68,11 @@ data class EnsembleNode(val guesses: List<TreeNode>): TreeNode() {
     fun predictionVector(features: FloatArray): List<Double> = guesses.map { weight * it.score(features) }
 }
 data class FeatureSplit(val fid: Int, val point: Double, val lhs: TreeNode, val rhs: TreeNode): TreeNode() {
+    override fun visit(fn: (TreeNode) -> Unit) {
+        fn(this)
+        lhs.visit(fn)
+        rhs.visit(fn)
+    }
     override fun score(features: FloatArray): Double = if (features[fid] < point) {
         weight * lhs.score(features)
     } else {
@@ -76,6 +89,10 @@ data class FeatureSplit(val fid: Int, val point: Double, val lhs: TreeNode, val 
 }
 
 data class LeafResponse(val probability: Double, val accuracy: Double = 1.0, val confidence: Double=1.0, val items: InstanceSet? = null) : TreeNode() {
+    override fun visit(fn: (TreeNode) -> Unit) {
+        fn(this)
+    }
+
     constructor(items: InstanceSet): this(items.output, items.accuracy, items.confidence, items)
     private val precomputed = accuracy * probability * confidence
     override fun score(features: FloatArray): Double = weight * precomputed
@@ -92,6 +109,9 @@ data class LeafResponse(val probability: Double, val accuracy: Double = 1.0, val
     }
 }
 data class LinearRankingLeaf(val fids: List<Int>, val weights: List<Double>): TreeNode() {
+    override fun visit(fn: (TreeNode) -> Unit) {
+        fn(this)
+    }
     override fun score(features: FloatArray): Double {
         var sum = 0.0
         fids.forEachIndexed { i, fid ->
@@ -103,6 +123,9 @@ data class LinearRankingLeaf(val fids: List<Int>, val weights: List<Double>): Tr
     override fun toParameters() = error("TODO")
 }
 data class LinearPerceptronLeaf(val fids: List<Int>, val weights: List<Double>): TreeNode() {
+    override fun visit(fn: (TreeNode) -> Unit) {
+        fn(this)
+    }
     override fun score(features: FloatArray): Double {
         var sum = 0.0
         fids.forEachIndexed { i, fid ->

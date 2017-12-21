@@ -44,6 +44,12 @@
         </dependency>
 
         <dependency>
+            <groupId>org.roaringbitmap</groupId>
+            <artifactId>RoaringBitmap</artifactId>
+            <version>0.6.39</version>
+        </dependency>
+
+        <dependency>
             <groupId>com.linkedin.paldb</groupId>
             <artifactId>paldb</artifactId>
             <version>1.2.0</version>
