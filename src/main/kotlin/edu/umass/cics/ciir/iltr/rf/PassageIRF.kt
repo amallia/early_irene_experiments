@@ -32,11 +32,9 @@ fun readLTRQueries(input: File, fields: Set<String>, index: IIndex): Sequence<LT
             val docs = qjson.getAsList("docs", Parameters::class.java).map { p ->
                 val fjson = p.getMap("fields")
                 val ltrDoc = LTRDoc.create(p.getStr("id"), fjson, fields, index)
-                if (p.isMap("features")) {
-                    val fMap = p.getMap("features")
-                    fMap.keys.forEach { k ->
-                        ltrDoc.features.put(k, fMap.getDouble(k))
-                    }
+                val fMap = p.getMap("features")
+                fMap.keys.forEach { k ->
+                    ltrDoc.features.put(k, fMap.getDouble(k))
                 }
                 ltrDoc
             }
@@ -289,7 +287,7 @@ object PassageLTRExtract {
                     println(ms.means())
 
                     msg.incr()?.let { upd ->
-                        println(upd)
+                        println("mix=${docList[0].features["mix"]} $upd")
                     }
                 }
             }
