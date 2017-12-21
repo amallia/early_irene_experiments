@@ -213,7 +213,7 @@ fun RoaringBitmap.hammingSimilarity(dim: Int, other: RoaringBitmap?): Double {
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
     val data = File(argp.get("dir", "nyt-cite-ltr"))
-    val dsName = argp.get("dataset", "trec-core")
+    val dsName = argp.get("dataset", "gov2")
     val dataset = DataPaths.get(dsName)
     val qrels = dataset.qrels
     val map = getEvaluator("map")

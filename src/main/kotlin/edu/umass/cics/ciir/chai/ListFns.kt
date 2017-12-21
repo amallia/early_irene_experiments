@@ -38,6 +38,15 @@ fun <N : Number> List<N>.computeStats(): StreamingStats {
     return out
 }
 
+fun <N : Number> Sequence<N>.computeStats(): StreamingStats {
+    val out = StreamingStats()
+    for (x in this) {
+        out.push(x.toDouble())
+    }
+    return out
+}
+
+
 inline fun <T> List<T>.meanByDouble(mapper: (T)->Double): Double {
     if (this.isEmpty()) return 0.0
     if (this.size == 1) return mapper(this[0])

@@ -3,10 +3,8 @@ package edu.umass.cics.ciir.iltr
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.irene.IIndex
 import edu.umass.cics.ciir.irene.lang.*
-import edu.umass.cics.ciir.irene.scoring.ILTRDocField
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.scoring.LTRDocField
-import edu.umass.cics.ciir.irene.scoring.LTREmptyDocField
 import edu.umass.cics.ciir.irene.toParameters
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
@@ -24,37 +22,13 @@ private fun forEachSDMPoolQuery(index: IIndex, fields: Set<String>, dsName: Stri
         val qtext = qjson.getStr("qtext")
         val qterms = qjson.getAsList("qterms", String::class.java)
 
-        val docs = qjson.getAsList("docs", Parameters::class.java).map { LTRDocFromIndex(index, fields, it) }
+        val docs = qjson.getAsList("docs", Parameters::class.java).map { p ->
+            val fjson = p.getMap("fields")
+            LTRDoc.create(p.getStr("id"), fjson, fields, index)
+        }
 
         doFn(LTRQuery(qid, qtext, qterms, docs))
     }
-}
-
-fun LTRDocFromIndex(index: IIndex, mandatoryFields: Set<String>, p: Parameters): LTRDoc {
-    val fjson = p.getMap("fields")
-
-    val features = HashMap<String, Double>()
-    val fields = HashMap<String, ILTRDocField>()
-
-    fjson.keys.forEach { key ->
-        if (fjson.isString(key)) {
-            val fieldText = fjson.getStr(key)
-            fields.put(key, LTRDocField(key, fieldText, index.tokenizer))
-        } else if(fjson.isDouble(key)) {
-            features.put("double-field-$key", fjson.getDouble(key))
-        } else if(fjson.isLong(key)) {
-            features.put("long-field-$key", fjson.getLong(key).toDouble())
-        } else {
-            println("Warning: Can't handle field: $key=${fjson[key]}")
-        }
-    }
-
-    mandatoryFields
-            .filterNot { fields.containsKey(it) }
-            .forEach { fields[it] = LTREmptyDocField(it) }
-
-    val name = p.getStr("id")
-    return LTRDoc(name, features, fields)
 }
 
 object CreateStaticNYTFeatures {

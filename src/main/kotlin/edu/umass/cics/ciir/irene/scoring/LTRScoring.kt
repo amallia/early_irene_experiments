@@ -76,11 +76,22 @@ data class LTRDocField(override val name: String, override val text: String, ove
     override val termSet: Set<String> get() = freqs.counts.keySet()
 }
 
+data class LTRTokenizedDocField(override val name: String, override val terms: List<String>, override val tokenizer: GenericTokenizer) : ILTRDocField {
+    override val text: String by lazy { terms.joinToString(separator = " ")}
+    override val freqs: BagOfWords by lazy { BagOfWords(terms) }
+    override val length: Int get() = terms.size
+    override val uniqTerms: Int get() = freqs.counts.size()
+    override fun count(term: String): Int = freqs.count(term)
+    override val termSet: Set<String> get() = freqs.counts.keySet()
+}
+
 
 data class LTRDoc(val name: String, val features: HashMap<String, Double>, val fields: HashMap<String,ILTRDocField>, var defaultField: String = "document") {
     fun field(field: String): ILTRDocField = fields[field] ?: error("No such field: $field in $this.")
     fun terms(field: String) = field(field).terms
     fun freqs(field: String) = field(field).freqs
+
+    fun target() = field(defaultField)
 
     constructor(name: String, text: String, field: String, tokenizer: GenericTokenizer = WhitespaceTokenizer()): this(name, hashMapOf(), hashMapOf(LTRDocField(field, text, tokenizer).toEntry()), field)
 
@@ -90,6 +101,14 @@ data class LTRDoc(val name: String, val features: HashMap<String, Double>, val f
         set("features", Parameters.wrap(features))
         set("name", name)
     }
+
+    fun toJSONDoc() = pmake {
+        set("features", Parameters.wrap(features))
+        set("id", name)
+        set("fields", Parameters.wrap(fields.mapValues { (_,f) -> f.text }))
+    }
+
+    fun featureForRanking(name: String, fallback: Double = Double.NEGATIVE_INFINITY) = features[name] ?: fallback;
 
 
     /**
@@ -104,6 +123,12 @@ data class LTRDoc(val name: String, val features: HashMap<String, Double>, val f
                 this.features.put(fname, value)
             }
         }
+    }
+
+    fun forPassage(field: String, terms: List<String>): LTRDoc {
+        val orig = fields[field] ?: error("Field $field does not actually exist!")
+        val onlyField = LTRTokenizedDocField(field, terms, orig.tokenizer)
+        return LTRDoc(name, HashMap(features), hashMapOf(onlyField.toEntry()), field)
     }
 
     companion object {

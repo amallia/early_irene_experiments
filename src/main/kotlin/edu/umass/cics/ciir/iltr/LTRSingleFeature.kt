@@ -49,6 +49,13 @@ data class LTRQuery(val qid: String, val qtext: String, val qterms: List<String>
     }
 
     fun toJSONFeatures(qrels: QueryJudgments) = docs.map { it.toJSONFeatures(qrels, qid) }
+    fun toJSONDocs() = pmake {
+        set("qid", qid)
+        set("qtext", qtext)
+        set("qterms", qterms)
+        set("docs", docs.map { it.toJSONDoc() })
+    }
+
 }
 
 fun LTRDocFromParameters(p: Parameters) = LTRDoc(p.getStr("id"),
