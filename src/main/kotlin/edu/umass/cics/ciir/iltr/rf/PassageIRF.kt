@@ -31,7 +31,14 @@ fun readLTRQueries(input: File, fields: Set<String>, index: IIndex): Sequence<LT
 
             val docs = qjson.getAsList("docs", Parameters::class.java).map { p ->
                 val fjson = p.getMap("fields")
-                LTRDoc.create(p.getStr("id"), fjson, fields, index)
+                val ltrDoc = LTRDoc.create(p.getStr("id"), fjson, fields, index)
+                if (p.isMap("features")) {
+                    val fMap = p.getMap("features")
+                    fMap.keys.forEach { k ->
+                        ltrDoc.features.put(k, fMap.getDouble(k))
+                    }
+                }
+                ltrDoc
             }
 
             yield(LTRQuery(qid, qtext, qterms, docs))
@@ -114,7 +121,7 @@ fun main(args: Array<String>) {
 object PassageLTRExtract {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)
-        val dsName = argp.get("dataset", "mq07")
+        val dsName = argp.get("dataset", "nyt-cite")
         val dataset = DataPaths.get(dsName)
         val evals = getEvaluators(listOf("ap", "ndcg"))
         val ms = NamedMeasures()
