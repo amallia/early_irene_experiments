@@ -114,10 +114,10 @@ data class LTRDoc(val name: String, val features: HashMap<String, Double>, val f
     /**
      * Take in a list of [feature_exprs] to evaluate and output the count of [errors] (NaN or Inf) per feature.
      */
-    fun evalAndSetFeatures(feature_exprs: Map<String, RRExpr>, errors: MutableMap<String, Int>) {
+    fun evalAndSetFeatures(feature_exprs: Map<String, RRExpr>, errors: MutableMap<String, Int>? = null) {
         feature_exprs.forEach { fname, fexpr ->
             val value = fexpr.eval(this)
-            if (value.isInfinite() || value.isNaN()) {
+            if (errors != null && (value.isInfinite() || value.isNaN())) {
                 errors.incr(fname, 1)
             } else {
                 this.features.put(fname, value)

@@ -32,9 +32,11 @@ fun readLTRQueries(input: File, fields: Set<String>, index: IIndex): Sequence<LT
             val docs = qjson.getAsList("docs", Parameters::class.java).map { p ->
                 val fjson = p.getMap("fields")
                 val ltrDoc = LTRDoc.create(p.getStr("id"), fjson, fields, index)
-                val fMap = p.getMap("features")
-                fMap.keys.forEach { k ->
-                    ltrDoc.features.put(k, fMap.getDouble(k))
+                if (p.isMap("features")) {
+                    val fMap = p.getMap("features")
+                    fMap.keys.forEach { k ->
+                        ltrDoc.features.put(k, fMap.getDouble(k))
+                    }
                 }
                 ltrDoc
             }
@@ -49,7 +51,7 @@ fun readLTRQueries(index: IIndex, fields: Set<String>, dsName: String) = readLTR
 
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dsName = argp.get("dataset", "mq07")
+    val dsName = argp.get("dataset", "gov2")
     val dataset = DataPaths.get(dsName)
     val evals = getEvaluators(listOf("ap", "ndcg"))
     val map = getEvaluator("ap")
@@ -58,7 +60,10 @@ fun main(args: Array<String>) {
     val outDir = argp.get("output-dir", "passage-iltr")
     val passageSize = argp.get("passageSize", 100)
     val passageStep = argp.get("passageStep", 50)
-    val passageRankingFeatureName = "norm:passage:fdm"
+    val passageRankingFeatureName = "norm:passage:rm"
+    val fbDocs = argp.get("fbDocs", 5)
+    val fbTerms = argp.get("fbTerms", 100)
+    val fbLambda = argp.get("fbLambda", 0.5)
 
     File("$outDir/$dsName.passages.jsonl.gz").smartPrint { out ->
         dataset.getIreneIndex().use { index ->
@@ -72,26 +77,30 @@ fun main(args: Array<String>) {
                 val fdm= FullDependenceModel(q.qterms, stopwords= inqueryStop).toRRExpr(index.env)
                 val sdm= SequentialDependenceModel(q.qterms, stopwords= inqueryStop).toRRExpr(index.env)
 
+                q.docs.forEach { doc ->
+                    doc.evalAndSetFeatures(mapOf("norm:doc:fdm" to fdm, "norm:doc:sdm" to sdm))
+                }
+                val rm = computeRelevanceModel(q.docs, "norm:doc:sdm", fbDocs, index.defaultField, logSumExp = true)
+                val rmTerms = rm.toTerms(fbTerms)
+                val rmExpr = SumExpr(rmTerms.map { DirQLExpr(TextExpr(it.term)).weighted(it.score) }).mixed(fbLambda, SequentialDependenceModel(q.qterms, stopwords= inqueryStop)).toRRExpr(index.env)
+
                 val maxPassageList = q.docs.mapNotNull { doc ->
                     val terms = doc.target().terms
-                    val docFDM = fdm.eval(doc)
-                    val docSDM = sdm.eval(doc)
                     val passages = terms.windowed(passageSize, passageStep, partialWindows = true).asSequence().map { pterms ->
                         val pdoc = doc.forPassage(doc.defaultField, pterms)
-                        pdoc.features[passageRankingFeatureName] = fdm.eval(pdoc)
-                        pdoc.features["norm:doc:fdm"] = docFDM
+                        pdoc.features["norm:passage:fdm"] = fdm.eval(pdoc)
                         pdoc.features["norm:passage:sdm"] = sdm.eval(pdoc)
-                        pdoc.features["norm:doc:sdm"] = docSDM
+                        pdoc.features["norm:passage:rm"] = rmExpr.eval(pdoc)
                         pdoc
                     }
 
-                    val pstats = passages.mapNotNull { it.features["norm:passage:fdm"] }.computeStats()
+                    val pstats = passages.mapNotNull { it.features[passageRankingFeatureName] }.computeStats()
 
-                    val mp = passages.maxBy { it.features["norm:passage:fdm"] ?: Double.NEGATIVE_INFINITY }
+                    val mp = passages.maxBy { it.features[passageRankingFeatureName] ?: Double.NEGATIVE_INFINITY }
                     if (mp != null) {
-                        mp.features.putAll(pstats.features.mapKeys { (k,_) -> "norm:passages:fdm:$k" })
+                        mp.features.putAll(pstats.features.mapKeys { (k,_) -> "$passageRankingFeatureName:$k" })
                         for (m in listOf("mean", "max", "min")) {
-                            mp.features.put("mix", pstats.mean + pstats.max + pstats.min)
+                            mp.features.put("norm:$passageRankingFeatureName:mix", pstats.mean + pstats.max + pstats.min)
                         }
                     }
                     mp
@@ -99,7 +108,7 @@ fun main(args: Array<String>) {
 
                 // Doc vs. Passage Scoring:
                 val pq = LTRQuery(q.qid, q.qtext, q.qterms, maxPassageList)
-                ms.push("MP-FDM-AP", map.evaluate(pq.toQResults(passageRankingFeatureName), judgments))
+                ms.push("MP-RM-AP", map.evaluate(pq.toQResults(passageRankingFeatureName), judgments))
                 ms.push("MD-FDM-AP", map.evaluate(pq.toQResults("norm:doc:fdm"), judgments))
                 ms.push("MP-SDM-AP", map.evaluate(pq.toQResults("norm:passage:sdm"), judgments))
                 ms.push("MD-SDM-AP", map.evaluate(pq.toQResults("norm:doc:sdm"), judgments))
