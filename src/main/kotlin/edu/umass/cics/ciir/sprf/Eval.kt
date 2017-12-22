@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.sprf
 
+import edu.umass.cics.ciir.chai.StreamingStats
 import gnu.trove.list.array.TDoubleArrayList
 import org.lemurproject.galago.core.eval.metric.QueryEvaluator
 import org.lemurproject.galago.core.eval.metric.QueryEvaluatorFactory
@@ -11,19 +12,19 @@ import java.util.*
  */
 
 open class KeyedMeasure<K> {
-    val measures = HashMap<K, TDoubleArrayList>()
+    val measures = HashMap<K, StreamingStats>()
     fun push(what: K, x: Double) {
-        this[what].add(x)
+        this[what].push(x)
     }
     fun ppush(ctx: String, what: K, x: Double) {
         println("$ctx\t$what\t${"%1.3f".format(x)}")
-        this[what].add(x)
+        this[what].push(x)
     }
-    operator fun get(index: K): TDoubleArrayList = measures.computeIfAbsent(index, { TDoubleArrayList() })
-    open fun means(): Map<K, Double> = measures.mapValues { (_,arr) -> arr.mean() }
+    operator fun get(index: K): StreamingStats = measures.computeIfAbsent(index, { StreamingStats() })
+    open fun means(): Map<K, Double> = measures.mapValues { (_,arr) -> arr.mean }
 }
 class NamedMeasures : KeyedMeasure<String>() {
-    override fun means(): TreeMap<String, Double> = measures.mapValuesTo(TreeMap()) { (_,arr) -> arr.mean() }
+    override fun means(): TreeMap<String, Double> = measures.mapValuesTo(TreeMap()) { (_,arr) -> arr.mean }
 
     override fun toString(): String {
         return means().entries.joinToString(separator = "\t") { (k,v) -> "%s=%1.3f".format(k, v) }

@@ -4,6 +4,7 @@ import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.*
 import edu.umass.cics.ciir.irene.IIndex
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.scoring.ILTRDocField
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.scoring.LTRDocField
 import edu.umass.cics.ciir.irene.toParameters
@@ -64,6 +65,7 @@ fun main(args: Array<String>) {
     val fbDocs = argp.get("fbDocs", 5)
     val fbTerms = argp.get("fbTerms", 100)
     val fbLambda = argp.get("fbLambda", 0.5)
+    val kMaxPassages = argp.get("kMax", 5)
 
     File("$outDir/$dsName.passages.jsonl.gz").smartPrint { out ->
         dataset.getIreneIndex().use { index ->
@@ -96,14 +98,31 @@ fun main(args: Array<String>) {
 
                     val pstats = passages.mapNotNull { it.features[passageRankingFeatureName] }.computeStats()
 
-                    val mp = passages.maxBy { it.features[passageRankingFeatureName] ?: Double.NEGATIVE_INFINITY }
-                    if (mp != null) {
-                        mp.features.putAll(pstats.features.mapKeys { (k,_) -> "$passageRankingFeatureName:$k" })
-                        for (m in listOf("mean", "max", "min")) {
-                            mp.features.put("norm:$passageRankingFeatureName:mix", pstats.mean + pstats.max + pstats.min)
+                    val mp = passages.sortedByDescending { it.features[passageRankingFeatureName] ?: Double.NEGATIVE_INFINITY }.take(kMaxPassages).toList()
+
+                    val mpDocFields = mp.mapIndexed { i, p ->
+                        val contents = p.target().text
+                        val name = "mp$i"
+                        LTRDocField(name, contents, index.tokenizer)
+                    }.associateByTo(HashMap<String,ILTRDocField>()) { it.name }
+                    val mpFeatures = HashMap(doc.features)
+
+                    val mpDoc = LTRDoc(doc.name, mpFeatures, mpDocFields, index.defaultField)
+                    val metaF = NamedMeasures()
+                    mp.forEachIndexed { i, p ->
+                        p.features.forEach { fname, fval ->
+                            if (fname.contains("passage")) {
+                                mpFeatures["$fname[$i]"] = fval
+                                metaF.push(fname, fval)
+                            }
                         }
                     }
-                    mp
+                    metaF.measures.forEach { (orig, pstats) ->
+                        pstats.features.forEach { (k,score) ->
+                            mpFeatures["$orig:$k"] = score
+                        }
+                    }
+                    mpDoc
                 }
 
                 // Doc vs. Passage Scoring:
@@ -112,9 +131,9 @@ fun main(args: Array<String>) {
                 ms.push("MD-FDM-AP", map.evaluate(pq.toQResults("norm:doc:fdm"), judgments))
                 ms.push("MP-SDM-AP", map.evaluate(pq.toQResults("norm:passage:sdm"), judgments))
                 ms.push("MD-SDM-AP", map.evaluate(pq.toQResults("norm:doc:sdm"), judgments))
-                for (m in listOf("mean", "max", "min", "mix")) {
-                    ms.push("P-$m-FDM-AP", map.evaluate(pq.toQResults("norm:passages:fdm:$m"), judgments))
-                }
+                ms.push("MP-SDM-mean-AP", map.evaluate(pq.toQResults("norm:passage:sdm:mean"), judgments))
+                ms.push("MP-SDM-min-AP", map.evaluate(pq.toQResults("norm:passage:sdm:min"), judgments))
+                ms.push("MP-SDM-max-AP", map.evaluate(pq.toQResults("norm:passage:sdm:max"), judgments))
 
                 println("${q.qid} $ms")
 

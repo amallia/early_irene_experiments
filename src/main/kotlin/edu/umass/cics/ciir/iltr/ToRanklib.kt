@@ -26,9 +26,10 @@ fun valAsDouble(value: Any?): Double = when (value) {
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args);
     val dataset = argp.get("dataset", "trec-core")
-    val input = argp.get("input", "nyt-cite-ltr/$dataset.features.jsonl.gz")
+    val dir = argp.get("dir", "passage-iltr")
+    val input = argp.get("input", "$dir/$dataset.features.jsonl.gz")
     val docInput = File("html_raw/$dataset.features.jsonl.gz")
-    val output = argp.get("output", "nyt-cite-ltr/$dataset.features.ranklib.gz")
+    val output = argp.get("output", "$dir/$dataset.features.ranklib.gz")
 
     val docFeatures = HashMap<String, Map<String, Double>>()
     if (docInput.exists()) {
