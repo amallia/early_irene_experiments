@@ -131,8 +131,8 @@ object CollectStatsForQueries {
     }
 }
 
-data class CTCount(val context: String, val token: String, var count: Int = 0) : ScoredForHeap {
-    override val score: Float get() = count.toFloat()
+data class CTCount(val context: String, val token: String, var count: Int = 0) : WeightedForHeap {
+    override val weight: Float get() = count.toFloat()
 
 }
 object MergeSortedContextCounts {

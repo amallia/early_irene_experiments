@@ -145,33 +145,33 @@ class TopKHeap<T: Any>(internal val maxSize: Int, internal val cmp: Comparator<T
     override val size: Int get() = fillPtr
 }
 
-interface ScoredForHeap {
-    val score: Float
+interface WeightedForHeap {
+    val weight: Float
 }
-data class ScoredWord(override val score: Float, val word: String): ScoredForHeap, Comparable<ScoredWord> {
-    override fun compareTo(other: ScoredWord): Int {
-        val cmp = score.compareTo(other.score)
+data class WeightedWord(override val weight: Float, val word: String): WeightedForHeap, Comparable<WeightedWord> {
+    override fun compareTo(other: WeightedWord): Int {
+        val cmp = weight.compareTo(other.weight)
         if (cmp != 0) return cmp
         return word.compareTo(other.word)
     }
 }
 
-fun TObjectDoubleHashMap<String>.take(k: Int): List<ScoredWord> {
-    val heap = ScoringHeap<ScoredWord>(k)
+fun TObjectDoubleHashMap<String>.take(k: Int): List<WeightedWord> {
+    val heap = ScoringHeap<WeightedWord>(k)
     this.forEachEntry { term, weight ->
         val fw = weight.toFloat()
-        heap.offer(fw, {ScoredWord(fw, term)})
+        heap.offer(fw, { WeightedWord(fw, term)})
     }
     return heap.sorted
 }
 
-class ScoringHeap<T: ScoredForHeap>(val maxSize: Int): kotlin.collections.AbstractList<T>() {
+class ScoringHeap<T: WeightedForHeap>(val maxSize: Int): kotlin.collections.AbstractList<T>() {
     val data: ArrayList<T> = ArrayList(maxSize)
     var fillPtr: Int = 0
     var totalSeen: Long = 0
     inline val isFull: Boolean
         get() = fillPtr >= maxSize
-    val sorted: List<T> get() = unsortedList.sortedByDescending { it.score }
+    val sorted: List<T> get() = unsortedList.sortedByDescending { it.weight }
     val unsortedList: List<T> get() = data.take(fillPtr)
 
     fun peek(): T? {
@@ -181,7 +181,7 @@ class ScoringHeap<T: ScoredForHeap>(val maxSize: Int): kotlin.collections.Abstra
     }
 
     // Return bottom or worst.
-    val min: Float get() = peek()?.score ?: -Float.MAX_VALUE
+    val min: Float get() = peek()?.weight ?: -Float.MAX_VALUE
 
     /**
      * Adds an item to the heap IFF the heaps is small OR the min-item is worse than this item.
@@ -196,7 +196,7 @@ class ScoringHeap<T: ScoredForHeap>(val maxSize: Int): kotlin.collections.Abstra
             fillPtr++
             bubbleUp(fillPtr - 1)
             return true
-        } else if (score > data[0].score) {
+        } else if (score > data[0].weight) {
             // or if smallest item is worse than this document
             data[0] = createIfNeeded()
             bubbleDown(0)
@@ -204,7 +204,7 @@ class ScoringHeap<T: ScoredForHeap>(val maxSize: Int): kotlin.collections.Abstra
         }
         return false
     }
-    fun offer(item: T) = offer(item.score, {item})
+    fun offer(item: T) = offer(item.weight, {item})
 
     private fun swap(i: Int, j: Int) {
         val p = data[i]
@@ -214,7 +214,7 @@ class ScoringHeap<T: ScoredForHeap>(val maxSize: Int): kotlin.collections.Abstra
 
     fun bubbleUp(pos: Int) {
         val parent = (pos - 1) / 2
-        if (data[pos].score < data[parent].score) {
+        if (data[pos].weight < data[parent].weight) {
             swap(pos, parent)
             bubbleUp(parent)
         }
@@ -227,11 +227,11 @@ class ScoringHeap<T: ScoredForHeap>(val maxSize: Int): kotlin.collections.Abstra
         var selectedChild = if (child1 < fillPtr) child1 else -1
 
         if (child2 < fillPtr) {
-            selectedChild = if (data[child1].score < data[child2].score) child1 else child2
+            selectedChild = if (data[child1].weight < data[child2].weight) child1 else child2
         }
 
         // the parent is bigger than the child (assuming a child)
-        if (selectedChild > 0 && data[pos].score > data[selectedChild].score) {
+        if (selectedChild > 0 && data[pos].weight > data[selectedChild].weight) {
             swap(selectedChild, pos)
             bubbleDown(selectedChild)
         }

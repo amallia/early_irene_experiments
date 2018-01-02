@@ -1,7 +1,7 @@
 package edu.umass.cics.ciir.irene.example
 
-import edu.umass.cics.ciir.chai.ScoredWord
 import edu.umass.cics.ciir.chai.StreamingStats
+import edu.umass.cics.ciir.chai.WeightedWord
 import edu.umass.cics.ciir.chai.normalize
 import edu.umass.cics.ciir.chai.timed
 import edu.umass.cics.ciir.irene.lang.*
@@ -22,10 +22,10 @@ import java.io.File
  */
 
 
-fun TObjectDoubleHashMap<String>.toList(): List<ScoredWord> {
-    val output = ArrayList<ScoredWord>(this.size())
+fun TObjectDoubleHashMap<String>.toList(): List<WeightedWord> {
+    val output = ArrayList<WeightedWord>(this.size())
     forEachEntry { term, weight ->
-        output.add(ScoredWord(weight.toFloat(), term))
+        output.add(WeightedWord(weight.toFloat(), term))
         true
     }
     return output
@@ -114,7 +114,7 @@ fun main(args: Array<String>) {
             println(terms)
 
             SumExpr(terms
-                    .associate { Pair(it.word, it.score.toDouble()) }
+                    .associate { Pair(it.word, it.weight.toDouble()) }
                     .normalize()
                     .map { (k, v) -> DirQLExpr(TextExpr(k)).weighted(v) })
         }

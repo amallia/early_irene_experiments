@@ -27,9 +27,9 @@ import kotlin.coroutines.experimental.buildSequence
  *
  * @author jfoley.
  */
-data class RanklibInput(val label: Double, val qid: String, val name: String, val features: FloatArrayVector, var prediction: Double = Double.NaN) : ScoredForHeap {
+data class RanklibInput(val label: Double, val qid: String, val name: String, val features: FloatArrayVector, var prediction: Double = Double.NaN) : WeightedForHeap {
     val relevant: Boolean get() = label > 0
-    override val score: Float get() = prediction.toFloat()
+    override val weight: Float get() = prediction.toFloat()
     var pvec: FloatArrayVector? = null
     fun toEvalDoc(rank: Int) = SimpleEvalDoc(name, rank, prediction)
     // Binary representation of activated leaf nodes.
@@ -483,25 +483,25 @@ fun main(args: Array<String>) {
 fun weightedNormalizedQuery(weights: Map<String, Double>, k: Int, field: String, scorer: (TextExpr)->QExpr): QExpr? {
     if (k <= 0) error("Must take *some* terms from weights: k=$k")
     if (weights.isEmpty()) return null
-    val topK = ScoringHeap<ScoredWord>(k)
-    weights.forEach { t, s -> topK.offer(s.toFloat(), { ScoredWord(s.toFloat(), t) }) }
+    val topK = ScoringHeap<WeightedWord>(k)
+    weights.forEach { t, s -> topK.offer(s.toFloat(), { WeightedWord(s.toFloat(), t) }) }
 
     return SumExpr(topK.sorted
-            .associate { Pair(it.word, it.score.toDouble()) }
+            .associate { Pair(it.word, it.weight.toDouble()) }
             .normalize()
             .map { scorer(TextExpr(it.key, field)).weighted(it.value) })
 }
 
-data class ScoredRanklibInput(override val score: Float, val original: RanklibInput) : ScoredForHeap
+data class WeightedRanklibInput(override val weight: Float, val original: RanklibInput) : WeightedForHeap
 
 data class InteractionFeedback(val correct: List<RanklibInput>, val incorrect: List<RanklibInput>, val remaining: List<RanklibInput>) {
     constructor(ranking: List<RanklibInput>, depth: Int) : this(ranking.take(depth).filter { it.relevant }, ranking.take(depth).filterNot { it.relevant }, ranking.drop(depth))
     val docs: List<RanklibInput> get() = (correct + incorrect + remaining).sortedByDescending { it.prediction }
     fun rankRemaining(scorer: (RanklibInput)->Double): List<EvalDoc> {
-        val output = ScoringHeap<ScoredRanklibInput>(remaining.size)
+        val output = ScoringHeap<WeightedRanklibInput>(remaining.size)
         remaining.forEach { rdoc ->
-            output.offer(ScoredRanklibInput(scorer(rdoc).toFloat(), rdoc))
+            output.offer(WeightedRanklibInput(scorer(rdoc).toFloat(), rdoc))
         }
-        return output.sorted.mapIndexed { i, sri -> SimpleEvalDoc(sri.original.name, i+1, sri.score.toDouble()) }
+        return output.sorted.mapIndexed { i, sri -> SimpleEvalDoc(sri.original.name, i+1, sri.weight.toDouble()) }
     }
 }

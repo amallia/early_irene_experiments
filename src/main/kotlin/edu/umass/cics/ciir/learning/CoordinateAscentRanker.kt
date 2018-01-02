@@ -159,3 +159,5 @@ fun computeAP(input: List<Prediction>, numRelevant: Int): Double {
 
     return sumPrecision / numRelevant.toDouble()
 }
+
+fun computePrec(input: List<Prediction>, depth: Int): Double = safeDiv(input.sorted().take(depth).count { it.correct }, depth)

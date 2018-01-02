@@ -1,7 +1,7 @@
 package edu.umass.cics.ciir.irene.example
 
 import edu.umass.cics.ciir.chai.*
-import edu.umass.cics.ciir.irene.IreneScoredDoc
+import edu.umass.cics.ciir.irene.IreneWeightedDoc
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.IreneQueryScorer
 import edu.umass.cics.ciir.irene.scoring.MultiEvalNode
@@ -132,8 +132,8 @@ fun main(args: Array<String>) {
 }
 
 // Keep in heap based on the "worst" possible score for each document.
-data class MaxMinScoreDoc(val minScore: Float, val baseScore: Float, val maxScore: Float, val id: Int): ScoredForHeap {
-    override val score: Float get() = minScore
+data class MaxMinScoreDoc(val minScore: Float, val baseScore: Float, val maxScore: Float, val id: Int): WeightedForHeap {
+    override val weight: Float get() = minScore
 }
 data class MaxMinResults(val totalHits: Int, val totalOffered: Long, val prunedHits: List<MaxMinScoreDoc>) {
     var exactResults: TopDocs? = null
@@ -240,7 +240,7 @@ class MaxMinCollectorManager(val mq: MultiExpr, val poolSize: Int, val epsilon: 
             }
         }
 
-        fun finishScoring(relevant: List<MaxMinScoreDoc>, heap: ScoringHeap<IreneScoredDoc>) {
+        fun finishScoring(relevant: List<MaxMinScoreDoc>, heap: ScoringHeap<IreneWeightedDoc>) {
             for (mmsd in relevant) {
                 if (heap.isFull && mmsd.maxScore < heap.min) {
                     continue
@@ -255,7 +255,7 @@ class MaxMinCollectorManager(val mq: MultiExpr, val poolSize: Int, val epsilon: 
                     println(" + $delta = $exactScore")
                 }
 
-                heap.offer(exactScore, {IreneScoredDoc(exactScore, mmsd.id)})
+                heap.offer(exactScore, { IreneWeightedDoc(exactScore, mmsd.id)})
             }
         }
     }
@@ -272,7 +272,7 @@ class MaxMinCollectorManager(val mq: MultiExpr, val poolSize: Int, val epsilon: 
             return lc
         }
 
-        fun finishScoring(candidates: List<MaxMinScoreDoc>, exactHeap: ScoringHeap<IreneScoredDoc>) {
+        fun finishScoring(candidates: List<MaxMinScoreDoc>, exactHeap: ScoringHeap<IreneWeightedDoc>) {
             println("${candidates.size}")
             leafCollectors.values.sortedBy { it.docBase }.forEach { mmlc ->
                 val range = (mmlc.docBase until mmlc.docBase+mmlc.numDocs)

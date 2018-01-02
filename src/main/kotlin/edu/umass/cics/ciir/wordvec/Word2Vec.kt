@@ -200,20 +200,20 @@ object ExactWordProb {
                 }
                 val candidates = candidateProbabilities.values.flatMapTo(HashSet()) { it.keys }
 
-                val heap = ScoringHeap<ScoredWord>(30)
+                val heap = ScoringHeap<WeightedWord>(30)
                 for (c in candidates) {
                     val likelihood = candidateProbabilities.entries.sumByDouble { (obsv, probs) ->
                         val bgProb = (0.5 / (contextNorms[obsv] ?: 1).toDouble())
                         Math.log(probs[c] ?: bgProb)
                     }
-                    heap.offer(ScoredWord(likelihood.toFloat(), c))
+                    heap.offer(WeightedWord(likelihood.toFloat(), c))
                 }
 
                 val expTerms = heap.sorted
                 println(expTerms.joinToString(separator = "\t"))
-                val logSumExp = MathUtils.logSumExp(expTerms.map { it.score.toDouble() }.toDoubleArray())
+                val logSumExp = MathUtils.logSumExp(expTerms.map { it.weight.toDouble() }.toDoubleArray())
 
-                val normExpTerms = expTerms.associate { Pair(it.word, Math.exp(it.score.toDouble() - logSumExp)) }.normalize()
+                val normExpTerms = expTerms.associate { Pair(it.word, Math.exp(it.weight.toDouble() - logSumExp)) }.normalize()
                 println(normExpTerms.entries.joinToString(separator = "\t"))
 
                 candidateProbabilities.forEach { obsv, probs ->

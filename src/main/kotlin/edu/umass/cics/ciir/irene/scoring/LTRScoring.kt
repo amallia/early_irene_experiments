@@ -3,10 +3,16 @@ package edu.umass.cics.ciir.irene.scoring
 import edu.umass.cics.ciir.chai.IntList
 import edu.umass.cics.ciir.iltr.RREnv
 import edu.umass.cics.ciir.iltr.RRExpr
+import edu.umass.cics.ciir.iltr.WeightedTerm
+import edu.umass.cics.ciir.iltr.normalized
 import edu.umass.cics.ciir.irene.DataNeeded
 import edu.umass.cics.ciir.irene.GenericTokenizer
 import edu.umass.cics.ciir.irene.IIndex
 import edu.umass.cics.ciir.irene.WhitespaceTokenizer
+import edu.umass.cics.ciir.irene.lang.DirQLExpr
+import edu.umass.cics.ciir.irene.lang.QExpr
+import edu.umass.cics.ciir.irene.lang.SumExpr
+import edu.umass.cics.ciir.irene.lang.TextExpr
 import edu.umass.cics.ciir.sprf.getStr
 import edu.umass.cics.ciir.sprf.incr
 import edu.umass.cics.ciir.sprf.pmake
@@ -40,6 +46,17 @@ class BagOfWords(terms: List<String>) {
         if (!counts.containsKey(term)) return 0
         return counts[term]
     }
+    private fun toTerms(): List<WeightedTerm> {
+        val output = ArrayList<WeightedTerm>(counts.size())
+        counts.forEachEntry {term, weight ->
+            output.add(WeightedTerm(weight.toDouble(), term))
+        }
+        return output
+    }
+    fun toTerms(k: Int): List<WeightedTerm> = toTerms().sorted().take(k).normalized()
+    fun toQExpr(k: Int, scorer: (TextExpr)-> QExpr = { DirQLExpr(it) }, targetField: String? = null, statsField: String? = null) = SumExpr(toTerms(k).map {
+        scorer(TextExpr(it.term, field = targetField, statsField = statsField)).weighted(it.score)
+    })
 
 }
 
