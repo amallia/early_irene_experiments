@@ -322,8 +322,6 @@ data class WSDMTopLevel(val name: String, val relevant: Boolean, val t: WSDMCliq
     }
 }
 
-data class SimplePrediction(override val score: Double, override val correct: Boolean): Prediction { }
-
 object LearnWSDMParameters {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)

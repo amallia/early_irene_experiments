@@ -268,7 +268,7 @@ open class WikiSource : IRDataset() {
     override fun getIndexParams(): IndexParams {
         val path = when(IRDataset.host) {
             "gob" -> "/media/jfoley/flash/dbpedia-2016-10/dbpedia.shard0.irene2"
-            "oakey" -> "/mnt/scratch/jfoley2/dbpedia.irene2"
+            "oakey" -> "/mnt/scratch2/jfoley/dbpedia.irene2"
             else -> notImpl(IRDataset.host)
         }
         return IndexParams().apply {

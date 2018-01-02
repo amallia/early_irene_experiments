@@ -7,6 +7,7 @@ import edu.umass.cics.ciir.irene.createOptimizedMovementExpr
 import edu.umass.cics.ciir.irene.lucene_try
 import org.apache.lucene.index.Term
 import java.util.*
+import kotlin.collections.HashSet
 
 typealias LuceneQuery = org.apache.lucene.search.Query
 
@@ -106,6 +107,24 @@ sealed class QExpr {
             else -> error("Can't determine single field for $this")
         }
     }
+    fun getLengthsFields(): Set<String> {
+        val out = HashSet<String>()
+        visit { c ->
+            if (c is TextExpr) {
+                out.add(c.countsField())
+            }
+        }
+        return out
+    }
+    fun getLengthsField(): String {
+        val fields = getLengthsFields()
+        return when(fields.size) {
+            0 -> error("No lengths field found for $this.")
+            1 -> fields.first()
+            else -> error("Can't determine single field for $this")
+        }
+    }
+
     fun map(mapper: (QExpr)->QExpr): QExpr = qmap(this, mapper)
 
     // Get a weighted version of this node if weight is non-null.

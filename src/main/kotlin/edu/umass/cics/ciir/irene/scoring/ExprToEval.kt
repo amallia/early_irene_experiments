@@ -26,7 +26,7 @@ fun exprToEval(q: QExpr, ctx: EvalSetupContext): QueryEvalNode = when(q) {
                     val d = c as DirQLExpr
                     NoLogDirichletSmoothingEval(
                             exprToEval(c.child, ctx),
-                            ctx.createLengths(c.stats!!.field),
+                            ctx.createLengths(c.child.getLengthsField()),
                             d.mu!!, c.stats!!)
                 },
                 q.weights.map { it }.toDoubleArray())
@@ -41,18 +41,18 @@ fun exprToEval(q: QExpr, ctx: EvalSetupContext): QueryEvalNode = when(q) {
     is DirQLExpr -> {
         DirichletSmoothingEval(
                 exprToEval(q.child, ctx),
-                ctx.createLengths(q.stats!!.field),
+                ctx.createLengths(q.child.getLengthsField()),
                 q.mu!!, q.stats!!)
     }
     is BM25Expr -> if (q.extractedIDF) {
         BM25InnerScoringEval(
                 exprToEval(q.child, ctx),
-                ctx.createLengths(q.stats!!.field),
+                ctx.createLengths(q.child.getLengthsField()),
                 q.b!!, q.k!!, q.stats!!)
     } else {
         BM25ScoringEval(
                 exprToEval(q.child, ctx),
-                ctx.createLengths(q.stats!!.field),
+                ctx.createLengths(q.child.getLengthsField()),
                 q.b!!, q.k!!, q.stats!!)
     }
     is CountToScoreExpr -> TODO()

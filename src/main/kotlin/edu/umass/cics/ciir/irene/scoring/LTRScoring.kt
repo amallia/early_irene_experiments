@@ -202,6 +202,9 @@ abstract class LTRDocFeatureNode : QueryEvalNode {
 }
 
 data class LTRDocLength(val field: String) : CountEvalNode, LTRDocFeatureNode() {
+    init {
+        assert(field == "lemma")
+    }
     override fun count(env: ScoringEnv): Int = env.ltr.field(field).length
     override fun matches(env: ScoringEnv): Boolean = env.ltr.fields.contains(field)
 }

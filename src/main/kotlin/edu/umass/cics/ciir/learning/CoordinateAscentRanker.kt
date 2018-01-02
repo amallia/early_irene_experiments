@@ -118,7 +118,6 @@ class CoordinateAscentState(val params: CoordinateAscentRanker) {
                 predictions[i] = weight.dotp(params.dataset[i])
             }
         }
-        predicted.sort()
         return computeAP(predicted, numRelevant)
     }
 
@@ -130,6 +129,8 @@ class CoordinateAscentState(val params: CoordinateAscentRanker) {
     }
 }
 
+
+data class SimplePrediction(override val score: Double, override val correct: Boolean): Prediction { }
 interface Prediction : Comparable<Prediction> {
     val score: Double
     val correct: Boolean
@@ -148,7 +149,7 @@ fun computeAP(input: List<Prediction>, numRelevant: Int): Double {
 
     var sumPrecision = 0.0
     var recallPointCount = 0
-    input.forEachIndexed { i, item ->
+    input.sorted().forEachIndexed { i, item ->
         if (item.correct) {
             val rank = i + 1
             recallPointCount++
