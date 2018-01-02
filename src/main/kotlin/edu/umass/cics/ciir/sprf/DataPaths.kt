@@ -113,7 +113,7 @@ class Robust04 : IRDataset() {
     override fun getIndexParams(): IndexParams {
         val path = when(IRDataset.host) {
             "gob" -> "/media/jfoley/flash/robust.irene2"
-            "oakey" -> "/mnt/scratch/jfoley/robust.irene2"
+            "oakey" -> "/mnt/scratch2/jfoley/robust.irene2"
             "sydney" -> "/mnt/nfs/work1/jfoley/indexes/robust.irene2"
             else -> notImpl(IRDataset.host)
         }
@@ -129,7 +129,7 @@ class Robust04 : IRDataset() {
     override val name: String get() = "robust"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
         "gob" -> "/media/jfoley/flash/robust04.galago"
-        "oakey" -> "/mnt/scratch/jfoley/robust04.galago/"
+        "oakey" -> "/mnt/scratch2/jfoley/robust04.galago/"
         "sydney" -> "/mnt/nfs/work3/sjh/indexes/robust04.index"
         else -> notImpl(IRDataset.host)
     })
@@ -146,7 +146,7 @@ open class Gov2 : IRDataset() {
     override fun getIndexParams(): IndexParams {
         val path = when(IRDataset.host) {
             "gob" -> "/media/jfoley/flash/gov2.irene2"
-            "oakey" -> "/mnt/scratch/jfoley/gov2.irene2"
+            "oakey" -> "/mnt/scratch2/jfoley/gov2.irene2"
             "sydney" -> "/mnt/nfs/work1/jfoley/indexes/gov2.irene2"
             else -> notImpl(IRDataset.host)
         }
@@ -161,7 +161,7 @@ open class Gov2 : IRDataset() {
     override val textFields: Set<String> = setOf("title", "body", "document")
     override val name: String get() = "gov2"
     override fun getIndexFile(): File = File(when(IRDataset.host) {
-        "oakey" -> "/mnt/scratch/jfoley/gov2.galago/"
+        "oakey" -> "/mnt/scratch/jfoley2/gov2.galago/"
         "sydney" -> "/mnt/nfs/work3/sjh/indexes/gov2.index/"
         else -> notImpl(IRDataset.host)
     })
@@ -186,7 +186,7 @@ open class NYTSource : IRDataset() {
     override fun getQueryJudgmentsFile(): File = error("No queries.")
     override fun getIndexParams(): IndexParams = NYT.getIndexParams(getIreneIndexPath())
     fun getIreneIndexPath() = when(IRDataset.host) {
-        "oakey" -> "/mnt/scratch/jfoley/nyt.irene2"
+        "oakey" -> "/mnt/scratch2/jfoley/nyt.irene2"
         "gob" -> "/media/jfoley/flash/nyt.irene2"
         else -> notImpl(IRDataset.host)
     }
@@ -268,7 +268,7 @@ open class WikiSource : IRDataset() {
     override fun getIndexParams(): IndexParams {
         val path = when(IRDataset.host) {
             "gob" -> "/media/jfoley/flash/dbpedia-2016-10/dbpedia.shard0.irene2"
-            "oakey" -> "/mnt/scratch/jfoley/dbpedia-2016-10/dbpedia.irene2"
+            "oakey" -> "/mnt/scratch/jfoley2/dbpedia.irene2"
             else -> notImpl(IRDataset.host)
         }
         return IndexParams().apply {
@@ -329,7 +329,7 @@ private class DBPE : WikiSource() {
 class Clue09BSpam60 : IRDataset() {
     override fun getIndexParams(): IndexParams {
         val path = when(IRDataset.host) {
-            "oakey" -> "/mnt/scratch/jfoley/clue09.irene2"
+            "oakey" -> "/mnt/scratch2/jfoley/clue09.irene2"
             "sydney" -> "/mnt/nfs/work1/jfoley/indexes/clue09.irene2"
             else -> notImpl(IRDataset.host)
         }
@@ -354,7 +354,7 @@ class Clue09BSpam60 : IRDataset() {
 class WT10G : IRDataset() {
     override fun getIndexParams(): IndexParams {
         val path = when(IRDataset.host) {
-            "oakey" -> "/mnt/scratch/jfoley/wt10g.irene2"
+            "oakey" -> "/mnt/scratch2/jfoley/wt10g.irene2"
             "sydney" -> "/mnt/nfs/work1/jfoley/indexes/wt10g.irene2"
             else -> notImpl(IRDataset.host)
         }

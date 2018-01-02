@@ -25,7 +25,7 @@ fun valAsDouble(value: Any?): Double = when (value) {
  */
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args);
-    val dataset = argp.get("dataset", "trec-core")
+    val dataset = argp.get("dataset", "gov2")
     val dir = argp.get("dir", "passage-iltr")
     val input = argp.get("input", "$dir/$dataset.features.jsonl.gz")
     val docInput = File("html_raw/$dataset.features.jsonl.gz")

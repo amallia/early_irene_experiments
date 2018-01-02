@@ -67,6 +67,17 @@ data class LTREmptyDocField(override val name: String) : ILTRDocField {
     override fun count(term: String): Int = 0
 }
 
+data class LTRMergedField(override val name: String, val components: List<ILTRDocField>) : ILTRDocField {
+    override val tokenizer: GenericTokenizer get() = components[0].tokenizer
+    override val text: String by lazy { components.joinToString(separator = "\n") { it.text } }
+    override val terms: List<String> by lazy { components.flatMap { it.terms } }
+    override val freqs: BagOfWords by lazy { BagOfWords(terms) }
+    override val length: Int get() = terms.size
+    override val uniqTerms: Int get() = freqs.counts.size()
+    override fun count(term: String): Int = freqs.count(term)
+    override val termSet: Set<String> get() = freqs.counts.keySet()
+}
+
 data class LTRDocField(override val name: String, override val text: String, override val tokenizer: GenericTokenizer = WhitespaceTokenizer()) : ILTRDocField {
     override val terms: List<String> by lazy { tokenizer.tokenize(text, name) }
     override val freqs: BagOfWords by lazy { BagOfWords(terms) }

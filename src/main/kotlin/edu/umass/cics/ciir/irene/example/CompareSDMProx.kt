@@ -36,8 +36,8 @@ fun main(args: Array<String>) {
     val qrels = dataset.qrels
     val measure = getEvaluator("map")
     val info = NamedMeasures()
-    val scorer = argp.get("scorer", "ql")
-    val qtype = argp.get("qtype", "desc")
+    val scorer = argp.get("scorer", "bm25")
+    val qtype = argp.get("qtype", "title")
     val estStats = argp.get("stats", "min")
     val proxType = argp.get("prox", "sc")
 
@@ -84,18 +84,18 @@ fun main(args: Array<String>) {
                     sdmQ.visit { it.applyEnvironment(index.env) }
                     approxSDMQ.visit { it.applyEnvironment(index.env) }
 
-                    val (timeExact, topExact) = timed { index.search(sdmQ, 1000) }
-                    val exactR = topExact.toQueryResults(index, qid)
+                    //val (timeExact, topExact) = timed { index.search(sdmQ, 1000) }
+                    //val exactR = topExact.toQueryResults(index, qid)
                     val (time, topApprox) = timed {index.search(approxSDMQ, 1000)}
                     val approxR = topApprox.toQueryResults(index, qid)
 
                     times.push(time)
-                    baseTimes.push(timeExact)
+                    //baseTimes.push(timeExact)
 
-                    exactR.outputTrecrun(w1, "sdm")
+                    //exactR.outputTrecrun(w1, "sdm")
                     approxR.outputTrecrun(w2, "sdm-$proxType")
 
-                    info.push("ap1", measure.evaluate(exactR, judgments))
+                    //info.push("ap1", measure.evaluate(exactR, judgments))
                     info.push("ap2", measure.evaluate(approxR, judgments))
 
                     println("\t${info} ${times.mean} ${baseTimes.mean}")

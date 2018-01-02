@@ -7,6 +7,7 @@ import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.ILTRDocField
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.scoring.LTRDocField
+import edu.umass.cics.ciir.irene.scoring.LTRMergedField
 import edu.umass.cics.ciir.irene.toParameters
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
@@ -147,7 +148,7 @@ fun main(args: Array<String>) {
 object PassageLTRExtract {
     @JvmStatic fun main(args: Array<String>) {
         val argp = Parameters.parseArgs(args)
-        val dsName = argp.get("dataset", "nyt-cite")
+        val dsName = argp.get("dataset", "gov2")
         val dataset = DataPaths.get(dsName)
         val evals = getEvaluators(listOf("ap", "ndcg"))
         val ms = NamedMeasures()
@@ -168,8 +169,17 @@ object PassageLTRExtract {
                 wiki.env.estimateStats = env.estimateStats
                 wiki.env.defaultDirichletMu = 7000.0
                 val wikiN = wiki.fieldStats("body")!!.dc.toDouble()
-                for (q in readLTRQueries(File(outDir, "$dsName.passages.jsonl.gz"), setOf(index.defaultField), index)) {
+                for (q in readLTRQueries(
+                        File(outDir, "$dsName.passages.jsonl.gz"),
+                        (0 until 5).map { "mp$it" }.toSet(),
+                        index)) {
                     println("${q.qid} ${q.qterms}")
+
+                    q.docs.forEach { doc ->
+                        if (!doc.fields.containsKey(doc.defaultField)) {
+                            doc.fields.put(doc.defaultField, LTRMergedField(doc.defaultField, doc.fields.values.toList()))
+                        }
+                    }
 
                     val queryJudgments = qrels[q.qid] ?: QueryJudgments(q.qid, emptyMap())
                     val feature_exprs = HashMap<String, RRExpr>()
