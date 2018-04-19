@@ -1,8 +1,5 @@
-package edu.umass.cics.ciir.chai
+package edu.umass.cics.ciir.irene.utils
 
-import edu.umass.cics.ciir.irene.utils.ScoringHeap
-import edu.umass.cics.ciir.irene.utils.WeightedForHeap
-import edu.umass.cics.ciir.irene.utils.shuffled
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -18,7 +15,7 @@ class ScoringHeapTest {
 
         (0 until 30).toList().shuffled().forEach { num ->
             val score = num / 30f
-            heap.offer(score, { WeightedInt(score, num)})
+            heap.offer(score, { WeightedInt(score, num) })
         }
 
         assertEquals(listOf(29,28,27,26,25), heap.sorted.map { it.item })

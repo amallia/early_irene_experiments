@@ -1,6 +1,5 @@
 package edu.umass.cics.ciir.irene.galago
 
-import edu.umass.cics.ciir.irene.utils.resourceLines
 import edu.umass.cics.ciir.irene.utils.Debouncer
 import org.lemurproject.galago.core.eval.QueryResults
 import org.lemurproject.galago.core.index.corpus.CorpusReader
@@ -25,12 +24,6 @@ typealias GDoc = org.lemurproject.galago.core.parse.Document
 typealias GDocArgs = org.lemurproject.galago.core.parse.Document.DocumentComponents
 
 val inqueryStop: Set<String> = WordLists.getWordListOrDie("inquery")
-val web100Stop: Set<String> = HashSet<String>().apply {
-    resourceLines("/web100.stop") { add(it.trim()) }
-}
-val web1kStop: Set<String> = HashSet<String>().apply {
-    resourceLines("/web1k.stop") { add(it.trim()) }
-}
 
 fun GExpr.push(what: GExpr): GExpr {
     this.addChild(what)

@@ -2,6 +2,7 @@ package edu.umass.cics.ciir.sprf
 
 import edu.umass.cics.ciir.irene.galago.*
 import edu.umass.cics.ciir.irene.utils.printer
+import edu.umass.cics.ciir.irene.utils.resourceLines
 import gnu.trove.list.array.TDoubleArrayList
 import gnu.trove.map.hash.TIntDoubleHashMap
 import gnu.trove.map.hash.TObjectDoubleHashMap
@@ -14,6 +15,12 @@ import org.lemurproject.galago.utility.StreamCreator
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.streams.toList
 
+val web100Stop: Set<String> = HashSet<String>().apply {
+    resourceLines("/web100.stop") { add(it.trim()) }
+}
+val web1kStop: Set<String> = HashSet<String>().apply {
+    resourceLines("/web1k.stop") { add(it.trim()) }
+}
 
 object BuildFirstRoundRetrieval {
     @JvmStatic fun main(args: Array<String>) {

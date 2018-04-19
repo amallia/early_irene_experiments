@@ -1,18 +1,14 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.irene.ltr.RREnv
-import edu.umass.cics.ciir.irene.galago.RRGalagoEnv
-import edu.umass.cics.ciir.irene.ltr.toRRExpr
-import edu.umass.cics.ciir.irene.*
-import edu.umass.cics.ciir.irene.galago.toGalago
+import edu.umass.cics.ciir.irene.IndexParams
+import edu.umass.cics.ciir.irene.IreneIndex
+import edu.umass.cics.ciir.irene.IreneIndexer
+import edu.umass.cics.ciir.irene.galago.*
 import edu.umass.cics.ciir.irene.lang.*
-import edu.umass.cics.ciir.irene.galago.GDoc
-import edu.umass.cics.ciir.irene.galago.GExpr
-import edu.umass.cics.ciir.irene.galago.pmake
+import edu.umass.cics.ciir.irene.ltr.RREnv
+import edu.umass.cics.ciir.irene.ltr.toRRExpr
+import edu.umass.cics.ciir.irene.tokenize
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
-import org.apache.lucene.document.Field
-import org.apache.lucene.document.StringField
-import org.apache.lucene.document.TextField
 import org.junit.Assert
 import org.junit.ClassRule
 import org.junit.Test
@@ -71,9 +67,11 @@ class CommonTestIndexes : Closeable {
                 docs.forEachIndexed { num, doc ->
                     val name = "doc${names.size}"
                     names.add(name)
-                    writer.push(
-                            StringField(idField, name, Field.Store.YES),
-                            TextField(contentsField, doc, Field.Store.YES))
+
+                    writer.doc {
+                        setId(name)
+                        setTextField(contentsField, doc)
+                    }
 
                     val tokens = params.analyzer.tokenize("body", doc)
                     tokenVectors.add(tokens)

@@ -32,7 +32,6 @@ class RetrievalModelsKtTest {
                 //reader.explain(q.deepCopy(), inner))
             //}
 
-            val prep = reader.prepare(q.deepCopy())
             val results = reader.search(q, 100)
             Assert.assertEquals(1L, results.totalHits)
             Assert.assertEquals(1, results.scoreDocs.size)
