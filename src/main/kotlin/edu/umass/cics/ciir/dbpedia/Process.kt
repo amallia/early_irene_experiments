@@ -1,10 +1,10 @@
 package edu.umass.cics.ciir.dbpedia
 
-import edu.umass.cics.ciir.irene.utils.Debouncer
 import edu.umass.cics.ciir.chai.ShardWriters
-import edu.umass.cics.ciir.sprf.IRDataset
 import edu.umass.cics.ciir.irene.galago.pmake
-import edu.umass.cics.ciir.sprf.printer
+import edu.umass.cics.ciir.irene.utils.Debouncer
+import edu.umass.cics.ciir.irene.utils.smartPrinter
+import edu.umass.cics.ciir.sprf.IRDataset
 import gnu.trove.list.array.TIntArrayList
 import gnu.trove.map.hash.TIntObjectHashMap
 import gnu.trove.map.hash.TObjectIntHashMap
@@ -486,7 +486,7 @@ object CategoryGraphAnalysis {
         }
 
         println(graph.nodes.size)
-        StreamCreator.openOutputStream("cgraph.jsonl.gz").printer().use { out ->
+        File("cgraph.jsonl.gz").smartPrinter().use { out ->
             graph.nodes.values.forEach { info ->
                 out.println(info.toJSON())
             }

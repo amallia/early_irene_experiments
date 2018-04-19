@@ -98,6 +98,10 @@ class LDocBuilder(val params: IndexParams) {
         fields[field] = keep
     }
 
+    /**
+     * This is still half-baked (19 April 2018)
+     * @author jfoley
+     */
     fun setEfficientTextField(field: String, text: String, stored: Boolean=true) {
         if (fields.containsKey(field)) {
             error("Already specified $field for this document $fields.")
@@ -111,6 +115,7 @@ class LDocBuilder(val params: IndexParams) {
         // make this a separate field so that it does not affect count statistics.
         keep.add(AlreadyTokenizedEfficientCountField("od:$field", text, terms, stored, 2))
         keep.add(NumericDocValuesField("lengths:$field", length.toLong()))
+        keep.add(NumericDocValuesField("lengths:od:$field", length.toLong()))
         keep.add(NumericDocValuesField("unique:$field", uniqLength.toLong()))
         fields[field] = keep
     }

@@ -1,6 +1,7 @@
 package edu.umass.cics.ciir.sprf
 
 import edu.umass.cics.ciir.irene.galago.*
+import edu.umass.cics.ciir.irene.utils.printer
 import gnu.trove.list.array.TDoubleArrayList
 import gnu.trove.map.hash.TIntDoubleHashMap
 import gnu.trove.map.hash.TObjectDoubleHashMap
@@ -10,12 +11,9 @@ import org.lemurproject.galago.core.parse.TagTokenizer
 import org.lemurproject.galago.utility.MathUtils
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator
-import java.io.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.streams.toList
 
-fun OutputStream.printer(): PrintWriter = PrintWriter(OutputStreamWriter(this, Charsets.UTF_8))
-fun InputStream.reader(): BufferedReader = BufferedReader(InputStreamReader(this, Charsets.UTF_8))
 
 object BuildFirstRoundRetrieval {
     @JvmStatic fun main(args: Array<String>) {

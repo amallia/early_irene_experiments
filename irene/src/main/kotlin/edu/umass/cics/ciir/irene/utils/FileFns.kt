@@ -1,11 +1,7 @@
 package edu.umass.cics.ciir.irene.utils
 
-import edu.umass.cics.ciir.sprf.printer
 import org.lemurproject.galago.utility.StreamCreator
-import java.io.Closeable
-import java.io.File
-import java.io.InputStream
-import java.io.PrintWriter
+import java.io.*
 
 /**
  * @author jfoley
@@ -23,6 +19,8 @@ fun File.ensureParentDirectories(): Boolean {
     }
     return false
 }
+fun OutputStream.printer(): PrintWriter = PrintWriter(OutputStreamWriter(this, Charsets.UTF_8))
+fun InputStream.reader(): BufferedReader = BufferedReader(InputStreamReader(this, Charsets.UTF_8))
 fun File.smartReader() = StreamCreator.openInputStream(this).bufferedReader()
 fun File.smartPrinter() = StreamCreator.openOutputStream(this).printer()
 inline fun <T> File.smartLines(block: (Sequence<String>)->T): T = smartReader().useLines(block)

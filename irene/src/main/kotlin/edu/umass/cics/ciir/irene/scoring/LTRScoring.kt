@@ -1,21 +1,21 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.irene.utils.IntList
-import edu.umass.cics.ciir.irene.ltr.RREnv
-import edu.umass.cics.ciir.irene.ltr.RRExpr
-import edu.umass.cics.ciir.irene.ltr.WeightedTerm
-import edu.umass.cics.ciir.iltr.normalized
 import edu.umass.cics.ciir.irene.DataNeeded
 import edu.umass.cics.ciir.irene.GenericTokenizer
 import edu.umass.cics.ciir.irene.IIndex
 import edu.umass.cics.ciir.irene.WhitespaceTokenizer
+import edu.umass.cics.ciir.irene.galago.getStr
+import edu.umass.cics.ciir.irene.galago.incr
+import edu.umass.cics.ciir.irene.galago.pmake
 import edu.umass.cics.ciir.irene.lang.DirQLExpr
 import edu.umass.cics.ciir.irene.lang.QExpr
 import edu.umass.cics.ciir.irene.lang.SumExpr
 import edu.umass.cics.ciir.irene.lang.TextExpr
-import edu.umass.cics.ciir.irene.galago.getStr
-import edu.umass.cics.ciir.irene.galago.incr
-import edu.umass.cics.ciir.irene.galago.pmake
+import edu.umass.cics.ciir.irene.ltr.RREnv
+import edu.umass.cics.ciir.irene.ltr.RRExpr
+import edu.umass.cics.ciir.irene.ltr.WeightedTerm
+import edu.umass.cics.ciir.irene.ltr.normalized
+import edu.umass.cics.ciir.irene.utils.IntList
 import gnu.trove.map.hash.TObjectIntHashMap
 import org.apache.lucene.index.Term
 import org.apache.lucene.search.Explanation
@@ -219,9 +219,6 @@ abstract class LTRDocFeatureNode : QueryEvalNode {
 }
 
 data class LTRDocLength(val field: String) : CountEvalNode, LTRDocFeatureNode() {
-    init {
-        assert(field == "lemma")
-    }
     override fun count(env: ScoringEnv): Int = env.ltr.field(field).length
     override fun matches(env: ScoringEnv): Boolean = env.ltr.fields.contains(field)
 }

@@ -1,6 +1,5 @@
 package edu.umass.cics.ciir.irene.ltr
 
-import edu.umass.cics.ciir.iltr.normalized
 import edu.umass.cics.ciir.irene.CountStats
 import edu.umass.cics.ciir.irene.galago.inqueryStop
 import edu.umass.cics.ciir.irene.lang.*
@@ -120,6 +119,11 @@ data class WeightedTerm(val score: Double, val term: String, val field: String =
         if (cmp != 0) return cmp
         return term.compareTo(other.term)
     }
+}
+
+fun List<WeightedTerm>.normalized(): List<WeightedTerm> {
+    val total = this.sumByDouble { it.score }
+    return this.map { WeightedTerm(it.score / total, it.term) }
 }
 
 data class RelevanceModel(val weights: TObjectDoubleHashMap<String>, val sourceField: String) {

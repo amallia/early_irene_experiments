@@ -1,12 +1,11 @@
 package edu.umass.cics.ciir.iltr
 
+import edu.umass.cics.ciir.irene.galago.getStr
 import edu.umass.cics.ciir.irene.utils.StreamingStats
 import edu.umass.cics.ciir.irene.utils.smartDoLines
 import edu.umass.cics.ciir.irene.utils.smartPrint
-import edu.umass.cics.ciir.irene.galago.getStr
-import edu.umass.cics.ciir.sprf.printer
+import edu.umass.cics.ciir.irene.utils.smartPrinter
 import org.lemurproject.galago.utility.Parameters
-import org.lemurproject.galago.utility.StreamCreator
 import java.io.File
 
 
@@ -89,7 +88,7 @@ fun main(args: Array<String>) {
     println(fmap)
     println(fstats)
 
-    StreamCreator.openOutputStream("$output.meta.json").printer().use { out ->
+    File("$output.meta.json").smartPrinter().use { out ->
         out.println(Parameters.wrap(fmap).toPrettyString())
     }
 

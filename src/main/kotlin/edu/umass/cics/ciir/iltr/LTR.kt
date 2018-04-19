@@ -1,12 +1,13 @@
 package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.irene.galago.*
-import edu.umass.cics.ciir.sprf.*
+import edu.umass.cics.ciir.irene.utils.smartPrinter
+import edu.umass.cics.ciir.sprf.DataPaths
 import org.lemurproject.galago.core.parse.Document
 import org.lemurproject.galago.core.parse.TagTokenizer
 import org.lemurproject.galago.utility.MathUtils
 import org.lemurproject.galago.utility.Parameters
-import org.lemurproject.galago.utility.StreamCreator
+import java.io.File
 
 /**
  * @author jfoley
@@ -21,7 +22,7 @@ fun main(args: Array<String>) {
     val depth = 200
 
     val tok = TagTokenizer()
-    StreamCreator.openOutputStream("$dsName.qlpool.jsonl.gz").printer().use { output ->
+    File("$dsName.qlpool.jsonl.gz").smartPrinter().use { output ->
         dataset.getIndex().use { retrieval ->
             dataset.getTitleQueries().forEach { qid, qtext ->
                 val queryJudgments = qrels[qid]

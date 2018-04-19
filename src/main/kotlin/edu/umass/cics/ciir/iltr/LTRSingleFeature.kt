@@ -1,15 +1,13 @@
 package edu.umass.cics.ciir.iltr
 
+import edu.umass.cics.ciir.irene.galago.getStr
+import edu.umass.cics.ciir.irene.galago.pmake
 import edu.umass.cics.ciir.irene.lang.QExpr
 import edu.umass.cics.ciir.irene.ltr.RREnv
 import edu.umass.cics.ciir.irene.ltr.RRExpr
-import edu.umass.cics.ciir.irene.ltr.WeightedTerm
 import edu.umass.cics.ciir.irene.ltr.toRRExpr
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.scoring.LTRDocField
-import edu.umass.cics.ciir.irene.galago.getStr
-import edu.umass.cics.ciir.irene.galago.pmake
-import edu.umass.cics.ciir.sprf.reader
 import org.lemurproject.galago.core.eval.EvalDoc
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QueryResults
@@ -83,9 +81,5 @@ fun forEachQuery(dsName: String, doFn: (LTRQuery) -> Unit) {
 }
 
 
-fun List<WeightedTerm>.normalized(): List<WeightedTerm> {
-    val total = this.sumByDouble { it.score }
-    return this.map { WeightedTerm(it.score / total, it.term) }
-}
 
 

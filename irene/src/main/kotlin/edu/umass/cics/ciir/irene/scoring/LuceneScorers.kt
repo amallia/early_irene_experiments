@@ -1,14 +1,14 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.irene.utils.ComputedStats
-import edu.umass.cics.ciir.irene.utils.IntList
-import edu.umass.cics.ciir.irene.utils.StreamingStats
 import edu.umass.cics.ciir.irene.DataNeeded
 import edu.umass.cics.ciir.irene.IreneIndex
 import edu.umass.cics.ciir.irene.createOptimizedMovementExpr
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.ltr.RREnv
 import edu.umass.cics.ciir.irene.lucene_try
+import edu.umass.cics.ciir.irene.utils.ComputedStats
+import edu.umass.cics.ciir.irene.utils.IntList
+import edu.umass.cics.ciir.irene.utils.StreamingStats
 import org.apache.lucene.index.*
 import org.apache.lucene.search.*
 import java.util.*
@@ -40,7 +40,7 @@ data class IQContext(val iqm: IreneQueryModel, val context: LeafReaderContext) :
         // Get explicitly indexed lengths:
         val lengths = lucene_try { context.reader().getNumericDocValues("lengths:$field") }
                 // Or get the norms... lucene doesn't always put lengths here...
-                ?: lucene_try { context.reader().getNormValues(field) }
+                //?: lucene_try { context.reader().getNormValues(field) }
                 // Or crash.
                 ?: error("Couldn't find norms for ``$field'' ND=${context.reader().numDocs()} F=${context.reader().fieldInfos.map { it.name }}.")
 
