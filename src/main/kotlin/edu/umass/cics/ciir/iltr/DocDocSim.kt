@@ -1,10 +1,10 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.chai.Debouncer
-import edu.umass.cics.ciir.chai.sample
+import edu.umass.cics.ciir.irene.utils.Debouncer
+import edu.umass.cics.ciir.irene.utils.sample
 import edu.umass.cics.ciir.irene.scoring.BagOfWords
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.mean
+import edu.umass.cics.ciir.irene.galago.mean
 import gnu.trove.list.array.TDoubleArrayList
 import org.lemurproject.galago.utility.Parameters
 import java.util.*

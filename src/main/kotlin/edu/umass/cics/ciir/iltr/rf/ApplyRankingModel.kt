@@ -3,12 +3,16 @@ package edu.umass.cics.ciir.iltr.rf
 import com.linkedin.paldb.api.Configuration
 import com.linkedin.paldb.api.PalDB
 import com.linkedin.paldb.api.StoreWriter
-import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.LTRQuery
 import edu.umass.cics.ciir.iltr.loadRanklibViaJSoup
-import edu.umass.cics.ciir.iltr.toRRExpr
+import edu.umass.cics.ciir.irene.galago.NamedMeasures
+import edu.umass.cics.ciir.irene.galago.getEvaluator
+import edu.umass.cics.ciir.irene.galago.incr
+import edu.umass.cics.ciir.irene.galago.inqueryStop
+import edu.umass.cics.ciir.irene.ltr.toRRExpr
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
+import edu.umass.cics.ciir.irene.utils.*
 import edu.umass.cics.ciir.learning.*
 import edu.umass.cics.ciir.learning.Vector
 import edu.umass.cics.ciir.sprf.*
@@ -123,7 +127,7 @@ object CreatePalDBDocCache {
         val names = genRanklibInputs(File(data, ranklibInputName), meta.size+1).map { it.name }.toHashSet()
         println("Found ${names.size} documents to cache.")
 
-        val msg = CountingDebouncer(total=names.size.toLong())
+        val msg = CountingDebouncer(total = names.size.toLong())
         PalDB.createWriter(File("data/$dsName.paldb"), config).use { storeWriter ->
             names.parallelStream().map { name ->
                 val num = index.documentById(name) ?: return@map null

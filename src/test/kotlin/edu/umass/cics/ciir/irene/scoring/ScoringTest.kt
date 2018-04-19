@@ -1,13 +1,14 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.iltr.RREnv
-import edu.umass.cics.ciir.iltr.RRGalagoEnv
-import edu.umass.cics.ciir.iltr.toRRExpr
+import edu.umass.cics.ciir.irene.ltr.RREnv
+import edu.umass.cics.ciir.irene.galago.RRGalagoEnv
+import edu.umass.cics.ciir.irene.ltr.toRRExpr
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.galago.toGalago
 import edu.umass.cics.ciir.irene.lang.*
-import edu.umass.cics.ciir.sprf.GDoc
-import edu.umass.cics.ciir.sprf.GExpr
-import edu.umass.cics.ciir.sprf.pmake
+import edu.umass.cics.ciir.irene.galago.GDoc
+import edu.umass.cics.ciir.irene.galago.GExpr
+import edu.umass.cics.ciir.irene.galago.pmake
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
 import org.apache.lucene.document.Field
 import org.apache.lucene.document.StringField

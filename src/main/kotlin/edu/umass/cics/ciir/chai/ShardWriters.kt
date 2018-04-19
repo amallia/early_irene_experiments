@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.chai
 
+import edu.umass.cics.ciir.irene.utils.ensureParentDirectories
 import org.lemurproject.galago.utility.StreamCreator
 import java.io.Closeable
 import java.io.File

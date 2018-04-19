@@ -1,15 +1,15 @@
-package edu.umass.cics.ciir.irene.example
+package edu.umass.cics.ciir.sprf.example
 
-import edu.umass.cics.ciir.chai.StreamingStats
-import edu.umass.cics.ciir.chai.WeightedWord
-import edu.umass.cics.ciir.chai.normalize
-import edu.umass.cics.ciir.chai.timed
+import edu.umass.cics.ciir.irene.utils.StreamingStats
+import edu.umass.cics.ciir.irene.utils.WeightedWord
+import edu.umass.cics.ciir.irene.utils.normalize
+import edu.umass.cics.ciir.irene.utils.timed
 import edu.umass.cics.ciir.irene.lang.*
-import edu.umass.cics.ciir.irene.toQueryResults
+import edu.umass.cics.ciir.irene.galago.toQueryResults
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.NamedMeasures
-import edu.umass.cics.ciir.sprf.getEvaluator
-import edu.umass.cics.ciir.sprf.inqueryStop
+import edu.umass.cics.ciir.irene.galago.NamedMeasures
+import edu.umass.cics.ciir.irene.galago.getEvaluator
+import edu.umass.cics.ciir.irene.galago.inqueryStop
 import gnu.trove.map.hash.TObjectDoubleHashMap
 import gnu.trove.map.hash.TObjectIntHashMap
 import org.lemurproject.galago.core.eval.QueryJudgments

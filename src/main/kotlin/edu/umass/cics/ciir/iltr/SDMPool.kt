@@ -1,15 +1,15 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.chai.safeDiv
-import edu.umass.cics.ciir.chai.smartPrint
+import edu.umass.cics.ciir.irene.utils.safeDiv
+import edu.umass.cics.ciir.irene.utils.smartPrint
 import edu.umass.cics.ciir.irene.lang.BM25Model
 import edu.umass.cics.ciir.irene.lang.QueryLikelihood
 import edu.umass.cics.ciir.irene.lang.SequentialDependenceModel
 import edu.umass.cics.ciir.irene.lang.SmartStop
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.NamedMeasures
-import edu.umass.cics.ciir.sprf.inqueryStop
-import edu.umass.cics.ciir.sprf.pmake
+import edu.umass.cics.ciir.irene.galago.NamedMeasures
+import edu.umass.cics.ciir.irene.galago.inqueryStop
+import edu.umass.cics.ciir.irene.galago.pmake
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
 import java.io.File

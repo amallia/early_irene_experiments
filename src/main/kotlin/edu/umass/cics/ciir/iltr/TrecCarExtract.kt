@@ -1,13 +1,15 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.chai.CountingDebouncer
-import edu.umass.cics.ciir.chai.StreamingStats
-import edu.umass.cics.ciir.chai.smartDoLines
-import edu.umass.cics.ciir.chai.smartPrint
+import edu.umass.cics.ciir.irene.utils.CountingDebouncer
+import edu.umass.cics.ciir.irene.utils.StreamingStats
+import edu.umass.cics.ciir.irene.utils.smartDoLines
+import edu.umass.cics.ciir.irene.utils.smartPrint
 import edu.umass.cics.ciir.irene.GenericTokenizer
 import edu.umass.cics.ciir.irene.IreneEnglishAnalyzer
 import edu.umass.cics.ciir.irene.LuceneTokenizer
+import edu.umass.cics.ciir.irene.galago.*
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.ltr.*
 import edu.umass.cics.ciir.irene.scoring.ILTRDocField
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.scoring.LTRDocField
@@ -94,7 +96,7 @@ fun main(args: Array<String>) {
             val env = index.getRREnv()
             env.estimateStats = "min"
 
-            val msg = CountingDebouncer(Math.min(10000,qrels.size).toLong())
+            val msg = CountingDebouncer(Math.min(10000, qrels.size).toLong())
             forEachSDMPoolQuery(LuceneTokenizer(IreneEnglishAnalyzer()), inputF) { q ->
                 if (qid != null && qid != q.qid) {
                     // skip all but qid if specified.
@@ -148,7 +150,7 @@ fun main(args: Array<String>) {
                 }
 
                 arrayListOf<Int>(5, 10, 25).forEach { fbDocs ->
-                    val rm = computeRelevanceModel(q.docs, "norm:pooling-score", fbDocs, field=env.defaultField, logSumExp = true)
+                    val rm = computeRelevanceModel(q.docs, "norm:pooling-score", fbDocs, field = env.defaultField, logSumExp = true)
                     CARFields.forEach { fieldName ->
                         numRMTerms.forEach { fbTerms ->
                             val wt = rm.toTerms(fbTerms)

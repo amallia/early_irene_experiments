@@ -4,10 +4,10 @@ import edu.umass.cics.ciir.irene.lang.DirQLExpr
 import edu.umass.cics.ciir.irene.lang.MeanExpr
 import edu.umass.cics.ciir.irene.lang.TextExpr
 import edu.umass.cics.ciir.irene.lang.WeightExpr
-import edu.umass.cics.ciir.irene.toQueryResults
+import edu.umass.cics.ciir.irene.galago.toQueryResults
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.NamedMeasures
-import edu.umass.cics.ciir.sprf.getEvaluators
+import edu.umass.cics.ciir.irene.galago.NamedMeasures
+import edu.umass.cics.ciir.irene.galago.getEvaluators
 
 /**
  * @author jfoley

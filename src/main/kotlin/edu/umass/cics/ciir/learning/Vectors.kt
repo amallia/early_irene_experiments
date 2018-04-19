@@ -1,6 +1,6 @@
 package edu.umass.cics.ciir.learning
 
-import edu.umass.cics.ciir.chai.StreamingStats
+import edu.umass.cics.ciir.irene.utils.StreamingStats
 import java.util.*
 
 /**

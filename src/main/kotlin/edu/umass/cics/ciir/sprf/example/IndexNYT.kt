@@ -1,15 +1,19 @@
-package edu.umass.cics.ciir.irene.example
+package edu.umass.cics.ciir.sprf.example
 
 /**
  *
  * @author jfoley.
  */
 
-import edu.umass.cics.ciir.chai.CountingDebouncer
-import edu.umass.cics.ciir.chai.Debouncer
-import edu.umass.cics.ciir.chai.StreamingStats
-import edu.umass.cics.ciir.chai.timed
+import edu.umass.cics.ciir.irene.utils.CountingDebouncer
+import edu.umass.cics.ciir.irene.utils.Debouncer
+import edu.umass.cics.ciir.irene.utils.StreamingStats
+import edu.umass.cics.ciir.irene.utils.timed
 import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.galago.NamedMeasures
+import edu.umass.cics.ciir.irene.galago.getEvaluator
+import edu.umass.cics.ciir.irene.galago.inqueryStop
+import edu.umass.cics.ciir.irene.galago.toQueryResults
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.sprf.*
 import gnu.trove.map.hash.TObjectFloatHashMap

@@ -1,11 +1,10 @@
-package edu.umass.cics.ciir.iltr
+package edu.umass.cics.ciir.irene.ltr
 
-import edu.umass.cics.ciir.chai.computeEntropy
-import edu.umass.cics.ciir.chai.mean
+import edu.umass.cics.ciir.irene.utils.computeEntropy
+import edu.umass.cics.ciir.irene.utils.mean
 import edu.umass.cics.ciir.irene.lang.QExpr
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.scoring.LTRDocScoringEnv
-import edu.umass.cics.ciir.irene.scoring.PositionsIter
 import edu.umass.cics.ciir.irene.scoring.QueryEvalNode
 import org.apache.lucene.search.Explanation
 
@@ -60,15 +59,6 @@ class RRFeature(env: RREnv, val name: String): RRLeafExpr(env) {
 }
 class RRConst(env: RREnv, val value: Double) : RRLeafExpr(env) {
     override fun eval(doc: LTRDoc): Double = value
-}
-data class RRTermCacheKey(val term: String, val field: String, val doc: String)
-
-sealed class RRCountExpr(env: RREnv, val field: String) : RRExpr(env) {
-    override fun eval(doc: LTRDoc): Double = error("RRCountExpr has no inherent score.")
-    abstract fun count(doc: LTRDoc) : Int
-    abstract fun positions(doc: LTRDoc): PositionsIter
-    fun length(doc: LTRDoc) = doc.field(field).length
-    fun field(doc: LTRDoc) = doc.field(field)
 }
 
 class RRAvgWordLength(env: RREnv, val field: String = env.defaultField) : RRLeafExpr(env) {

@@ -1,7 +1,7 @@
 package edu.umass.cics.ciir.irene.indexing
 
 import edu.umass.cics.ciir.irene.IreneIndexer
-import edu.umass.cics.ciir.sprf.getStr
+import edu.umass.cics.ciir.irene.galago.getStr
 import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
 import org.junit.Test

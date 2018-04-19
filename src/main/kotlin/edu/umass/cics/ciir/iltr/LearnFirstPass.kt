@@ -1,7 +1,11 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.chai.*
-import edu.umass.cics.ciir.irene.example.selectSingleChild
+import edu.umass.cics.ciir.sprf.example.selectSingleChild
+import edu.umass.cics.ciir.irene.galago.getEvaluator
+import edu.umass.cics.ciir.irene.galago.getStr
+import edu.umass.cics.ciir.irene.galago.incr
+import edu.umass.cics.ciir.irene.galago.pmake
+import edu.umass.cics.ciir.irene.utils.*
 import edu.umass.cics.ciir.learning.*
 import edu.umass.cics.ciir.sprf.*
 import org.jsoup.Jsoup

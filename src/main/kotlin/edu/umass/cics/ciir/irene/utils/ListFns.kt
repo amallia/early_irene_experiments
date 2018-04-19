@@ -1,6 +1,6 @@
-package edu.umass.cics.ciir.chai
+package edu.umass.cics.ciir.irene.utils
 
-import edu.umass.cics.ciir.sprf.incr
+import edu.umass.cics.ciir.irene.galago.incr
 import java.util.*
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.TimeUnit

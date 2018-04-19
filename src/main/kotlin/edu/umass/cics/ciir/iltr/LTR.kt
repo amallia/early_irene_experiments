@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.iltr
 
+import edu.umass.cics.ciir.irene.galago.*
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.parse.Document
 import org.lemurproject.galago.core.parse.TagTokenizer

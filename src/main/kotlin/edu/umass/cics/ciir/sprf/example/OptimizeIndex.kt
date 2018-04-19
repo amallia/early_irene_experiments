@@ -1,4 +1,4 @@
-package edu.umass.cics.ciir.irene.indexing
+package edu.umass.cics.ciir.sprf.example
 
 import edu.umass.cics.ciir.irene.IreneIndexer
 import edu.umass.cics.ciir.sprf.DataPaths

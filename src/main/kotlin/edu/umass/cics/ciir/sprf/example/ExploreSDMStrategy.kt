@@ -1,12 +1,12 @@
-package edu.umass.cics.ciir.irene.example
+package edu.umass.cics.ciir.sprf.example
 
-import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.irene.IreneWeightedDoc
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.IreneQueryScorer
 import edu.umass.cics.ciir.irene.scoring.MultiEvalNode
 import edu.umass.cics.ciir.irene.scoring.QueryEvalNode
 import edu.umass.cics.ciir.irene.scoring.ScoringEnv
+import edu.umass.cics.ciir.irene.utils.*
 import edu.umass.cics.ciir.sprf.DataPaths
 import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.search.*

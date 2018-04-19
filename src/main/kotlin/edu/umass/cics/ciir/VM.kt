@@ -1,7 +1,7 @@
 package edu.umass.cics.ciir
 
-import edu.umass.cics.ciir.chai.CountingDebouncer
-import edu.umass.cics.ciir.chai.StreamingStats
+import edu.umass.cics.ciir.irene.utils.CountingDebouncer
+import edu.umass.cics.ciir.irene.utils.StreamingStats
 import java.util.*
 import kotlin.streams.asSequence
 

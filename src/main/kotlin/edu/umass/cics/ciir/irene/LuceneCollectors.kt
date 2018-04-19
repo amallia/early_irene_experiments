@@ -1,7 +1,7 @@
 package edu.umass.cics.ciir.irene
 
-import edu.umass.cics.ciir.chai.ScoringHeap
-import edu.umass.cics.ciir.chai.WeightedForHeap
+import edu.umass.cics.ciir.irene.utils.ScoringHeap
+import edu.umass.cics.ciir.irene.utils.WeightedForHeap
 import edu.umass.cics.ciir.irene.lang.MultiExpr
 import edu.umass.cics.ciir.irene.scoring.IreneQueryScorer
 import edu.umass.cics.ciir.irene.scoring.MultiEvalNode

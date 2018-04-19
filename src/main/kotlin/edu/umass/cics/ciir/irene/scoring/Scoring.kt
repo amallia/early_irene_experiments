@@ -1,14 +1,12 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.chai.Fraction
-import edu.umass.cics.ciir.irene.*
+import edu.umass.cics.ciir.irene.CountStats
+import edu.umass.cics.ciir.irene.createOptimizedMovementExpr
 import edu.umass.cics.ciir.irene.lang.*
-import edu.umass.cics.ciir.sprf.*
+import edu.umass.cics.ciir.irene.utils.Fraction
 import gnu.trove.set.hash.TIntHashSet
-import org.apache.lucene.index.Term
 import org.apache.lucene.search.DocIdSetIterator
 import org.apache.lucene.search.Explanation
-import java.io.File
 
 open class ScoringEnv(var doc: Int=-1) {
     open val ltr: LTRDoc get() = error("No LTR document available.")
@@ -501,7 +499,7 @@ object DirichletSmoothingExploration {
         val bg = 0.05
         val mu = 1500.0
         (0 .. 100).forEach { i ->
-            val f = Fraction(i,100)
+            val f = Fraction(i, 100)
             val values = (0 .. 10).map { s ->
                 val count = (f.numerator * s).toDouble()
                 val length = (f.denominator * s).toDouble()
@@ -514,67 +512,3 @@ object DirichletSmoothingExploration {
     }
 }
 
-fun main(args: Array<String>) {
-    val dataset = DataPaths.Robust
-    val qrels = dataset.getQueryJudgments()
-    val queries = dataset.getTitleQueries()
-    val evals = getEvaluators(listOf("ap", "ndcg"))
-    val ms = NamedMeasures()
-
-    dataset.getIndex().use { galago ->
-        IreneIndex(IndexParams().apply {
-            withPath(File("robust.irene2"))
-        }).use { index ->
-            val mu = index.getAverageDL("body")
-            println(index.getStats(Term("body", "president")))
-
-            queries.forEach { qid, qtext ->
-                //if (qid != "301") return@forEach
-                println("$qid $qtext")
-                val qterms = index.analyzer.tokenize("body", qtext)
-                val q = MeanExpr(qterms.map { DirQLExpr(TextExpr(it)) })
-
-                val gq = GExpr("combine").apply { addTerms(qterms) }
-
-                val top5 = galago.transformAndExecuteQuery(gq, pmake {
-                    set("requested", 5)
-                    set("annotate", true)
-                    set("processingModel", "rankeddocument")
-                }).scoredDocuments
-                val topK = index.search(q, 1000)
-                val results = topK.toQueryResults(index)
-
-                //if (argp.get("printTopK", false)) {
-                (0 until Math.min(5, topK.totalHits.toInt())).forEach { i ->
-                    val id = results[i]
-                    val gd = top5[i]
-
-                    if (i == 0 && id.name != gd.name) {
-                        println(gd.annotation)
-                        val missed = index.documentById(gd.name)!!
-                        println("Missed document=$missed")
-                        println(index.explain(q, missed))
-                    }
-
-                    println("${id.rank}\t${id.name}\t${id.score}")
-                    println("${gd.rank}\t${gd.name}\t${gd.score}")
-                }
-                //}
-
-                val queryJudgments = qrels[qid]!!
-                evals.forEach { measure, evalfn ->
-                    val score = try {
-                        evalfn.evaluate(results, queryJudgments)
-                    } catch (npe: NullPointerException) {
-                        System.err.println("NULL in eval...")
-                        -Double.MAX_VALUE
-                    }
-                    ms.push("$measure.irene2", score)
-                }
-
-                println(ms.means())
-            }
-        }
-        println(ms.means())
-    }
-}

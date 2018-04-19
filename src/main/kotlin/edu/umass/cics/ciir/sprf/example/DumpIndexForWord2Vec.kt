@@ -1,12 +1,12 @@
-package edu.umass.cics.ciir.irene.example
+package edu.umass.cics.ciir.sprf.example
 
-import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
 import edu.umass.cics.ciir.irene.*
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.getStr
-import edu.umass.cics.ciir.sprf.incr
-import edu.umass.cics.ciir.sprf.inqueryStop
+import edu.umass.cics.ciir.irene.galago.getStr
+import edu.umass.cics.ciir.irene.galago.incr
+import edu.umass.cics.ciir.irene.galago.inqueryStop
+import edu.umass.cics.ciir.irene.utils.*
 import org.lemurproject.galago.utility.Parameters
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap

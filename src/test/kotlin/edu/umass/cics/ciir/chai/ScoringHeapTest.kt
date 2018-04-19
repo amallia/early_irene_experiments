@@ -1,5 +1,8 @@
 package edu.umass.cics.ciir.chai
 
+import edu.umass.cics.ciir.irene.utils.ScoringHeap
+import edu.umass.cics.ciir.irene.utils.WeightedForHeap
+import edu.umass.cics.ciir.irene.utils.shuffled
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

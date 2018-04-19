@@ -1,10 +1,14 @@
 package edu.umass.cics.ciir.iltr
 
 import com.github.benmanes.caffeine.cache.Caffeine
-import edu.umass.cics.ciir.chai.*
+import edu.umass.cics.ciir.irene.galago.RRGalagoEnv
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.ltr.RREnv
+import edu.umass.cics.ciir.irene.ltr.RRLogLogisticTFScore
+import edu.umass.cics.ciir.irene.ltr.WeightedTerm
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.getEvaluators
+import edu.umass.cics.ciir.irene.galago.getEvaluators
+import edu.umass.cics.ciir.irene.utils.*
 import org.lemurproject.galago.utility.Parameters
 import java.util.*
 import kotlin.collections.HashMap

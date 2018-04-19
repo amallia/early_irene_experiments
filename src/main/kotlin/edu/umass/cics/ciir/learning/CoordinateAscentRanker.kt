@@ -1,7 +1,7 @@
 package edu.umass.cics.ciir.learning
 
-import edu.umass.cics.ciir.chai.safeDiv
-import edu.umass.cics.ciir.chai.shuffle
+import edu.umass.cics.ciir.irene.utils.safeDiv
+import edu.umass.cics.ciir.irene.utils.shuffle
 import java.util.*
 
 /**

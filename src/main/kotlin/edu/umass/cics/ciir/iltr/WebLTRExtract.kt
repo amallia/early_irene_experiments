@@ -1,11 +1,16 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.irene.IIndex
+import edu.umass.cics.ciir.irene.galago.NamedMeasures
+import edu.umass.cics.ciir.irene.galago.getEvaluators
+import edu.umass.cics.ciir.irene.galago.getStr
+import edu.umass.cics.ciir.irene.galago.inqueryStop
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.ltr.*
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.scoring.LTRDocField
 import edu.umass.cics.ciir.irene.toParameters
+import edu.umass.cics.ciir.irene.utils.*
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
@@ -207,7 +212,7 @@ fun main(args: Array<String>) {
 
                 val feature_exprs_2pass = HashMap<String, RRExpr>()
                 arrayListOf<Int>(5, 10, 25).forEach { fbDocs ->
-                    val rm = computeRelevanceModel(q.docs, "norm:${env.defaultField}:sdm-stop", fbDocs, field=env.defaultField, logSumExp = true)
+                    val rm = computeRelevanceModel(q.docs, "norm:${env.defaultField}:sdm-stop", fbDocs, field = env.defaultField, logSumExp = true)
                     dataset.textFields.forEach { fieldName ->
                         numRMTerms.forEach { fbTerms ->
                             val wt = rm.toTerms(fbTerms)

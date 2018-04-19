@@ -1,9 +1,9 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.chai.StreamingStats
-import edu.umass.cics.ciir.chai.smartDoLines
-import edu.umass.cics.ciir.chai.smartPrint
-import edu.umass.cics.ciir.sprf.getStr
+import edu.umass.cics.ciir.irene.utils.StreamingStats
+import edu.umass.cics.ciir.irene.utils.smartDoLines
+import edu.umass.cics.ciir.irene.utils.smartPrint
+import edu.umass.cics.ciir.irene.galago.getStr
 import edu.umass.cics.ciir.sprf.printer
 import org.lemurproject.galago.utility.Parameters
 import org.lemurproject.galago.utility.StreamCreator

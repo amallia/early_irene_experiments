@@ -1,10 +1,12 @@
-package edu.umass.cics.ciir.irene.example
+package edu.umass.cics.ciir.sprf.example
 
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneEnglishAnalyzer
 import edu.umass.cics.ciir.irene.IreneIndexer
+import edu.umass.cics.ciir.irene.galago.*
 import edu.umass.cics.ciir.irene.tokenize
+import edu.umass.cics.ciir.irene.utils.*
 import edu.umass.cics.ciir.sprf.*
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
 import org.apache.lucene.document.Field
@@ -203,7 +205,7 @@ data class DocRepr(val id: String, val text: MutableList<String> = ArrayList<Str
     fun toJSON() = pmake {
         set("id", id)
         set("anchor_texts", text)
-        set("inlink_neighbors", neighbors.joinToString(separator=" "))
+        set("inlink_neighbors", neighbors.joinToString(separator = " "))
     }
 }
 

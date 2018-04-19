@@ -1,18 +1,18 @@
-package edu.umass.cics.ciir.irene.example
+package edu.umass.cics.ciir.sprf.example
 
-import edu.umass.cics.ciir.chai.CountingDebouncer
-import edu.umass.cics.ciir.chai.smartDoLines
-import edu.umass.cics.ciir.chai.smartPrint
+import edu.umass.cics.ciir.irene.utils.CountingDebouncer
+import edu.umass.cics.ciir.irene.utils.smartDoLines
+import edu.umass.cics.ciir.irene.utils.smartPrint
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndex
 import edu.umass.cics.ciir.irene.IreneIndexer
 import edu.umass.cics.ciir.irene.lang.SequentialDependenceModel
-import edu.umass.cics.ciir.irene.toQueryResults
-import edu.umass.cics.ciir.sprf.NamedMeasures
-import edu.umass.cics.ciir.sprf.getEvaluators
-import edu.umass.cics.ciir.sprf.inqueryStop
-import edu.umass.cics.ciir.sprf.pmake
+import edu.umass.cics.ciir.irene.galago.toQueryResults
+import edu.umass.cics.ciir.irene.galago.NamedMeasures
+import edu.umass.cics.ciir.irene.galago.getEvaluators
+import edu.umass.cics.ciir.irene.galago.inqueryStop
+import edu.umass.cics.ciir.irene.galago.pmake
 import edu.unh.cs.treccar.Data
 import edu.unh.cs.treccar.read_data.DeserializeData
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer

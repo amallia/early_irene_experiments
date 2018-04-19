@@ -1,9 +1,9 @@
 package edu.umass.cics.ciir.learning
 
-import edu.umass.cics.ciir.chai.maybeSplitAt
-import edu.umass.cics.ciir.chai.smartLines
-import edu.umass.cics.ciir.chai.smartPrint
-import edu.umass.cics.ciir.chai.splitAt
+import edu.umass.cics.ciir.irene.utils.maybeSplitAt
+import edu.umass.cics.ciir.irene.utils.smartLines
+import edu.umass.cics.ciir.irene.utils.smartPrint
+import edu.umass.cics.ciir.irene.utils.splitAt
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
 import org.lemurproject.galago.utility.Parameters
 import java.io.File

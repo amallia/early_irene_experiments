@@ -1,9 +1,9 @@
-package edu.umass.cics.ciir.irene
+package edu.umass.cics.ciir.irene.galago
 
-import edu.umass.cics.ciir.iltr.RREnv
+import edu.umass.cics.ciir.irene.DataNeeded
+import edu.umass.cics.ciir.irene.IreneIndex
 import edu.umass.cics.ciir.irene.lang.*
-import edu.umass.cics.ciir.sprf.GExpr
-import edu.umass.cics.ciir.sprf.setf
+import edu.umass.cics.ciir.irene.ltr.RREnv
 import org.apache.lucene.search.TopDocs
 import org.lemurproject.galago.core.eval.QueryResults
 import org.lemurproject.galago.core.eval.SimpleEvalDoc
@@ -39,7 +39,7 @@ private fun toGalagoRecursive(q : QExpr): GExpr {
     return when (q) {
         is TextExpr -> {
             val operator = when(q.needed) {
-                DataNeeded.DOCS , DataNeeded.COUNTS -> "counts"
+                DataNeeded.DOCS, DataNeeded.COUNTS -> "counts"
                 DataNeeded.POSITIONS -> "extents"
                 DataNeeded.SCORES -> TODO()
             }

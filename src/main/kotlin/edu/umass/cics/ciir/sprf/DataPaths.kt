@@ -1,14 +1,15 @@
 package edu.umass.cics.ciir.sprf
 
-import edu.umass.cics.ciir.chai.push
-import edu.umass.cics.ciir.chai.try_or_empty
+import edu.umass.cics.ciir.irene.utils.push
+import edu.umass.cics.ciir.irene.utils.try_or_empty
 import edu.umass.cics.ciir.dbpedia.wikiTitleToText
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndex
-import edu.umass.cics.ciir.irene.example.NYT
-import edu.umass.cics.ciir.irene.example.TrecCarDataset
-import edu.umass.cics.ciir.irene.example.getTrecCarIndexParams
-import edu.umass.cics.ciir.irene.example.loadTrecCarDataset
+import edu.umass.cics.ciir.sprf.example.NYT
+import edu.umass.cics.ciir.sprf.example.TrecCarDataset
+import edu.umass.cics.ciir.sprf.example.getTrecCarIndexParams
+import edu.umass.cics.ciir.sprf.example.loadTrecCarDataset
+import edu.umass.cics.ciir.irene.galago.getStr
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer
 import org.jsoup.Jsoup
 import org.lemurproject.galago.core.eval.QueryJudgments
@@ -68,7 +69,7 @@ abstract class IRDataset {
 
     fun createFolds(k: Int): List<TVTFold> {
         if (k <= 2) error("Need 3 or more folds (not k=$k) for Train/Validate/Test cross-validation.")
-        val qids = (try_or_empty { qrels.keys } + try_or_empty { title_qs.keys } + try_or_empty {  desc_qs.keys }).sorted()
+        val qids = (try_or_empty { qrels.keys } + try_or_empty { title_qs.keys } + try_or_empty { desc_qs.keys }).sorted()
         if (qids.isEmpty()) {
             error("Must have qrels or queries in order to create folds...")
         }

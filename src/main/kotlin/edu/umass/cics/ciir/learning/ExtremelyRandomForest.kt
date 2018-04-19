@@ -1,11 +1,11 @@
 package edu.umass.cics.ciir.learning
 
-import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.getEvaluator
-import edu.umass.cics.ciir.sprf.incr
-import edu.umass.cics.ciir.sprf.pmake
+import edu.umass.cics.ciir.irene.galago.getEvaluator
+import edu.umass.cics.ciir.irene.galago.incr
+import edu.umass.cics.ciir.irene.galago.pmake
+import edu.umass.cics.ciir.irene.utils.*
 import gnu.trove.map.hash.TIntIntHashMap
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.core.eval.QueryResults
@@ -573,7 +573,7 @@ class EvenSplitGenerator : SplitGenerationStrategy {
 
         val range = stats.max - stats.min
         return (0 until k).map { i ->
-            val frac = safeDiv(i, k-1)
+            val frac = safeDiv(i, k - 1)
             val split = frac * range + stats.min
 
             FeatureSplitCandidate(fid, split).apply { consider(instances) }

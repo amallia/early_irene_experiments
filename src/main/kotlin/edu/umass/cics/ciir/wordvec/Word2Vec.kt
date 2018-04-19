@@ -1,13 +1,14 @@
 package edu.umass.cics.ciir.wordvec
 
-import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
 import edu.umass.cics.ciir.irene.CountStats
+import edu.umass.cics.ciir.irene.galago.*
 import edu.umass.cics.ciir.irene.lang.*
-import edu.umass.cics.ciir.irene.toQueryResults
+import edu.umass.cics.ciir.irene.utils.*
 import edu.umass.cics.ciir.learning.Vector
 import edu.umass.cics.ciir.learning.computeMeanVector
-import edu.umass.cics.ciir.sprf.*
+import edu.umass.cics.ciir.sprf.DataPaths
+import edu.umass.cics.ciir.sprf.WikiSource
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.MathUtils
 import org.lemurproject.galago.utility.Parameters

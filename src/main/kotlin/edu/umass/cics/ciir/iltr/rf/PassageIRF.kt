@@ -1,14 +1,16 @@
 package edu.umass.cics.ciir.iltr.rf
 
-import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.*
 import edu.umass.cics.ciir.irene.IIndex
+import edu.umass.cics.ciir.irene.galago.*
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.ltr.*
 import edu.umass.cics.ciir.irene.scoring.ILTRDocField
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.scoring.LTRDocField
 import edu.umass.cics.ciir.irene.scoring.LTRMergedField
 import edu.umass.cics.ciir.irene.toParameters
+import edu.umass.cics.ciir.irene.utils.*
 import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
@@ -160,7 +162,7 @@ object PassageLTRExtract {
         val WikiFields = wikiSource.textFields + setOf(wiki.idFieldName, wiki.defaultField)
         val fieldWeights = wikiSource.textFields.associate { it to wiki.fieldStats(it)!!.avgDL() }.normalize()
 
-        val msg = CountingDebouncer(total=qrels.size.toLong())
+        val msg = CountingDebouncer(total = qrels.size.toLong())
 
         File(outDir, "$dsName.features.jsonl.gz").smartPrint { out ->
             dataset.getIreneIndex().use { index ->

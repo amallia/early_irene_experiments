@@ -1,4 +1,4 @@
-package edu.umass.cics.ciir.chai
+package edu.umass.cics.ciir.irene.utils
 
 import gnu.trove.map.hash.TObjectDoubleHashMap
 import java.util.*
@@ -160,7 +160,7 @@ fun TObjectDoubleHashMap<String>.take(k: Int): List<WeightedWord> {
     val heap = ScoringHeap<WeightedWord>(k)
     this.forEachEntry { term, weight ->
         val fw = weight.toFloat()
-        heap.offer(fw, { WeightedWord(fw, term)})
+        heap.offer(fw, { WeightedWord(fw, term) })
     }
     return heap.sorted
 }

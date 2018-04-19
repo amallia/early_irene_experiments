@@ -1,8 +1,8 @@
 package edu.umass.cics.ciir.irene.lang
 
-import edu.umass.cics.ciir.chai.forAllPairs
-import edu.umass.cics.ciir.chai.forEachSeqPair
-import edu.umass.cics.ciir.chai.mapEachSeqPair
+import edu.umass.cics.ciir.irene.utils.forAllPairs
+import edu.umass.cics.ciir.irene.utils.forEachSeqPair
+import edu.umass.cics.ciir.irene.utils.mapEachSeqPair
 
 /**
  *

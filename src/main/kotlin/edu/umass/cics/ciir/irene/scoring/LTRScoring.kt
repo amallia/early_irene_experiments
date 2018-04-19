@@ -1,9 +1,9 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.chai.IntList
-import edu.umass.cics.ciir.iltr.RREnv
-import edu.umass.cics.ciir.iltr.RRExpr
-import edu.umass.cics.ciir.iltr.WeightedTerm
+import edu.umass.cics.ciir.irene.utils.IntList
+import edu.umass.cics.ciir.irene.ltr.RREnv
+import edu.umass.cics.ciir.irene.ltr.RRExpr
+import edu.umass.cics.ciir.irene.ltr.WeightedTerm
 import edu.umass.cics.ciir.iltr.normalized
 import edu.umass.cics.ciir.irene.DataNeeded
 import edu.umass.cics.ciir.irene.GenericTokenizer
@@ -13,9 +13,9 @@ import edu.umass.cics.ciir.irene.lang.DirQLExpr
 import edu.umass.cics.ciir.irene.lang.QExpr
 import edu.umass.cics.ciir.irene.lang.SumExpr
 import edu.umass.cics.ciir.irene.lang.TextExpr
-import edu.umass.cics.ciir.sprf.getStr
-import edu.umass.cics.ciir.sprf.incr
-import edu.umass.cics.ciir.sprf.pmake
+import edu.umass.cics.ciir.irene.galago.getStr
+import edu.umass.cics.ciir.irene.galago.incr
+import edu.umass.cics.ciir.irene.galago.pmake
 import gnu.trove.map.hash.TObjectIntHashMap
 import org.apache.lucene.index.Term
 import org.apache.lucene.search.Explanation
@@ -133,7 +133,7 @@ data class LTRDoc(val name: String, val features: HashMap<String, Double>, val f
     fun toJSONDoc() = pmake {
         set("features", Parameters.wrap(features))
         set("id", name)
-        set("fields", Parameters.wrap(fields.mapValues { (_,f) -> f.text }))
+        set("fields", Parameters.wrap(fields.mapValues { (_, f) -> f.text }))
     }
 
     fun featureForRanking(name: String, fallback: Double = Double.NEGATIVE_INFINITY) = features[name] ?: fallback;

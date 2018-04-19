@@ -1,10 +1,14 @@
 package edu.umass.cics.ciir.iltr
 
 import edu.umass.cics.ciir.irene.lang.QExpr
+import edu.umass.cics.ciir.irene.ltr.RREnv
+import edu.umass.cics.ciir.irene.ltr.RRExpr
+import edu.umass.cics.ciir.irene.ltr.WeightedTerm
+import edu.umass.cics.ciir.irene.ltr.toRRExpr
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.scoring.LTRDocField
-import edu.umass.cics.ciir.sprf.getStr
-import edu.umass.cics.ciir.sprf.pmake
+import edu.umass.cics.ciir.irene.galago.getStr
+import edu.umass.cics.ciir.irene.galago.pmake
 import edu.umass.cics.ciir.sprf.reader
 import org.lemurproject.galago.core.eval.EvalDoc
 import org.lemurproject.galago.core.eval.QueryJudgments

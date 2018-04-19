@@ -1,9 +1,10 @@
 package edu.umass.cics.ciir.iltr.pagerank
 
 import edu.umass.cics.ciir.chai.*
-import edu.umass.cics.ciir.irene.example.galagoScrubUrl
+import edu.umass.cics.ciir.sprf.example.galagoScrubUrl
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.pmake
+import edu.umass.cics.ciir.irene.galago.pmake
+import edu.umass.cics.ciir.irene.utils.*
 import org.lemurproject.galago.utility.Parameters
 import java.io.BufferedReader
 import java.io.Closeable
@@ -120,7 +121,7 @@ object ComputeDomainVectors {
                     if (tab > 0) {
                         val domain = line.substring(0, tab)
                         val pageRank = line.substring(tab+1).toDoubleOrNull() ?: continue
-                        domainPageRankStats.computeIfAbsent(domain, {StreamingStats()}).push(pageRank);
+                        domainPageRankStats.computeIfAbsent(domain, { StreamingStats() }).push(pageRank);
                         completed++
                         if(msg.ready()) {
                             println("$shardId ${domainPageRankStats.size} ${msg.estimate(completed, completed)}")

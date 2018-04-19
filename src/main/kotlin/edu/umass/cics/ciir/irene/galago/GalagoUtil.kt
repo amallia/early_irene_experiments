@@ -1,7 +1,7 @@
-package edu.umass.cics.ciir.sprf
+package edu.umass.cics.ciir.irene.galago
 
-import edu.umass.cics.ciir.chai.Debouncer
-import edu.umass.cics.ciir.chai.resourceLines
+import edu.umass.cics.ciir.irene.utils.resourceLines
+import edu.umass.cics.ciir.irene.utils.Debouncer
 import org.lemurproject.galago.core.eval.QueryResults
 import org.lemurproject.galago.core.index.corpus.CorpusReader
 import org.lemurproject.galago.core.index.stats.FieldStatistics

@@ -1,4 +1,4 @@
-package edu.umass.cics.ciir.chai
+package edu.umass.cics.ciir.irene.utils
 
 import edu.umass.cics.ciir.sprf.printer
 import org.lemurproject.galago.utility.StreamCreator
@@ -69,7 +69,7 @@ fun openResource(path: String): InputStream {
     val target = if (path[0] != '/') { "/$path" } else { path }
     return String::class.java.getResourceAsStream(target) ?: inputStreamOrNull(path) ?: error("Couldn't find resource ``$target''.")
 }
-fun resourceLines(path: String, block: (String)->Unit) = openResource(path).reader().useLines{lines -> lines.forEach(block) }
+fun resourceLines(path: String, block: (String)->Unit) = openResource(path).reader().useLines{ lines -> lines.forEach(block) }
 
 fun <A :Closeable, B: Closeable> Pair<A,B>.use(block: (A, B)->Unit) {
     this.first.use { a ->

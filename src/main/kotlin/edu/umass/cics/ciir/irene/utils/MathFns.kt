@@ -1,4 +1,4 @@
-package edu.umass.cics.ciir.chai
+package edu.umass.cics.ciir.irene.utils
 
 import org.lemurproject.galago.utility.Parameters
 

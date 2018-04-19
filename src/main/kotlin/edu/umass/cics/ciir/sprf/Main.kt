@@ -1,5 +1,6 @@
 package edu.umass.cics.ciir.sprf
 
+import edu.umass.cics.ciir.irene.galago.*
 import gnu.trove.list.array.TDoubleArrayList
 import gnu.trove.map.hash.TIntDoubleHashMap
 import gnu.trove.map.hash.TObjectDoubleHashMap
@@ -330,8 +331,8 @@ fun main(args: Array<String>) {
 
 
                     // Diaz, 2016.
-                    val idfNum = log2(N+0.5)
-                    val idfDenom = log2(N+1.0)
+                    val idfNum = log2(N + 0.5)
+                    val idfDenom = log2(N + 1.0)
                     val idfs = TDoubleArrayList()
                     val dfs = TDoubleArrayList()
                     // rank equivalent to SCS given P_ml is a constant.

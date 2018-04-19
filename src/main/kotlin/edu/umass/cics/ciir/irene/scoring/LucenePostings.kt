@@ -1,7 +1,7 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.chai.ComputedStats
-import edu.umass.cics.ciir.chai.IntList
+import edu.umass.cics.ciir.irene.utils.ComputedStats
+import edu.umass.cics.ciir.irene.utils.IntList
 import org.apache.lucene.index.NumericDocValues
 import org.apache.lucene.index.PostingsEnum
 import org.apache.lucene.index.Term

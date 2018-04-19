@@ -1,14 +1,14 @@
-package edu.umass.cics.ciir.irene.example
+package edu.umass.cics.ciir.sprf.example
 
-import edu.umass.cics.ciir.chai.StreamingStats
-import edu.umass.cics.ciir.chai.timed
-import edu.umass.cics.ciir.chai.use
+import edu.umass.cics.ciir.irene.utils.StreamingStats
+import edu.umass.cics.ciir.irene.utils.timed
+import edu.umass.cics.ciir.irene.utils.use
 import edu.umass.cics.ciir.irene.lang.*
-import edu.umass.cics.ciir.irene.toQueryResults
+import edu.umass.cics.ciir.irene.galago.toQueryResults
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.NamedMeasures
-import edu.umass.cics.ciir.sprf.getEvaluator
-import edu.umass.cics.ciir.sprf.inqueryStop
+import edu.umass.cics.ciir.irene.galago.NamedMeasures
+import edu.umass.cics.ciir.irene.galago.getEvaluator
+import edu.umass.cics.ciir.irene.galago.inqueryStop
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
 import java.io.File
@@ -86,7 +86,7 @@ fun main(args: Array<String>) {
 
                     //val (timeExact, topExact) = timed { index.search(sdmQ, 1000) }
                     //val exactR = topExact.toQueryResults(index, qid)
-                    val (time, topApprox) = timed {index.search(approxSDMQ, 1000)}
+                    val (time, topApprox) = timed { index.search(approxSDMQ, 1000) }
                     val approxR = topApprox.toQueryResults(index, qid)
 
                     times.push(time)

@@ -1,12 +1,12 @@
 package edu.umass.cics.ciir.dbpedia
 
-import edu.umass.cics.ciir.chai.normalize
+import edu.umass.cics.ciir.irene.utils.normalize
 import edu.umass.cics.ciir.irene.lang.*
-import edu.umass.cics.ciir.irene.toQueryResults
+import edu.umass.cics.ciir.irene.galago.toQueryResults
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.NamedMeasures
-import edu.umass.cics.ciir.sprf.getEvaluators
-import edu.umass.cics.ciir.sprf.inqueryStop
+import edu.umass.cics.ciir.irene.galago.NamedMeasures
+import edu.umass.cics.ciir.irene.galago.getEvaluators
+import edu.umass.cics.ciir.irene.galago.inqueryStop
 import org.lemurproject.galago.utility.Parameters
 
 
@@ -51,7 +51,9 @@ fun main(args: Array<String>) {
     val avgDLMu = argp.get("avgDLMu", false)
     val defaultMu = argp.get("defaultDirichletMu", 7000.0)
     val depth = argp.get("depth", 100)
-    val stopwords: Set<String> = if (argp.get("stopSDM", true)) { inqueryStop } else { emptySet() }
+    val stopwords: Set<String> = if (argp.get("stopSDM", true)) {
+        inqueryStop
+    } else { emptySet() }
 
     //val fields = arrayListOf<String>("body", "anchor_text", "citation_titles", "redirects", "categories_text", "short_text")
 

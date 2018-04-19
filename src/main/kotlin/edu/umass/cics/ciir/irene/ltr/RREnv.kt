@@ -1,11 +1,12 @@
-package edu.umass.cics.ciir.iltr
+package edu.umass.cics.ciir.irene.ltr
 
+import edu.umass.cics.ciir.iltr.normalized
 import edu.umass.cics.ciir.irene.CountStats
+import edu.umass.cics.ciir.irene.galago.inqueryStop
 import edu.umass.cics.ciir.irene.lang.*
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
 import edu.umass.cics.ciir.irene.scoring.LTREvalSetupContext
 import edu.umass.cics.ciir.irene.scoring.exprToEval
-import edu.umass.cics.ciir.sprf.inqueryStop
 import gnu.trove.map.hash.TObjectDoubleHashMap
 import org.lemurproject.galago.utility.MathUtils
 

@@ -1,9 +1,9 @@
 package edu.umass.cics.ciir.dbpedia
 
-import edu.umass.cics.ciir.chai.Debouncer
+import edu.umass.cics.ciir.irene.utils.Debouncer
 import edu.umass.cics.ciir.chai.ShardWriters
 import edu.umass.cics.ciir.sprf.IRDataset
-import edu.umass.cics.ciir.sprf.pmake
+import edu.umass.cics.ciir.irene.galago.pmake
 import edu.umass.cics.ciir.sprf.printer
 import gnu.trove.list.array.TIntArrayList
 import gnu.trove.map.hash.TIntObjectHashMap
@@ -401,7 +401,7 @@ object ProcessAndShardRelations  {
 
             writers.hashed(page).println(pmake {
                 set("id", page)
-                set("text", "$propText ${wikiTitleToText(text?: "")}")
+                set("text", "$propText ${wikiTitleToText(text ?: "")}")
             })
 
         }
@@ -427,7 +427,9 @@ class CategoryInfo(val id: Int, val name: String, var prefLabel: String? = null)
         putIfNotNull("prefLabel", prefLabel)
         setIfNotEmpty("labels", labels.toMutableSet().apply {
             val pl = prefLabel
-            if (pl!=null) { add(pl) }
+            if (pl != null) {
+                add(pl)
+            }
         }.toList())
         setIfNotEmpty("pages", pages)
         setIfNotEmpty("related", related.toArray().toList())

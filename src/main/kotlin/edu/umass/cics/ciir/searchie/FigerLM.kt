@@ -1,15 +1,14 @@
 package edu.umass.cics.ciir.searchie
 
-import edu.umass.cics.ciir.chai.CountingDebouncer
-import edu.umass.cics.ciir.chai.smartLines
-import edu.umass.cics.ciir.chai.smartPrint
+import edu.umass.cics.ciir.irene.utils.CountingDebouncer
+import edu.umass.cics.ciir.irene.utils.smartLines
+import edu.umass.cics.ciir.irene.utils.smartPrint
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndex
 import edu.umass.cics.ciir.irene.IreneIndexer
+import edu.umass.cics.ciir.irene.galago.*
 import edu.umass.cics.ciir.irene.lang.QueryLikelihood
 import edu.umass.cics.ciir.irene.lang.SequentialDependenceModel
-import edu.umass.cics.ciir.irene.toQueryResults
-import edu.umass.cics.ciir.sprf.*
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
 import java.io.File
@@ -46,7 +45,7 @@ val ValidationSize = 200
 fun main(args: Array<String>) {
     val exact = HashMap<String, MutableList<String>>()
     val neighbors = HashMap<String, MutableList<String>>()
-    val msg = CountingDebouncer(total= count + numClasses)
+    val msg = CountingDebouncer(total = count + numClasses)
     File(dir, "train.json.gz").smartLines { lines ->
         lines.drop(ValidationSize).forEach { line ->
             val ex = parseExample(Parameters.parseString(line))
@@ -85,7 +84,7 @@ object BuildIndex {
             withPath(File(dir, "memorize.irene2"))
             create()
         }.use { indexer ->
-            val msg = CountingDebouncer(total= numClasses)
+            val msg = CountingDebouncer(total = numClasses)
             File(dir, "memorize_doc.jsonl.gz").smartLines { lines ->
                 lines.forEach { line ->
                     val p = Parameters.parseString(line)

@@ -1,6 +1,6 @@
-package edu.umass.cics.ciir.sprf
+package edu.umass.cics.ciir.irene.galago
 
-import edu.umass.cics.ciir.chai.StreamingStats
+import edu.umass.cics.ciir.irene.utils.StreamingStats
 import gnu.trove.list.array.TDoubleArrayList
 import org.lemurproject.galago.core.eval.metric.QueryEvaluator
 import org.lemurproject.galago.core.eval.metric.QueryEvaluatorFactory

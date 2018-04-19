@@ -2,14 +2,16 @@ package edu.umass.cics.ciir.searchie
 
 import edu.stanford.nlp.ling.CoreAnnotations
 import edu.stanford.nlp.pipeline.StanfordCoreNLP
-import edu.umass.cics.ciir.chai.WeightedForHeap
-import edu.umass.cics.ciir.chai.pmap
-import edu.umass.cics.ciir.chai.smartLines
-import edu.umass.cics.ciir.iltr.RREnv
-import edu.umass.cics.ciir.iltr.RelevanceModel
-import edu.umass.cics.ciir.iltr.computeRelevanceModel
-import edu.umass.cics.ciir.iltr.toRRExpr
+import edu.umass.cics.ciir.irene.utils.WeightedForHeap
+import edu.umass.cics.ciir.irene.utils.pmap
+import edu.umass.cics.ciir.irene.utils.smartLines
+import edu.umass.cics.ciir.irene.ltr.RREnv
+import edu.umass.cics.ciir.irene.ltr.RelevanceModel
+import edu.umass.cics.ciir.irene.ltr.computeRelevanceModel
+import edu.umass.cics.ciir.irene.ltr.toRRExpr
 import edu.umass.cics.ciir.irene.GenericTokenizer
+import edu.umass.cics.ciir.irene.galago.getStr
+import edu.umass.cics.ciir.irene.galago.inqueryStop
 import edu.umass.cics.ciir.irene.lang.QExpr
 import edu.umass.cics.ciir.irene.scoring.BagOfWords
 import edu.umass.cics.ciir.irene.scoring.LTRDoc

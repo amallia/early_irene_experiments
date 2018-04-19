@@ -1,15 +1,21 @@
-package edu.umass.cics.ciir.irene.example
+package edu.umass.cics.ciir.sprf.example
 
-import edu.umass.cics.ciir.chai.*
-import edu.umass.cics.ciir.iltr.toRRExpr
 import edu.umass.cics.ciir.irene.IndexParams
 import edu.umass.cics.ciir.irene.IreneIndex
 import edu.umass.cics.ciir.irene.IreneIndexer
+import edu.umass.cics.ciir.irene.galago.NamedMeasures
+import edu.umass.cics.ciir.irene.galago.getEvaluators
+import edu.umass.cics.ciir.irene.galago.inqueryStop
+import edu.umass.cics.ciir.irene.galago.toQueryResults
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.ltr.toRRExpr
 import edu.umass.cics.ciir.irene.scoring.LTRDoc
-import edu.umass.cics.ciir.irene.toQueryResults
+import edu.umass.cics.ciir.irene.utils.*
 import edu.umass.cics.ciir.learning.*
-import edu.umass.cics.ciir.sprf.*
+import edu.umass.cics.ciir.sprf.DataPaths
+import edu.umass.cics.ciir.sprf.IRDataset
+import edu.umass.cics.ciir.sprf.WikiSource
+import edu.umass.cics.ciir.sprf.notImpl
 import org.lemurproject.galago.core.eval.QueryJudgments
 import org.lemurproject.galago.utility.Parameters
 import java.io.File
@@ -89,7 +95,7 @@ object GoogleNGrams {
         val outputFreqs = HashMap<String, Long>()
 
         val reader = File(dir, "1gms/vocab.gz").smartReader()
-        val msg = CountingDebouncer(total=numUnigramLines.toLong())
+        val msg = CountingDebouncer(total = numUnigramLines.toLong())
         while(terms.isNotEmpty()) {
             val (term, countStr) = reader.readLine()?.splitAt('\t') ?: break
             if (terms.remove(term)) {
@@ -114,7 +120,7 @@ object GoogleNGrams {
         println(inputs)
         //val inputs = inputFiles.map { it.smartReader() }.toCollection(LinkedList())
 
-        val msg = CountingDebouncer(total= numBigramLines)
+        val msg = CountingDebouncer(total = numBigramLines)
         while(terms.isNotEmpty() && inputs.isNotEmpty()) {
             val inputF = inputs.pop() ?: break
             inputF.smartReader().use { reader ->
@@ -184,7 +190,7 @@ object CollectWSDMFeatures {
                         Pair(term, features)
                     }.associate { it }
 
-                    val msg = CountingDebouncer(uniqPairs.size.toLong()*2)
+                    val msg = CountingDebouncer(uniqPairs.size.toLong() * 2)
                     val uwF = uniqPairs.pmap { (lhs, rhs) ->
                         val collection = index.getStats(proxQuery(listOf(lhs, rhs)))
                         val wikiTitles = wiki.getStats(proxQuery(listOf(lhs, rhs), "title"))

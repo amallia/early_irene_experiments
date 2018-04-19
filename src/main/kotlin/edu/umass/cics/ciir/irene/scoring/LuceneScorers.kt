@@ -1,15 +1,14 @@
 package edu.umass.cics.ciir.irene.scoring
 
-import edu.umass.cics.ciir.chai.ComputedStats
-import edu.umass.cics.ciir.chai.IntList
-import edu.umass.cics.ciir.chai.StreamingStats
-import edu.umass.cics.ciir.iltr.RREnv
+import edu.umass.cics.ciir.irene.utils.ComputedStats
+import edu.umass.cics.ciir.irene.utils.IntList
+import edu.umass.cics.ciir.irene.utils.StreamingStats
 import edu.umass.cics.ciir.irene.DataNeeded
 import edu.umass.cics.ciir.irene.IreneIndex
 import edu.umass.cics.ciir.irene.createOptimizedMovementExpr
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.ltr.RREnv
 import edu.umass.cics.ciir.irene.lucene_try
-import edu.umass.cics.ciir.sprf.DataPaths
 import org.apache.lucene.index.*
 import org.apache.lucene.search.*
 import java.util.*
@@ -278,27 +277,3 @@ inline fun NumericDocValues.forEach(f: (Long)->Unit) {
     }
 }
 
-fun main(args: Array<String>) {
-    DataPaths.Robust.getIreneIndex().use { index ->
-        val mu = index.env.defaultDirichletMu
-        val stats = index.getStats("president")
-        val bg = mu * stats.nonzeroCountProbability()
-        index.reader.leaves().forEach { leaf ->
-            println("Leaf: docBase=${leaf.docBase} ord=${leaf.ord} ordInParent=${leaf.ordInParent} N=${leaf.reader().numDocs()}")
-            val lengths = leaf.reader().getNormValues(index.defaultField) ?: leaf.reader().getNumericDocValues("lengths:${index.defaultField}")
-
-            val ss = StreamingStats()
-            lengths.forEach { count ->
-                ss.push(count)
-            }
-            val worstCaseLength = ss.max
-
-            for (c in listOf(0, 1, 10, worstCaseLength.toInt()/4)) {
-                val logDirProb = Math.log((c + bg) / (worstCaseLength + mu))
-                println("c=$c / l=$worstCaseLength => $logDirProb")
-            }
-
-            println(ss)
-        }
-    }
-}

@@ -1,10 +1,12 @@
 package edu.umass.cics.ciir.iltr
 
-import edu.umass.cics.ciir.chai.mean
-import edu.umass.cics.ciir.chai.push
+import edu.umass.cics.ciir.irene.utils.mean
+import edu.umass.cics.ciir.irene.utils.push
+import edu.umass.cics.ciir.irene.galago.RRGalagoEnv
 import edu.umass.cics.ciir.irene.lang.*
+import edu.umass.cics.ciir.irene.ltr.RREnv
 import edu.umass.cics.ciir.sprf.DataPaths
-import edu.umass.cics.ciir.sprf.getEvaluators
+import edu.umass.cics.ciir.irene.galago.getEvaluators
 import org.lemurproject.galago.utility.Parameters
 
 /**
