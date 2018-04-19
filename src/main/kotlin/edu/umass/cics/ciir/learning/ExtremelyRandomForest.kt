@@ -1,12 +1,10 @@
 package edu.umass.cics.ciir.learning
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.KotlinModule
-import com.fasterxml.jackson.module.kotlin.readValue
 import edu.umass.cics.ciir.chai.*
 import edu.umass.cics.ciir.iltr.pagerank.SpacesRegex
 import edu.umass.cics.ciir.sprf.DataPaths
 import edu.umass.cics.ciir.sprf.getEvaluator
+import edu.umass.cics.ciir.sprf.incr
 import edu.umass.cics.ciir.sprf.pmake
 import gnu.trove.map.hash.TIntIntHashMap
 import org.lemurproject.galago.core.eval.QueryJudgments
@@ -22,8 +20,6 @@ import java.util.*
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.ThreadLocalRandom
 
-
-val mapper = ObjectMapper().registerModule(KotlinModule())
 
 
 /**
@@ -172,34 +168,24 @@ fun loadRLDataset(input: String, qrels: QuerySetJudgments, numFeatures: Int): RL
     val byQuery = HashMap<String, MutableList<QDoc>>()
 
     val inputF = File(input)
-    val cborInput = File("$input.cbor.gz")
-    if (cborInput.exists()) {
-        cborInput.smartReader().use { br ->
-            byQuery.putAll(mapper.readValue<RLDataset>(br).byQuery)
-        }
-    } else {
-        inputF.smartDoLines(true, total = 150_000L) { line ->
-            val (ftrs, doc) = line.splitAt('#') ?: error("Can't find doc!")
-            val row = ftrs.trim().split(SpacesRegex)
-            val label = row[0].toFloatOrNull() ?: error("Can't parse label as float.")
-            val qid = row[1].substringAfter("qid:")
-            if (qid.isBlank()) {
-                error("Can't find qid: $row")
-            }
-
-            val fvec = FloatArray(numFeatures)
-            (3 until row.size).forEach { i ->
-                val (fid, fval) = row[i].splitAt(':') ?: error("Feature must have : split ${row[i]}.")
-                fvec[fid.toInt() - 1] = fval.toFloat()
-            }
-
-            byQuery.push(qid, QDoc(label, qid, fvec, doc))
+    inputF.smartDoLines(true, total = 150_000L) { line ->
+        val (ftrs, doc) = line.splitAt('#') ?: error("Can't find doc!")
+        val row = ftrs.trim().split(SpacesRegex)
+        val label = row[0].toFloatOrNull() ?: error("Can't parse label as float.")
+        val qid = row[1].substringAfter("qid:")
+        if (qid.isBlank()) {
+            error("Can't find qid: $row")
         }
 
-        cborInput.smartWriter().use { ow ->
-            mapper.writeValue(ow, RLDataset(byQuery))
+        val fvec = FloatArray(numFeatures)
+        (3 until row.size).forEach { i ->
+            val (fid, fval) = row[i].splitAt(':') ?: error("Feature must have : split ${row[i]}.")
+            fvec[fid.toInt() - 1] = fval.toFloat()
         }
+
+        byQuery.push(qid, QDoc(label, qid, fvec, doc))
     }
+
 
     byQuery.forEach { qid, docs ->
         val judgments = qrels[qid]
@@ -250,13 +236,25 @@ object TestModel {
     }
 }
 
+fun getFeatureField(fname: String): String? {
+    var base = fname
+    if (base.startsWith("norm:")) {
+        base = base.substringAfter("norm:")
+    }
+    if (base.contains(':')) {
+        return base.substringBefore(':')
+    }
+    return null
+}
+
 fun main(args: Array<String>) {
     val argp = Parameters.parseArgs(args)
-    val dataset = argp.get("dataset", "mq07")
-    val outputFile = File("${dataset}.rf.json")
+    val dataset = argp.get("dataset", "gov2")
+    val outputFile = File("${dataset}.2.rf.json")
     if (outputFile.exists()) error("Output $outputFile already exists!")
-    val input = argp.get("input", "l2rf/${dataset}.features.ranklib")
-    val featureNames = Parameters.parseFile(argp.get("meta", "$input.meta.json"))
+    val input = argp.get("input", "l2rf/$dataset.features.ranklib.gz")
+    val featureNames = Parameters.parseFile(argp.get("meta", "l2rf/$dataset.features.ranklib.meta.json"))
+    println(featureNames)
     val numFeatures = argp.get("numFeatures",
             featureNames.size)
     val numTrees = argp.get("numTrees", 50)
@@ -273,6 +271,9 @@ fun main(args: Array<String>) {
     val measure = getEvaluator("ap")
     val strategy = getTreeSplitSelectionStrategy(argp.get("strategy", "conf-variance"))
 
+    val fieldFeatureCounts = HashMap<String, Int>()
+    featureNames.keys.mapNotNull { getFeatureField(it) }.forEach { field -> fieldFeatureCounts.incr(field, 1) }
+    println(fieldFeatureCounts)
 
     val splitQueries = HashMap<Int, MutableList<String>>()
     (queries.keys + qrels.keys).toSet().sorted().forEachIndexed { i, qid ->
