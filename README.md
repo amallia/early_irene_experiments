@@ -1,6 +1,6 @@
-# Supervised PRF
+# Early Irene Experiments
 
-This repository contains a reproduction of the paper: [Selecting good expansion terms for pseudo-relevance feedback](https://doi.org/10.1145/1390334.1390377).
+See [jjfiv/irene](https://github.com/jjfiv/irene) instead.
 
 ## Steps:
 
